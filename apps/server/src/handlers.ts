@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import type { BrowserBridgeService } from '@ev/browser-host';
 import type { ipcRegistry, HandlersOf } from '@ev/contracts';
-import { probeClaude, probeCodex, probePi, probeQoder, type NativeAuth } from './auth-probe';
 import type { AgentService } from './agent-service';
 import type { ManagementService } from './management-service';
 
@@ -9,17 +8,17 @@ export interface ServerDeps {
   agents: AgentService;
   management: ManagementService;
   browserBridge: BrowserBridgeService;
-  /** WS 广播（tasks:update / auth:* / browserBridge:update）。 */
+  /** WS broadcast (tasks:update / auth:* / browserBridge:update). */
   broadcast: (channel: string, payload: unknown) => void;
 }
 
 /**
- * ipcRegistry handlers 整体从 desktop ipc.ts 搬入（搬家不是重写）。
- * 去 Electron：chooseDirectory 无头返回 null（客户端自带路径输入）；
- * openPath/openInEditor 用系统 `open`。
+ * ipcRegistry handlers moved wholesale from desktop ipc.ts (a move, not a rewrite).
+ * Electron-free: chooseDirectory returns null headless (clients collect paths
+ * themselves); openPath/openInEditor use the system `open`.
  */
 export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> {
-  const { agents, management, browserBridge, broadcast } = deps;
+  const { agents, management, browserBridge } = deps;
 
   return {
     tasks: {
@@ -40,8 +39,9 @@ export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> 
       get: id => agents.inspect(id),
     },
     providers: {
-      // 只读（native-auth-display-v1）：模型目录/认证态均从 pi ModelRuntime 原生读出，
-      // EV 不持凭据、不维护模型库；supports* 仅布尔，不暴露密钥。
+      // Read-only (native-auth-display-v1): catalog and auth status come straight
+      // from the pi ModelRuntime; EV holds no credentials and keeps no model
+      // library. supports* are booleans only and never expose secrets.
       list: async () => {
         const mr = agents.modelRuntime;
         const available = new Set(
@@ -56,7 +56,7 @@ export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> 
             name: provider.name,
             baseUrl: provider.baseUrl,
             authStatus: status.configured ? ('configured' as const) : ('missing' as const),
-            // EV 不再做 provider 认证：supports* 恒 false，也不读密钥存在性。
+            // EV no longer performs provider auth: supports* stay false and key presence is never read.
             supportsApiKey: false,
             supportsOAuth: false,
             custom: false,
@@ -87,7 +87,7 @@ export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> 
     settings: {
       get: () => management.getSettings(),
       update: input => management.updateSettings(input),
-      // 无头 server 没有原生目录选择对话框；客户端自行收集路径。
+      // headless server has no native directory picker; clients collect paths themselves.
       chooseDirectory: async () => null,
       openPath: async path => {
         const error = await openExternal(path);

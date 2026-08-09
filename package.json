@@ -31,6 +31,17 @@
     "verify": "bun run format:check && bun run typecheck && bun run test && bun run build",
     "release:check": "bun scripts/check-release-version.ts",
     "release": "bash scripts/release.sh",
-    "release:checksums": "bun scripts/create-release-checksums.ts"
+    "release:checksums": "bun scripts/create-release-checksums.ts",
+    "lint": "eslint .",
+    "quality": "knip --no-progress && madge --circular --extensions ts,tsx apps packages"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "typescript-eslint": "^8.18.2",
+    "eslint-config-prettier": "^9.1.0",
+    "knip": "^5.41.1",
+    "madge": "^8.0.0",
+    "@eslint/js": "^9.17.0"
   }
 }

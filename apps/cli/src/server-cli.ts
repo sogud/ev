@@ -9,8 +9,10 @@ import type { IssuedToken, ServerInfo } from '@ev/contracts';
 import type { TaskDetail } from '@ev/contracts/domain';
 
 /**
- * ev 命令树：1:1 镜像 contracts registry 命名空间（server-client-split-v1）。
- * 不 import @ev/server（契约唯一共享物）；server.json 读取逻辑按契约类型本地实现。
+ * ev command tree: mirrors the contracts registry namespaces 1:1
+ * (server-client-split-v1). Never imports @ev/server (the contract is the only
+ * shared artifact); server.json reading is implemented locally against the
+ * contract types.
  */
 
 class CliError extends Error {}
@@ -43,17 +45,19 @@ function isPidAlive(pid: number): boolean {
 
 function serverEntry(): string {
   if (process.env.EV_SERVER_ENTRY) return process.env.EV_SERVER_ENTRY;
-  // 打包/构建产物优先（纯 Node 运行）；缺失时 ensureServer 会先构建。
+  // packaged/built artifact first (pure Node); ensureServer builds it when missing.
   return join(dirname(fileURLToPath(import.meta.url)), '../../desktop/dist-server/server.mjs');
 }
 
 function ensureEntryBuilt(entry: string): void {
   if (existsSync(entry)) return;
-  // bun 仅作为构建工具；server 运行时为 node（修订口径）。
+  // bun is a build tool only; the server runtime is node.
   const serverDir = join(dirname(entry), '../../server');
   const built = spawnSync('bun', ['run', '--cwd', serverDir, 'build'], { stdio: 'ignore' });
   if (built.status !== 0 || !existsSync(entry)) {
-    throw new CliError(`server entry 构建失败：${entry}（可手动 bun run --cwd apps/server build）`);
+    throw new CliError(
+      `server entry build failed: ${entry} (run bun run --cwd apps/server build manually)`
+    );
   }
 }
 
@@ -80,7 +84,7 @@ async function ensureServer(): Promise<ServerInfo> {
     const info = readServerInfo();
     if (info && isPidAlive(info.pid) && (await healthOk(info))) return info;
   }
-  throw new CliError('EV server 启动超时');
+  throw new CliError('EV server start timed out');
 }
 
 async function client(): Promise<EvClient> {
@@ -128,7 +132,7 @@ function revokeIssuedToken(id: string): boolean {
   return after.length !== before.length;
 }
 
-/** 远程 URL 两条（同网直连 + Tailscale）+ 安全提示；token 打码由调用方决定。 */
+/** Both remote URLs (LAN direct + Tailscale) plus the safety note; token masking is up to the caller. */
 function remoteUrls(): {
   lanUrl: string | null;
   tailscaleUrl: string | null;
@@ -143,7 +147,7 @@ function remoteUrls(): {
   return {
     lanUrl: lan ? base(lan) : null,
     tailscaleUrl: ts ? base(ts) : null,
-    note: '陌生 WiFi 走 Tailscale；LAN 为明文 HTTP，仅可信同网使用。',
+    note: 'Use Tailscale on untrusted WiFi; LAN is plain HTTP and only for trusted networks.',
     webUrl: (token: string): string => {
       const ip = ts ?? lan ?? '127.0.0.1';
       return `${base(ip)}?port=${port}&token=${token}`;
@@ -190,7 +194,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
       out({ stopped: true });
       return 0;
     }
-    throw new CliError('用法：ev server start|stop|status');
+    throw new CliError('usage: ev server start|stop|status');
   }
 
   if (group === 'remote') {
@@ -202,7 +206,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
       });
       out({
         enabled: command === 'on',
-        note: '重启 server 生效：ev server stop && ev server start',
+        note: 'takes effect after a server restart: ev server stop && ev server start',
       });
       return 0;
     }
@@ -210,14 +214,14 @@ export async function runServerCli(argv: string[]): Promise<number> {
       out(remoteUrls());
       return 0;
     }
-    throw new CliError('用法：ev remote on|off|status');
+    throw new CliError('usage: ev remote on|off|status');
   }
 
   if (group === 'token') {
     if (command === 'create') {
       const tier = flag(args, '--tier') ?? 'observer';
       if (tier !== 'observer' && tier !== 'operator')
-        throw new CliError('--tier 仅 observer|operator');
+        throw new CliError('--tier accepts observer|operator only');
       const issued = createIssuedToken(tier as 'observer' | 'operator');
       const urls = remoteUrls();
       out({
@@ -225,7 +229,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
         tier: issued.tier,
         token: issued.token,
         url: urls.webUrl(issued.token),
-        note: 'observer 只读；发送/修改需 operator',
+        note: 'observer is read-only; sending/mutating requires operator',
       });
       return 0;
     }
@@ -244,7 +248,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
       out({ revoked: revokeIssuedToken(rest[0]) });
       return 0;
     }
-    throw new CliError('用法：ev token create --tier observer|operator | list | revoke <id>');
+    throw new CliError('usage: ev token create --tier observer|operator | list | revoke <id>');
   }
 
   if (group === 'status') {
@@ -263,7 +267,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
             mobileUrlMasked: `http://${ip}:${port}/m/?port=${port}&token=<masked>`,
           }
         : {}),
-      note: `${urls.note} 完整 token 仅在 ev token create 时输出一次；list 打码；发送/修改需 --tier operator。`,
+      note: `${urls.note} The full token is printed once at ev token create time; list masks it; sending/mutating requires --tier operator.`,
     });
     return 0;
   }
@@ -337,7 +341,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
       return 0;
     }
     throw new CliError(
-      '用法：ev task list|get|create|prompt|abort|remove|set-runtime|set-model|follow'
+      'usage: ev task list|get|create|prompt|abort|remove|set-runtime|set-model|follow'
     );
   }
 
@@ -346,7 +350,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
       out(await api.runtimes.list());
       return 0;
     }
-    throw new CliError('用法：ev runtime list');
+    throw new CliError('usage: ev runtime list');
   }
 
   if (group === 'provider') {
@@ -354,8 +358,8 @@ export async function runServerCli(argv: string[]): Promise<number> {
       out(await api.providers.list());
       return 0;
     }
-    // 只读（native-auth-display-v1）：登录一律 runtime 原生。
-    throw new CliError('用法：ev provider list（登录请走各 runtime 原生命令）');
+    // read-only (native-auth-display-v1): login always happens in the runtime itself.
+    throw new CliError("usage: ev provider list (log in via each runtime's native command)");
   }
 
   if (group === 'inspection') {
@@ -363,7 +367,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
       out(await api.inspection.get(rest[0]));
       return 0;
     }
-    throw new CliError('用法：ev inspection get <taskId>');
+    throw new CliError('usage: ev inspection get <taskId>');
   }
 
   if (group === 'settings') {
@@ -376,16 +380,16 @@ export async function runServerCli(argv: string[]): Promise<number> {
       try {
         input = JSON.parse(rest.join(' '));
       } catch {
-        throw new CliError('ev settings set 需要合法 JSON');
+        throw new CliError('ev settings set requires valid JSON');
       }
       out(await api.settings.update(input));
       return 0;
     }
-    throw new CliError('用法：ev settings get|set <json>');
+    throw new CliError('usage: ev settings get|set <json>');
   }
 
   throw new CliError(
-    `未知命令组：${group}（task/runtime/provider/inspection/settings/server/browser/--skill）`
+    `unknown command group: ${group} (task/runtime/provider/inspection/settings/server/browser/--skill)`
   );
 }
 

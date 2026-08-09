@@ -1,18 +1,27 @@
 import Store from './store';
 import type { ThemePreference } from '@ev/contracts/domain';
 
+export type LanguagePreference = 'en' | 'zh';
+
 export interface AppearanceStore {
   getTheme(): ThemePreference;
   setTheme(theme: ThemePreference): void;
+  getLanguage(): LanguagePreference | undefined;
+  setLanguage(language: LanguagePreference | undefined): void;
 }
 
 function isThemePreference(value: unknown): value is ThemePreference {
   return value === 'system' || value === 'light' || value === 'dark';
 }
 
-/** 无头版：只记录偏好；主题应用由各客户端（desktop 窗壳/Web）自行完成。 */
+function isLanguagePreference(value: unknown): value is LanguagePreference {
+  return value === 'en' || value === 'zh';
+}
+
+/** Headless variant: records preferences only; each client (desktop shell/web) applies them. */
 export function createAppearanceStore(): AppearanceStore {
-  const store = new Store<{ theme: ThemePreference }>({
+  // 'system' is the explicit sentinel for "follow the OS locale" (KV cannot store null).
+  const store = new Store<{ theme: ThemePreference; language?: LanguagePreference | 'system' }>({
     name: 'appearance',
     defaults: { theme: 'system' },
   });
@@ -24,6 +33,13 @@ export function createAppearanceStore(): AppearanceStore {
     },
     setTheme(theme: ThemePreference): void {
       store.set('theme', theme);
+    },
+    getLanguage(): LanguagePreference | undefined {
+      const language = store.get('language');
+      return isLanguagePreference(language) ? language : undefined;
+    },
+    setLanguage(language: LanguagePreference | undefined): void {
+      store.set('language', language ?? 'system');
     },
   };
 }

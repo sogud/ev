@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 
 /**
- * KV 驱动（M1 修订：better-sqlite3 单驱动，纯 Node 运行时）。
- * 不强行范式化：KV 表（store/key/value），任务等实体以 JSON blob 存值。
+ * KV driver (M1 revision: better-sqlite3 only, pure Node runtime).
+ * Deliberately unnormalized: one KV table (store/key/value); entities such as
+ * tasks are stored as JSON blobs.
  */
 export interface KvBackend {
   get(store: string, key: string): string | null;
@@ -14,8 +15,9 @@ export interface KvBackend {
   close(): void;
 }
 
-// SQL 全部为常量 + 参数绑定（无字符串拼接），注入面为零；
-// bun:sqlite / node:sqlite 无官方 query builder，任务书禁止新增外部依赖。
+// All SQL is constant text + bound parameters (no string building), so there is
+// no injection surface; bun:sqlite / node:sqlite ship no query builder and the
+// mission forbids new external dependencies.
 const SQL = {
   createTable:
     'CREATE TABLE IF NOT EXISTS kv (store TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (store, key))',
@@ -72,15 +74,16 @@ export function getBackend(): KvBackend {
   return backend;
 }
 
-/** 测试用：换临时目录前重置单例。 */
+/** Test hook: reset the singleton before pointing at a temp dir. */
 export function resetBackend(): void {
   backend?.close();
   backend = null;
 }
 
 /**
- * 一次性迁移：旧 JSON（~/.ev/<name>.json 与 electron-store 旧位置）→ SQLite KV。
- * 仅当该 store 在 KV 中为空时导入（幂等）；旧文件保留不删，另写迁移标记。
+ * One-shot migration: legacy JSON (~/.ev/<name>.json and the old electron-store
+ * location) -> SQLite KV. Imported only while the KV store is empty (idempotent);
+ * old files are kept and a migration marker is written.
  */
 export function migrateLegacyJson(target: KvBackend): void {
   const marker = join(dataDir(), 'migrated-to-sqlite.json');
@@ -92,7 +95,7 @@ export function migrateLegacyJson(target: KvBackend): void {
       if (!file.endsWith('.json')) continue;
       if (['server.json', 'token', 'migrated-to-sqlite.json'].includes(file)) continue;
       const name = file.slice(0, -'.json'.length);
-      if (target.count(name) > 0) continue; // 已迁/已有数据，绝不覆盖
+      if (target.count(name) > 0) continue; // migrated or pre-existing data: never overwrite
       try {
         const raw = readFileSync(join(dir, file), 'utf8');
         const data = JSON.parse(raw) as Record<string, unknown>;
@@ -102,7 +105,7 @@ export function migrateLegacyJson(target: KvBackend): void {
         }
         imported.push(`${dir}/${file}`);
       } catch {
-        // 坏文件跳过，不阻断启动；旧文件仍在，可人工恢复。
+        // skip corrupt files without blocking startup; the old file remains for manual recovery.
       }
     }
   }

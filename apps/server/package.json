@@ -22,5 +22,6 @@
     "@types/node": "^22.19.0",
     "@types/ws": "^8.18.1",
     "@types/better-sqlite3": "^7.6.13"
-  }
+  },
+  "license": "Apache-2.0"
 }

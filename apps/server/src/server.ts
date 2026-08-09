@@ -32,8 +32,9 @@ import { RuntimeRegistry } from './runtime/runtime-registry';
 import { ManagementService } from './management-service';
 
 /**
- * HTTP+WS 服务面：纯 Node 运行时（node:http + ws；ws 为 browser-host 既有依赖，非新增）。
- * 打包 entry 在 Electron-as-node（ELECTRON_RUN_AS_NODE）下同路径运行。
+ * HTTP+WS surface on a pure Node runtime (node:http + ws; ws is an existing
+ * browser-host dependency, not a new one). The packaged entry runs the same path
+ * under Electron-as-node (ELECTRON_RUN_AS_NODE).
  */
 
 interface AbstractSocket {
@@ -56,7 +57,7 @@ function readOrCreateToken(): string {
   return token;
 }
 
-/** P3 远程接入：~/.ev/remote.json {enabled} 开关，默认 false。 */
+/** P3 remote access: ~/.ev/remote.json {enabled} switch, default false. */
 function readRemoteEnabled(): boolean {
   try {
     return Boolean(
@@ -67,7 +68,7 @@ function readRemoteEnabled(): boolean {
   }
 }
 
-/** 100.64.0.0/10（Tailscale CGNAT 段）；其余私网段视为 LAN。公网段一律不绑。 */
+/** 100.64.0.0/10 (Tailscale CGNAT); other private ranges count as LAN. Public ranges are never bound. */
 function isTailscaleV4(ip: string): boolean {
   return /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
 }
@@ -87,7 +88,7 @@ function privateInterfaces(): { lan: string[]; tailscale: string[] } {
   return { lan, tailscale };
 }
 
-/** 分级 token 表（~/.ev/tokens.json，600）；每请求读，文件极小。 */
+/** Tiered token table (~/.ev/tokens.json, mode 600); read per request, the file is tiny. */
 function readIssuedTokens(): IssuedToken[] {
   try {
     const raw = JSON.parse(readFileSync(join(homedir(), '.ev', 'tokens.json'), 'utf8')) as {
@@ -155,7 +156,7 @@ function makeDispatcher(token: string, handlers: unknown) {
     bodyText: string | null
   ): Promise<DispatchResult> {
     if (pathname === '/ws') {
-      // WS 升级由各运行时适配器单独处理；这里只做 token 预判。
+      // WS upgrades are handled by the runtime adapters; this is only the token pre-check.
       return searchParams.get('token') === token
         ? { status: 101 }
         : { status: 403, text: 'forbidden' };
@@ -174,7 +175,7 @@ function makeDispatcher(token: string, handlers: unknown) {
     if (!level) return { status: 401, json: { error: 'unauthorized' } };
     const tokenDef = findCallToken(route.namespace, route.method);
     if (!tokenDef) return { status: 404, json: { error: 'unknown call' } };
-    // P3 分级：observer 调 operator call → 403；本地主 token = operator。
+    // P3 tiers: observer calling an operator call gets 403; the local main token is operator.
     if (tokenDef.perm === 'operator' && level !== 'operator')
       return { status: 403, json: { error: 'forbidden' } };
     let args: unknown[] = [];
@@ -239,7 +240,7 @@ async function main(): Promise<void> {
   try {
     await browserBridge.start();
   } catch {
-    // 客户端可继续无浏览器集成运行。
+    // clients keep working without browser integration.
   }
   const browserRuntimeDirectory = join(home, '.ev', 'run');
   await stopStandaloneBrowserHost(browserRuntimeDirectory);
@@ -262,8 +263,9 @@ async function main(): Promise<void> {
 
   const dispatch = makeDispatcher(token, handlers);
 
-  // dev 形态 renderer 跑在 vite origin（localhost:5173），跨域 fetch 需要 CORS；
-  // 白名单仅 vite 默认口，prod 同源不依赖此头，安全口径不变。
+  // In dev the renderer runs on the vite origin (localhost:5173) and needs CORS
+  // for cross-origin fetch; the whitelist covers only vite's default port. Prod is
+  // same-origin and never relies on this header, so the security posture is unchanged.
   const DEV_ORIGINS = new Set(['http://localhost:5173', 'http://127.0.0.1:5173']);
   const corsHeaders = (req: IncomingMessage): Record<string, string> => {
     const origin = req.headers.origin;
@@ -320,8 +322,9 @@ async function main(): Promise<void> {
   };
   const httpServer = buildHttpServer();
   httpServer.listen(port, '127.0.0.1');
-  // R1：remote 开启时加绑全部私网接口（LAN+Tailscale），绝不 0.0.0.0/公网；
-  // 非 loopback 与 loopback 同样强制 token（/api 全接口 Bearer 校验）。
+  // R1: with remote enabled, additionally bind every private interface
+  // (LAN+Tailscale); never 0.0.0.0/public. Non-loopback gets the same mandatory
+  // token as loopback (Bearer check on every /api call).
   let lanIps: string[] = [];
   let tailscaleIp: string | null = null;
   if (readRemoteEnabled()) {

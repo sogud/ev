@@ -1,6 +1,6 @@
 /**
- * 稳定的Favicon获取工具
- * 实现多种fallback策略，确保图标稳定显示
+ * Stable favicon resolution.
+ * Multiple fallback strategies keep icons rendering reliably.
  */
 
 interface FaviconCache {
@@ -13,7 +13,7 @@ interface FaviconCache {
 
 class FaviconManager {
   private cache: FaviconCache = {};
-  private readonly CACHE_DURATION = 24 * 60 * 60 * 1000; // 24小时
+  private readonly CACHE_DURATION = 24 * 60 * 60 * 1000; // 24h
   private readonly MAX_ATTEMPTS = 3;
   private readonly STORAGE_KEY = 'ev_browser_favicon_cache';
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -23,7 +23,7 @@ class FaviconManager {
   }
 
   /**
-   * 从本地存储恢复缓存，避免每次打开页面都重新探测图标
+   * Restore the cache from local storage so page opens do not re-probe icons.
    */
   private loadCacheFromStorage(): void {
     try {
@@ -41,12 +41,12 @@ class FaviconManager {
         }
       });
     } catch {
-      // 存储不可用时静默降级为纯内存缓存
+      // Degrade to an in-memory cache when storage is unavailable.
     }
   }
 
   /**
-   * 延迟写入本地存储，合并短时间内的多次更新
+   * Debounce writes to local storage, coalescing rapid updates.
    */
   private scheduleSaveToStorage(): void {
     try {
@@ -59,12 +59,12 @@ class FaviconManager {
         chrome.storage.local.set({ [this.STORAGE_KEY]: this.cache });
       }, 500);
     } catch {
-      // 存储不可用时静默忽略
+      // Ignore storage failures silently.
     }
   }
 
   /**
-   * 获取favicon URL，使用多种策略
+   * Resolve a favicon URL through layered strategies.
    */
   async getFaviconUrl(url: string): Promise<string> {
     try {
@@ -75,7 +75,7 @@ class FaviconManager {
         return cached;
       }
 
-      // 尝试多种获取策略
+      // Try each strategy in order.
       const strategies = [
         () => this.getFromGoogleFavicon(domain),
         () => this.getFromDuckDuckGo(domain),
@@ -91,53 +91,53 @@ class FaviconManager {
             this.setCache(domain, faviconUrl);
             return faviconUrl;
           }
-        } catch (error) {
-          // 静默处理策略失败，继续尝试下一个策略
+        } catch {
+          // Swallow per-strategy failures and try the next one.
           continue;
         }
       }
 
-      // 如果所有策略都失败，返回默认图标
+      // All strategies failed; return the default icon.
       const defaultFavicon = this.getDefaultFavicon();
       this.setCache(domain, defaultFavicon);
       return defaultFavicon;
     } catch (error) {
-      // 处理URL解析错误
+      // Handle URL parse errors.
       console.error(`Invalid URL for favicon: ${url}`, error);
       return this.getDefaultFavicon();
     }
   }
 
   /**
-   * 策略1: Google Favicon服务 (最常用)
+   * Strategy 1: Google favicon service (most common).
    */
   private getFromGoogleFavicon(domain: string): string {
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
   }
 
   /**
-   * 策略2: DuckDuckGo Favicon服务 (更稳定)
+   * Strategy 2: DuckDuckGo favicon service (more stable).
    */
   private getFromDuckDuckGo(domain: string): string {
     return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
   }
 
   /**
-   * 策略3: Favicon.io服务
+   * Strategy 3: favicon.io service.
    */
   private getFromFaviconIO(domain: string): string {
     return `https://favicons.githubusercontent.com/${domain}`;
   }
 
   /**
-   * 策略4: 直接从网站获取
+   * Strategy 4: fetch directly from the site.
    */
   private getFromWebsite(domain: string): string {
     return `https://${domain}/favicon.ico`;
   }
 
   /**
-   * 策略5: 默认图标
+   * Strategy 5: default icon.
    */
   getDefaultFavicon(): string {
     const svg = `
@@ -152,7 +152,7 @@ class FaviconManager {
   }
 
   /**
-   * 验证图片是否有效
+   * Validate that an image is usable.
    */
   private async isValidImage(url: string): Promise<boolean> {
     return new Promise(resolve => {
@@ -161,13 +161,13 @@ class FaviconManager {
       img.onerror = () => resolve(false);
       img.src = url;
 
-      // 设置超时
+      // Apply a timeout.
       setTimeout(() => resolve(false), 3000);
     });
   }
 
   /**
-   * 从缓存获取
+   * Cache read.
    */
   getFromCache(domain: string): string | null {
     const cached = this.cache[domain];
@@ -178,7 +178,7 @@ class FaviconManager {
   }
 
   /**
-   * 设置缓存
+   * Cache write.
    */
   setCache(domain: string, url: string): void {
     this.cache[domain] = {
@@ -190,7 +190,7 @@ class FaviconManager {
   }
 
   /**
-   * 清除过期缓存
+   * Evict expired entries.
    */
   clearExpiredCache(): void {
     const now = Date.now();
@@ -202,7 +202,7 @@ class FaviconManager {
   }
 
   /**
-   * 获取缓存统计
+   * Cache stats.
    */
   getCacheStats(): { total: number; domains: string[] } {
     return {
@@ -212,18 +212,18 @@ class FaviconManager {
   }
 }
 
-// 创建全局实例
+// Shared instance.
 export const faviconManager = new FaviconManager();
 
 /**
- * 简化的favicon获取函数
+ * Simplified favicon lookup.
  */
 export const getFaviconUrl = (url: string): Promise<string> => {
   return faviconManager.getFaviconUrl(url);
 };
 
 /**
- * 预加载favicon
+ * Preload a favicon.
  */
 export const preloadFavicon = async (url: string): Promise<void> => {
   try {
@@ -234,14 +234,14 @@ export const preloadFavicon = async (url: string): Promise<void> => {
 };
 
 /**
- * 批量预加载favicon
+ * Preload favicons in batch.
  */
 export const preloadFavicons = async (urls: string[]): Promise<void> => {
   const promises = urls.map(url => preloadFavicon(url));
   try {
     await Promise.all(promises);
   } catch (error) {
-    // 忽略单个favicon加载失败的错误
+    // Ignore individual preload failures.
     console.warn('Some favicons failed to load:', error);
   }
 };

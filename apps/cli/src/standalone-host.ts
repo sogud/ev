@@ -17,7 +17,7 @@ import {
 
 const HOST_START_TIMEOUT_MS = 5_000;
 const DEFAULT_TRUSTED_EXTENSION_ORIGINS = [
-  // projects/ 单层化后的 unpacked 路径 ID（旧 repos/ 路径 ID 保留兼容）
+  // unpacked path id after the projects/ flattening (legacy repos/ ids stay compatible)
   'chrome-extension://cpjhgkmenplohfcnkpdlefojomngblon',
   'chrome-extension://klbmgfllmjipajbdcnmakapfchkhkdih',
 ];

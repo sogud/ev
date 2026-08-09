@@ -1,4 +1,4 @@
-/* EV 移动端（/m）：单列、底部操作栏、≥44px 命中区；390×844 基准。 */
+/* EV mobile (/m): single column, bottom action bar, >=44px hit areas; 390x844 baseline. */
 * {
   box-sizing: border-box;
 }

@@ -20,6 +20,8 @@
 - [ ] 图片附件送模型前自动缩放/压缩：provider 网关单消息体积上限
       （DashScope 系 1009 / HTTP 6MB）；发送前降采样 ≤1280px 转 JPEG
 - [ ] 浅色主题巡查与定案（深色已巡查；浅色未查——修还是声明 dark-only，待定）
+- [ ] tsconfig 严格度渐进收紧（noUncheckedIndexedAccess / exactOptionalPropertyTypes）
+- [ ] golden CDP 时序硬化：步骤级 wait/retry/backoff，降低 flaky（2026-08-09 连续两次挂不同步骤）
 
 ## 暂缓（用户定案，需要时再启）
 

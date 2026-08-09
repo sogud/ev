@@ -18,8 +18,7 @@ describe('standalone Browser Host discovery', () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'ev-host-discovery-'));
     directories.push(directory);
     const bridge = { sendCommand: vi.fn() };
-    let server: BrowserControlServer;
-    server = new BrowserControlServer(bridge, {
+    const server = new BrowserControlServer(bridge, {
       runtimeDirectory: directory,
       hostKind: 'standalone',
       onShutdown: () => void server.stop(),

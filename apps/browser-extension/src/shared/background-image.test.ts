@@ -41,6 +41,6 @@ describe('background image storage', () => {
 
   it('rejects non-image files before reading them', async () => {
     const file = { type: 'text/plain', size: 12 } as File;
-    await expect(readBackgroundImageFile(file)).rejects.toThrow('请选择图片文件');
+    await expect(readBackgroundImageFile(file)).rejects.toThrow('Please choose an image file');
   });
 });

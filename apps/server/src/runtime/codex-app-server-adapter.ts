@@ -54,8 +54,9 @@ export class CodexAppServerAdapter implements AgentRuntimeAdapter {
       availability: executable ? 'available' : 'missing',
       ...(version ? { version } : {}),
       ...(executable ? {} : { message: 'CLI not detected on PATH' }),
-      // P2 全映射：模型/思考都可切。候选表为 Codex 原生 catalog 的常用静态子集
-      // （app-server 未暴露 model/list 前的快照，2026-08-08）。
+      // P2 full mapping: model and thinking are switchable. The candidate table is a
+      // static snapshot of the common Codex native catalog (app-server exposed no
+      // model/list as of 2026-08-08).
       auth: probeCodex(),
       modelCatalog: [
         { id: 'gpt-5.4', name: 'GPT-5.4' },

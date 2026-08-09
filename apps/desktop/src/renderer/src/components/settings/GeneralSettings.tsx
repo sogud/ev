@@ -1,4 +1,5 @@
 import { FolderOpen } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ThemePreference } from '../../../../shared/types';
 import { useAppStore } from '../../store/useAppStore';
 import { MenuPicker } from '../ui/MenuPicker';
@@ -6,18 +7,24 @@ import { ModelPicker } from '../ui/ModelPicker';
 import { RuntimePicker } from '../ui/RuntimePicker';
 import { ThinkingPicker } from '../ui/ThinkingPicker';
 
-const THEME_OPTIONS: Array<{ value: ThemePreference; label: string }> = [
-  { value: 'system', label: '跟随系统' },
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' },
-];
-
 export function GeneralSettings(): React.JSX.Element {
+  const { t } = useTranslation();
   const settings = useAppStore(state => state.settings);
   const providers = useAppStore(state => state.providers);
   const runtimes = useAppStore(state => state.runtimes);
   const update = useAppStore(state => state.updateSettings);
   if (!settings) return <div />;
+
+  const themeOptions: Array<{ value: ThemePreference; label: string }> = [
+    { value: 'system', label: t('settings.themeSystem') },
+    { value: 'light', label: t('settings.themeLight') },
+    { value: 'dark', label: t('settings.themeDark') },
+  ];
+  const languageOptions = [
+    { value: 'system', label: t('settings.languageSystem') },
+    { value: 'en', label: 'English' },
+    { value: 'zh', label: '中文' },
+  ];
 
   const chooseDirectory = async (): Promise<void> => {
     const path = await window.agentDesktop.settings.chooseDirectory();
@@ -32,42 +39,57 @@ export function GeneralSettings(): React.JSX.Element {
   return (
     <div className='general-settings settings-scroll'>
       <div className='settings-page-heading'>
-        <h2>通用</h2>
-        <p>设置新任务的默认目录、模型和思考强度。</p>
+        <h2>{t('settings.general')}</h2>
+        <p>{t('settings.generalDesc')}</p>
       </div>
       <section className='settings-group'>
-        <h3>外观</h3>
+        <h3>{t('settings.appearance')}</h3>
         <div className='setting-row'>
           <span>
-            <strong>主题</strong>
-            <small>切换浅色、深色或跟随 macOS</small>
+            <strong>{t('settings.theme')}</strong>
+            <small>{t('settings.themeDesc')}</small>
           </span>
           <MenuPicker
             className='settings-picker'
             value={settings.theme}
-            options={THEME_OPTIONS}
-            ariaLabel='界面主题'
+            options={themeOptions}
+            ariaLabel={t('settings.theme')}
             onValueChange={theme => void update({ theme })}
+          />
+        </div>
+        <div className='setting-row'>
+          <span>
+            <strong>{t('settings.language')}</strong>
+            <small>{t('settings.languageDesc')}</small>
+          </span>
+          <MenuPicker
+            className='settings-picker'
+            value={settings.language ?? 'system'}
+            options={languageOptions}
+            ariaLabel={t('settings.language')}
+            onValueChange={language =>
+              void update({ language: language === 'system' ? null : (language as 'en' | 'zh') })
+            }
           />
         </div>
       </section>
       <section className='settings-group'>
-        <h3>工作区</h3>
+        <h3>{t('settings.workspace')}</h3>
         <button className='path-picker' type='button' onClick={() => void chooseDirectory()}>
           <FolderOpen size={18} />
           <span>
-            <strong>默认目录</strong>
+            <strong>{t('settings.defaultWorkspace')}</strong>
             <small>{settings.defaultWorkspace}</small>
           </span>
-          <em>更改</em>
+          <em>{t('settings.change')}</em>
         </button>
       </section>
       <section className='settings-group'>
-        <h3>新任务默认值</h3>
+        <h3>{t('settings.defaults')}</h3>
         <div className='setting-row'>
           <span>
-            <strong>默认 Runtime</strong>
-            <small>Pi 或外部 Agent CLI</small>
+            <strong>{t('settings.defaultRuntime')}</strong>
+            <small>{t('settings.defaultRuntimeDesc')}</small>
           </span>
           <RuntimePicker
             className='settings-picker'
@@ -78,8 +100,8 @@ export function GeneralSettings(): React.JSX.Element {
         </div>
         <div className='setting-row'>
           <span>
-            <strong>默认模型</strong>
-            <small>新建任务时优先使用</small>
+            <strong>{t('settings.defaultModel')}</strong>
+            <small>{t('settings.defaultModelDesc')}</small>
           </span>
           <ModelPicker
             className='settings-picker'
@@ -92,8 +114,8 @@ export function GeneralSettings(): React.JSX.Element {
         </div>
         <div className='setting-row'>
           <span>
-            <strong>思考强度</strong>
-            <small>支持 reasoning 的模型会使用</small>
+            <strong>{t('settings.defaultThinking')}</strong>
+            <small>{t('settings.defaultThinkingDesc')}</small>
           </span>
           <ThinkingPicker
             className='settings-picker'
@@ -103,12 +125,12 @@ export function GeneralSettings(): React.JSX.Element {
         </div>
       </section>
       <section className='settings-group about-block'>
-        <h3>关于</h3>
+        <h3>{t('settings.about')}</h3>
         <div>
           <span className='provider-avatar'>EV</span>
           <span>
             <strong>EV</strong>
-            <small>Enhanced Vigilance · 个人桌面 Agent · 0.1.0</small>
+            <small>{t('settings.aboutDesc')}</small>
           </span>
         </div>
       </section>

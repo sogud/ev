@@ -13,14 +13,14 @@ interface EditModeProps {
 }
 
 /**
- * 可复用的编辑模式组件
- * 用于书签和文件夹的重命名功能
+ * Reusable inline rename component.
+ * Used for renaming bookmarks and folders.
  */
-export const EditMode: React.FC<EditModeProps> = ({
+const EditMode: React.FC<EditModeProps> = ({
   initialValue,
   onSave,
   onCancel,
-  placeholder = '输入新名称...',
+  placeholder = 'Enter a new name...',
   className = '',
   autoFocus = true,
 }) => {
@@ -63,7 +63,7 @@ export const EditMode: React.FC<EditModeProps> = ({
         variant='ghost'
         className='h-6 w-6 p-0 hover:bg-green-100 hover:text-green-600'
         onClick={handleSave}
-        title='保存'>
+        title='Save'>
         <Check className='h-3 w-3' />
       </Button>
       <Button
@@ -71,7 +71,7 @@ export const EditMode: React.FC<EditModeProps> = ({
         variant='ghost'
         className='h-6 w-6 p-0 hover:bg-red-100 hover:text-red-600'
         onClick={onCancel}
-        title='取消'>
+        title='Cancel'>
         <X className='h-3 w-3' />
       </Button>
     </div>

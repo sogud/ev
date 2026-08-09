@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Folder as FolderIcon } from 'lucide-react';
-import { BookmarkFolder, BookmarkHandler, FolderHandler, FolderItemProps } from '../../types';
+import type { BookmarkFolder, BookmarkHandler, FolderHandler, FolderItemProps } from '../../types';
 import { cn } from '../../lib/utils';
 import EditMode from '../ui/edit-mode';
 import DeleteConfirmation from '../ui/delete-confirmation';
@@ -58,7 +58,7 @@ const Folder: React.FC<FolderProps> = React.memo(
               initialValue={folder.title}
               onSave={handleEditSave}
               onCancel={() => setMode('normal')}
-              placeholder='输入文件夹名称...'
+              placeholder='Enter folder name...'
             />
           </div>
         </div>
@@ -102,7 +102,7 @@ const Folder: React.FC<FolderProps> = React.memo(
           setMode('editing');
         }}
         onContextMenu={event => onContextMenu?.(event, folder)}
-        aria-label={`打开文件夹: ${folder.title}，包含 ${itemCount} 个项目`}>
+        aria-label={`Open folder: ${folder.title}, ${itemCount} items`}>
         <div className='icon-container-modern'>
           <FolderIcon className='folder-icon-modern' />
         </div>
@@ -110,7 +110,7 @@ const Folder: React.FC<FolderProps> = React.memo(
           <span className='card-title-modern' title={folder.title}>
             {folder.title}
           </span>
-          <small>{itemCount === 0 ? '空文件夹' : `${itemCount} 个项目`}</small>
+          <small>{itemCount === 0 ? 'Empty folder' : `${itemCount} items`}</small>
         </div>
       </button>
     );

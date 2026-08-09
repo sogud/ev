@@ -437,7 +437,7 @@ textarea {
   flex-direction: column;
 }
 
-/* transcript 变体 C：主流程=结果，过程=右侧 rail */
+/* transcript variant C: outcomes in the main flow, process in the right rail */
 .transcript-c {
   flex: 1;
   min-height: 0;
@@ -650,8 +650,8 @@ textarea {
   background: #dbdbe0;
 }
 
-/* 对话框下方配置行：Runtime / 思考 / 模型；锁定态与非模型 runtime 用静态 chip */
-/* 思考强度：独立弹层 + 离散阶梯滑块（用户定案用滑块不用菜单） */
+/* config row under the composer: runtime / thinking / model; locked state and non-model runtimes use static chips */
+/* thinking effort: dedicated popup + discrete stepped slider (settled: slider, not menu) */
 .thinking-picker-popover {
   width: 240px;
   padding: 12px 14px;
@@ -1975,7 +1975,7 @@ textarea {
   background: var(--ev-color-action-ghost-bg-hover);
 }
 
-/* UI 打磨（2026-08-09 巡查修复）：picker chip 与静态 chip 同构、防换行、防溢出 */
+/* UI polish (2026-08-09 patrol): picker chips and static chips share structure; prevent wrap/overflow */
 .ui-picker-trigger {
   display: inline-flex;
   align-items: center;
@@ -2064,7 +2064,7 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-/* Runtime 行列表+抽屉（2026-08-09 重设计） */
+/* Runtime row list + drawer (2026-08-09 redesign) */
 .runtime-rows {
   display: flex;
   flex-direction: column;

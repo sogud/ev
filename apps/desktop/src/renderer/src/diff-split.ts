@@ -1,12 +1,13 @@
 /**
- * 把整仓 unified diff 切成 path → 该文件 diff 段（ticket 0005 diff-first）。
- * 以 `diff --git a/<path> b/<path>` 为段头；取 b 侧路径（含空格/重命名场景够用）。
+ * Split a repo-wide unified diff into path -> per-file diff hunks (ticket 0005 diff-first).
+ * Segment headers are `diff --git a/<path> b/<path>`; the b-side path is used
+ * (good enough for spaces and renames).
  */
 export function splitDiffByFile(diff: string): Map<string, string> {
   const out = new Map<string, string>();
   if (!diff) return out;
   const sections = diff.split(/^(diff --git .*)$/m);
-  // split 带捕获组：[前导空串, header1, body1, header2, body2, ...]
+  // split with a capture group: [leading empty, header1, body1, header2, body2, ...]
   for (let index = 1; index < sections.length; index += 2) {
     const header = sections[index];
     const body = sections[index + 1] ?? '';

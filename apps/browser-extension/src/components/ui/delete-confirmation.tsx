@@ -11,12 +11,8 @@ interface DeleteConfirmationProps {
   className?: string;
 }
 
-/**
- * 可复用的删除确认组件
- * 用于书签和文件夹的删除确认功能
- */
-export const DeleteConfirmation: React.FC<DeleteConfirmationProps> = ({
-  title,
+/** Reusable delete confirmation for bookmarks and folders. */
+const DeleteConfirmation: React.FC<DeleteConfirmationProps> = ({
   itemName,
   onConfirm,
   onCancel,
@@ -27,7 +23,7 @@ export const DeleteConfirmation: React.FC<DeleteConfirmationProps> = ({
     <div className={`flex items-center gap-2 ${className}`}>
       <div className='flex-1 min-w-0 text-center'>
         <p className='text-sm text-destructive font-medium'>
-          确认删除{type === 'bookmark' ? '书签' : '文件夹'}？
+          Delete the {type === 'bookmark' ? 'bookmark' : 'folder'}?
         </p>
         <p className='text-xs text-muted-foreground truncate'>"{itemName}"</p>
       </div>

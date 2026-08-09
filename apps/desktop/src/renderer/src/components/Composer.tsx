@@ -1,5 +1,6 @@
 import { ArrowUp, Square } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ComposerProps {
   running: boolean;
@@ -16,6 +17,7 @@ export function Composer({
   onSend,
   onAbort,
 }: ComposerProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [value, setValue] = useState('');
   const ref = useRef<HTMLTextAreaElement>(null);
 
@@ -34,8 +36,8 @@ export function Composer({
           ref={ref}
           value={value}
           rows={1}
-          placeholder='让 EV 处理一件事…'
-          aria-label='输入消息'
+          placeholder={t('composer.placeholder')}
+          aria-label={t('composer.inputAria')}
           disabled={disabled}
           onChange={event => {
             setValue(event.target.value);
@@ -51,16 +53,20 @@ export function Composer({
         />
         <div className='composer-actions'>
           {leading}
-          <span className='composer-hint'>Enter 发送 · Shift Enter 换行</span>
+          <span className='composer-hint'>{t('composer.hint')}</span>
           {running ? (
-            <button className='send-button stop' type='button' aria-label='停止' onClick={onAbort}>
+            <button
+              className='send-button stop'
+              type='button'
+              aria-label={t('composer.stopAria')}
+              onClick={onAbort}>
               <Square size={13} fill='currentColor' />
             </button>
           ) : (
             <button
               className='send-button'
               type='button'
-              aria-label='发送'
+              aria-label={t('common.send')}
               disabled={!value.trim() || disabled}
               onClick={submit}>
               <ArrowUp size={17} />

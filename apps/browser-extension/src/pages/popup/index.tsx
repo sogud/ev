@@ -13,11 +13,11 @@ interface CurrentTab {
 type BridgeStatus = 'disabled' | 'connecting' | 'pairing' | 'connected' | 'disconnected';
 
 const BRIDGE_STATUS_LABEL: Record<BridgeStatus, string> = {
-  disabled: '未启用',
-  connecting: '连接中',
-  pairing: '等待配对',
-  connected: '已连接',
-  disconnected: '已断开',
+  disabled: 'Not enabled',
+  connecting: 'Connecting',
+  pairing: 'Waiting for pairing',
+  connected: 'Connected',
+  disconnected: 'Disconnected',
 };
 
 function Popup() {
@@ -31,7 +31,7 @@ function Popup() {
       chrome.storage.sync.get({ theme: 'auto' }),
     ]).then(([tabs, bridge, appearance]) => {
       const tab = tabs[0];
-      setCurrentTab({ title: tab?.title ?? '当前页面', url: tab?.url ?? '' });
+      setCurrentTab({ title: tab?.title ?? 'Current page', url: tab?.url ?? '' });
       if (
         ['disabled', 'connecting', 'pairing', 'connected', 'disconnected'].includes(bridge?.status)
       ) {
@@ -70,7 +70,7 @@ function Popup() {
         </div>
         <div>
           <h1 className='ev-popup-title'>EV Browser</h1>
-          <div className='ev-popup-subtitle'>浏览器上下文与本地 Agent</div>
+          <div className='ev-popup-subtitle'>Browser context & local agent</div>
         </div>
       </header>
 
@@ -88,8 +88,8 @@ function Popup() {
           <button
             type='button'
             className='ev-popup-reconnect'
-            title='请求重连'
-            aria-label='请求重连'
+            title='Request reconnect'
+            aria-label='Request reconnect'
             onClick={() => void reconnect()}>
             <RefreshCw size={13} />
           </button>
@@ -98,12 +98,12 @@ function Popup() {
 
       <div className='ev-popup-actions'>
         <button className='ev-button ev-button-primary' onClick={() => void chrome.tabs.create({})}>
-          <ExternalLink size={13} /> 新标签页
+          <ExternalLink size={13} /> New tab
         </button>
         <button
           className='ev-button ev-button-outline'
           onClick={() => void chrome.runtime.openOptionsPage()}>
-          <Settings size={13} /> 设置
+          <Settings size={13} /> Settings
         </button>
       </div>
     </main>

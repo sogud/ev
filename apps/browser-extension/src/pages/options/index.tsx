@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from '../../components/ui/card';
 import { MenuPicker } from '../../components/ui/menu-picker';
-import { Options as OptionsType } from '../../types';
+import type { Options as OptionsType } from '../../types';
 import { Cable, Download, Image as ImageIcon, Palette, Settings, Trash2 } from 'lucide-react';
 import { applyCustomSettings, applyThemePreference } from '../../utils/apply-settings';
 import {
@@ -32,11 +32,11 @@ interface BridgeSettings {
 type BridgeStatus = 'disabled' | 'connecting' | 'pairing' | 'connected' | 'disconnected';
 
 const BRIDGE_STATUS_LABELS: Record<BridgeStatus, string> = {
-  disabled: '已停用',
-  connecting: '连接中',
-  pairing: '等待 Desktop 批准',
-  connected: '已连接',
-  disconnected: '已断开',
+  disabled: 'Disabled',
+  connecting: 'Connecting',
+  pairing: 'Waiting for desktop approval',
+  connected: 'Connected',
+  disconnected: 'Disconnected',
 };
 
 function isBridgeStatus(value: unknown): value is BridgeStatus {
@@ -44,15 +44,15 @@ function isBridgeStatus(value: unknown): value is BridgeStatus {
 }
 
 const THEME_OPTIONS: Array<{ value: OptionsType['theme']; label: string }> = [
-  { value: 'auto', label: '跟随系统' },
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' },
+  { value: 'auto', label: 'Follow system' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
 ];
 
 const SORT_OPTIONS: Array<{ value: OptionsType['sortBy']; label: string }> = [
-  { value: 'name', label: '按名称' },
-  { value: 'date', label: '按日期' },
-  { value: 'url', label: '按网址' },
+  { value: 'name', label: 'By name' },
+  { value: 'date', label: 'By date' },
+  { value: 'url', label: 'By URL' },
 ];
 
 const OptionsPage = () => {
@@ -137,9 +137,9 @@ const OptionsPage = () => {
       await chrome.storage.sync.set({ background });
       setBackgroundImage(savedBackground);
       setOptions(current => ({ ...current, background }));
-      setStatus('背景图片已应用');
+      setStatus('Background image applied');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '无法读取背景图片');
+      setStatus(error instanceof Error ? error.message : 'Could not read the background image');
     }
   };
 
@@ -153,7 +153,7 @@ const OptionsPage = () => {
     await chrome.storage.sync.set({ background });
     setBackgroundImage(null);
     setOptions(current => ({ ...current, background }));
-    setStatus('背景图片已清除');
+    setStatus('Background image cleared');
   };
 
   const refreshBridgeStatus = async () => {
@@ -178,7 +178,9 @@ const OptionsPage = () => {
     if (browserControlAllowed || mediaDownloadsAllowed) {
       const granted = await chrome.permissions.request(requestedPermissions);
       if (!granted) {
-        setStatus('未获得网页操作或媒体下载权限，其他设置未保存');
+        setStatus(
+          'Page actions or media download permission was not granted; other settings were not saved'
+        );
         return;
       }
     }
@@ -194,7 +196,7 @@ const OptionsPage = () => {
       chrome.storage.local.set({ [DESKTOP_BRIDGE_CONFIG_KEY]: bridge }),
     ]);
     applyCustomSettings(options);
-    setStatus('设置已保存');
+    setStatus('Settings saved');
     window.setTimeout(() => setStatus(''), 2000);
   };
 
@@ -203,36 +205,40 @@ const OptionsPage = () => {
       <div className='ev-options-shell'>
         <header className='ev-page-header'>
           <h1 className='ev-page-title'>
-            <Settings size={18} /> EV Browser 设置
+            <Settings size={18} /> EV Browser settings
           </h1>
-          <p className='ev-page-description'>管理外观、排序与 Desktop Bridge 权限。</p>
+          <p className='ev-page-description'>
+            Manage appearance, sorting and Desktop Bridge permissions.
+          </p>
         </header>
 
         <div className='ev-settings-stack'>
           <Card>
             <CardHeader>
               <CardTitle className='flex items-center gap-2'>
-                <Palette size={15} /> 外观
+                <Palette size={15} /> Appearance
               </CardTitle>
-              <CardDescription>与 EV Desktop 使用相同的主题和紧凑密度。</CardDescription>
+              <CardDescription>Shares theme and compact density with EV Desktop.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className='ev-setting-row'>
                 <div className='ev-setting-copy'>
-                  <strong>主题</strong>
-                  <small>浅色、深色或跟随系统</small>
+                  <strong>Theme</strong>
+                  <small>Light, dark, or follow the system</small>
                 </div>
                 <MenuPicker
                   value={options.theme}
                   options={THEME_OPTIONS}
-                  ariaLabel='界面主题'
+                  ariaLabel='UI theme'
                   onValueChange={theme => setOptions({ ...options, theme })}
                 />
               </div>
               <div className='ev-setting-row ev-background-setting'>
                 <div className='ev-setting-copy'>
-                  <strong>整页背景图</strong>
-                  <small>{backgroundImage?.name ?? '上传本地图片，填满整个新标签页'}</small>
+                  <strong>Full-page background</strong>
+                  <small>
+                    {backgroundImage?.name ?? 'Upload a local image to cover the new tab page'}
+                  </small>
                 </div>
                 <div className='ev-background-controls'>
                   {backgroundImage && (
@@ -246,15 +252,15 @@ const OptionsPage = () => {
                     variant='outline'
                     size='sm'
                     onClick={() => backgroundFileRef.current?.click()}>
-                    <ImageIcon size={14} /> 选择图片
+                    <ImageIcon size={14} /> Choose image
                   </Button>
                   {backgroundImage && (
                     <Button
                       variant='ghost'
                       size='icon'
                       onClick={() => void clearBackgroundImage()}
-                      aria-label='清除背景图片'
-                      title='清除背景图片'>
+                      aria-label='Clear background image'
+                      title='Clear background image'>
                       <Trash2 size={14} />
                     </Button>
                   )}
@@ -264,13 +270,13 @@ const OptionsPage = () => {
                     type='file'
                     accept='image/*'
                     onChange={event => void selectBackgroundImage(event)}
-                    aria-label='选择背景图片文件'
+                    aria-label='Background image file'
                   />
                 </div>
               </div>
               {backgroundImage && options.background.type === 'image' && (
                 <label className='ev-background-opacity'>
-                  <span>背景强度</span>
+                  <span>Background intensity</span>
                   <input
                     type='range'
                     min='20'
@@ -292,13 +298,13 @@ const OptionsPage = () => {
               )}
               <div className='ev-setting-row'>
                 <div className='ev-setting-copy'>
-                  <strong>排序方式</strong>
-                  <small>新标签页中的默认书签顺序</small>
+                  <strong>Sort order</strong>
+                  <small>Default bookmark order on the new tab page</small>
                 </div>
                 <MenuPicker
                   value={options.sortBy}
                   options={SORT_OPTIONS}
-                  ariaLabel='书签排序方式'
+                  ariaLabel='Bookmark sort order'
                   onValueChange={sortBy => setOptions({ ...options, sortBy })}
                 />
               </div>
@@ -311,14 +317,17 @@ const OptionsPage = () => {
                 <Cable size={15} /> Desktop Bridge
               </CardTitle>
               <CardDescription>
-                自动发现本机 EV Desktop，首次连接只需在 Desktop 批准。
+                Discovers the local EV Desktop automatically; the first connection only needs
+                approval on the desktop.
               </CardDescription>
             </CardHeader>
             <CardContent className='space-y-3'>
               <label className='ev-setting-row'>
                 <span className='ev-setting-copy'>
-                  <strong>启用 Desktop Bridge</strong>
-                  <small>地址和 token 由扩展与 Desktop 自动管理</small>
+                  <strong>Enable Desktop Bridge</strong>
+                  <small>
+                    Address and token are managed automatically by the extension and the desktop
+                  </small>
                 </span>
                 <input
                   type='checkbox'
@@ -329,8 +338,8 @@ const OptionsPage = () => {
 
               <label className='ev-setting-row'>
                 <span className='ev-setting-copy'>
-                  <strong>允许操作网页</strong>
-                  <small>保存时由浏览器显示 optional host permission 确认</small>
+                  <strong>Allow page actions</strong>
+                  <small>On save, the browser shows the optional host permission prompt</small>
                 </span>
                 <input
                   type='checkbox'
@@ -342,9 +351,12 @@ const OptionsPage = () => {
               <label className='ev-setting-row'>
                 <span className='ev-setting-copy'>
                   <strong className='flex items-center gap-2'>
-                    <Download size={14} /> 允许 Agent 下载媒体
+                    <Download size={14} /> Let the agent download media
                   </strong>
-                  <small>保存到浏览器默认下载目录的 EV 子目录；不支持 DRM 内容</small>
+                  <small>
+                    Saved to an EV subdirectory of the browser default download folder; DRM content
+                    is not supported
+                  </small>
                 </span>
                 <input
                   type='checkbox'
@@ -355,15 +367,15 @@ const OptionsPage = () => {
 
               <div className='ev-setting-row'>
                 <span className='ev-setting-copy'>
-                  <strong>连接状态</strong>
+                  <strong>Connection status</strong>
                   <small>{BRIDGE_STATUS_LABELS[bridgeStatus]}</small>
                 </span>
                 <div className='ev-background-controls'>
                   <Button variant='outline' size='sm' onClick={() => void refreshBridgeStatus()}>
-                    刷新状态
+                    Refresh status
                   </Button>
                   <Button variant='outline' size='sm' onClick={() => void reconnectBridge()}>
-                    请求重连
+                    Request reconnect
                   </Button>
                 </div>
               </div>
@@ -372,7 +384,7 @@ const OptionsPage = () => {
 
           <footer className='ev-settings-footer'>
             {status && <span className='ev-settings-status'>{status}</span>}
-            <Button onClick={saveOptions}>保存设置</Button>
+            <Button onClick={saveOptions}>Save settings</Button>
           </footer>
         </div>
       </div>

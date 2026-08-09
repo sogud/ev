@@ -1,26 +1,29 @@
+import { i18n } from '../../i18n';
 import { Popover } from '@base-ui/react/popover';
 import { ChevronDown } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useDialogPortalContainer } from './portal-container';
 import type { ThinkingLevel } from '../../../../shared/types';
 
-const THINKING_LEVELS: Array<{ value: ThinkingLevel; label: string }> = [
-  { value: 'off', label: '不思考' },
-  { value: 'minimal', label: '最少' },
-  { value: 'low', label: '低' },
-  { value: 'medium', label: '中' },
-  { value: 'high', label: '高' },
-  { value: 'xhigh', label: '极高' },
-  { value: 'max', label: '最大' },
+// Labels resolve at render time so a runtime language switch re-renders correctly.
+const THINKING_LEVELS: Array<{ value: ThinkingLevel; key: string }> = [
+  { value: 'off', key: 'thinking.off' },
+  { value: 'minimal', key: 'thinking.minimal' },
+  { value: 'low', key: 'thinking.low' },
+  { value: 'medium', key: 'thinking.medium' },
+  { value: 'high', key: 'thinking.high' },
+  { value: 'xhigh', key: 'thinking.xhigh' },
+  { value: 'max', key: 'thinking.max' },
 ];
 
 function thinkingLevelLabel(value: ThinkingLevel): string {
-  return THINKING_LEVELS.find(option => option.value === value)?.label ?? value;
+  const key = THINKING_LEVELS.find(option => option.value === value)?.key;
+  return key ? i18n.t(key) : value;
 }
 
 /**
- * 离散阶梯滑块（思考强度）。用户定案：思考强度用滑块，不用菜单。
- * 键盘可达：方向键/Home/End；每个 stop 也可点击。
+ * Discrete stepped slider for thinking effort (settled decision: slider, not a menu).
+ * Keyboard reachable: arrows/Home/End; every stop is clickable.
  */
 function EffortSlider({
   value,
@@ -47,11 +50,15 @@ function EffortSlider({
       className='effort-slider'
       role='slider'
       tabIndex={0}
-      aria-label='思考强度'
+      aria-label={i18n.t('thinking.aria')}
       aria-valuemin={1}
       aria-valuemax={THINKING_LEVELS.length}
       aria-valuenow={index + 1}
-      aria-valuetext={`${thinkingLevelLabel(value)}，第 ${index + 1} 项，共 ${THINKING_LEVELS.length} 项`}
+      aria-valuetext={i18n.t('thinking.valueText', {
+        label: thinkingLevelLabel(value),
+        index: index + 1,
+        count: THINKING_LEVELS.length,
+      })}
       onKeyDown={event => {
         if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
           event.preventDefault();
@@ -74,7 +81,7 @@ function EffortSlider({
           key={option.value}
           type='button'
           tabIndex={-1}
-          aria-label={option.label}
+          aria-label={i18n.t(option.key)}
           className={`stop ${stop <= index ? 'on' : ''}`}
           style={{ left: pos(stop / last) }}
           onClick={() => onValueChange(option.value)}
@@ -85,7 +92,7 @@ function EffortSlider({
   );
 }
 
-/** 思考强度入口：trigger 显示当前档位，弹层内是离散阶梯滑块。 */
+/** Thinking effort entry point: trigger shows the current step; popup hosts the stepped slider. */
 export function ThinkingPicker({
   value,
   className = '',
@@ -103,8 +110,8 @@ export function ThinkingPicker({
       <Popover.Trigger
         ref={triggerRef}
         className={`ui-picker-trigger thinking-picker-trigger ${className}`.trim()}
-        aria-label='思考强度'>
-        <span>思考：{thinkingLevelLabel(value)}</span>
+        aria-label={i18n.t('thinking.aria')}>
+        <span>{i18n.t('thinking.trigger', { label: thinkingLevelLabel(value) })}</span>
         <ChevronDown className='ui-picker-chevron' size={13} aria-hidden='true' />
       </Popover.Trigger>
       <Popover.Portal container={portalContainer ?? undefined}>

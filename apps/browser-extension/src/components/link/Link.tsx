@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { Bookmark, BookmarkHandler, BookmarkItemProps } from '../../types';
+import type { Bookmark, BookmarkHandler, BookmarkItemProps } from '../../types';
 import { getFaviconUrl } from '../../utils/favicon';
 import { cn } from '../../lib/utils';
 import EditMode from '../ui/edit-mode';
@@ -129,7 +129,7 @@ const Link: React.FC<LinkProps> = React.memo(
               initialValue={data.title}
               onSave={handleEditSave}
               onCancel={() => setMode('normal')}
-              placeholder='输入书签名称...'
+              placeholder='Enter bookmark name...'
             />
           </div>
         </div>
@@ -175,7 +175,7 @@ const Link: React.FC<LinkProps> = React.memo(
           setMode('editing');
         }}
         onContextMenu={event => onContextMenu?.(event, data)}
-        aria-label={`打开书签: ${data.title}`}
+        aria-label={`Open bookmark: ${data.title}`}
         onKeyDown={event => {
           if (event.key === ' ') {
             event.preventDefault();

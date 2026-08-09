@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptItem } from '../../../shared/types';
 import { buildTranscriptView, type ChangedFileView, type TurnView } from '../transcript-view-model';
@@ -162,6 +163,7 @@ export function Transcript({
   running: boolean;
   onViewDiff(): void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const view = useMemo(() => buildTranscriptView(items, running), [items, running]);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), [view]);
@@ -186,7 +188,7 @@ export function Transcript({
             )}
             <footer className='turn-footer'>
               {formatClock(turn.endedAt)} · {formatDuration(turn)}
-              {turn.running ? ' · 进行中' : ''}
+              {turn.running ? ` · ${t('transcript.running')}` : ''}
             </footer>
           </section>
         ))}
@@ -194,7 +196,7 @@ export function Transcript({
           <div className='working-indicator'>
             <span />
             <span />
-            <span /> 正在处理
+            <span /> {t('transcript.processing')}
           </div>
         )}
         <div ref={endRef} />

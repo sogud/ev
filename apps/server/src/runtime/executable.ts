@@ -138,9 +138,10 @@ export async function runtimeChildEnvironment(
 }
 
 /**
- * Runtime 子进程 env 的唯一入口：登录 shell PATH + 固定兜底 + EV launcher 目录。
- * launcher 目录由 index.ts 启动期写入 EV_CLI_BIN_DIR（配置值，非子进程 env 泄漏）；
- * 各 adapter 与 lifecycle 只取用它，不再各自拼 PATH。
+ * Single entry point for runtime child env: login-shell PATH + fixed fallback +
+ * the EV launcher dir. index.ts writes EV_CLI_BIN_DIR at startup (a configured
+ * value, not a child-env leak); adapters and lifecycle consume it instead of
+ * assembling PATH themselves.
  */
 export async function launchEnvironment(
   base: NodeJS.ProcessEnv = process.env

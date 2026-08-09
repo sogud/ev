@@ -40,16 +40,16 @@ class UsageError extends Error {}
 
 function usage(): string {
   return [
-    '用法：',
+    'usage:',
     '  ev browser <action> [--payload <json> | --payload-file <path>]',
     '                    [--timeout <seconds>] [--output <path>] [--compact]',
     '  ev browser check',
-    '  ev status                     同网直连/Tailscale 双 URL + token 打码提示',
+    '  ev status                     LAN/Tailscale URLs + masked-token hint',
     '  ev remote on|off|status',
     '  ev token create --tier observer|operator | list | revoke <id>',
     '  ev server start|stop|status / ev task … / ev runtime …',
     '',
-    '示例：',
+    'examples:',
     '  ev browser tabs.list',
     '  ev browser page.snapshot --payload \'{"mode":"interactive"}\'',
     '  ev browser page.click --payload \'{"selector":"@e1"}\'',
@@ -61,7 +61,7 @@ function usage(): string {
 }
 
 async function parseArguments(argv: string[]): Promise<ParsedArguments> {
-  if (argv[0] !== 'browser') throw new UsageError('当前仅支持 ev browser 命令');
+  if (argv[0] !== 'browser') throw new UsageError('only ev browser commands are supported here');
   const action = argv[1];
   if (!action || action === '--help' || action === '-h') throw new UsageError(usage());
 
@@ -75,7 +75,7 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
     const argument = argv[index];
     if (argument === '--payload') {
       const value = argv[++index];
-      if (!value) throw new UsageError('--payload 缺少 JSON 参数');
+      if (!value) throw new UsageError('--payload is missing its JSON argument');
       try {
         const decoded = JSON.parse(value);
         if (!decoded || typeof decoded !== 'object' || Array.isArray(decoded)) {
@@ -83,33 +83,33 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
         }
         payload = decoded as Record<string, unknown>;
       } catch {
-        throw new UsageError('--payload 必须是 JSON object');
+        throw new UsageError('--payload must be a JSON object');
       }
       continue;
     }
     if (argument === '--payload-file') {
       payloadFile = argv[++index];
-      if (!payloadFile) throw new UsageError('--payload-file 缺少文件路径');
+      if (!payloadFile) throw new UsageError('--payload-file is missing its file path');
       continue;
     }
     if (argument === '--timeout') {
       const value = Number(argv[++index]);
       if (!Number.isFinite(value) || value <= 0 || value > 300) {
-        throw new UsageError('--timeout 必须是 0–300 秒之间的数字');
+        throw new UsageError('--timeout must be a number between 0 and 300 seconds');
       }
       timeoutMs = value * 1000;
       continue;
     }
     if (argument === '--output') {
       outputPath = argv[++index];
-      if (!outputPath) throw new UsageError('--output 缺少文件路径');
+      if (!outputPath) throw new UsageError('--output is missing its file path');
       continue;
     }
     if (argument === '--compact') {
       compact = true;
       continue;
     }
-    throw new UsageError(`未知参数：${argument}`);
+    throw new UsageError(`unknown argument: ${argument}`);
   }
 
   if (payloadFile) {
@@ -121,7 +121,7 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
       payload = decoded as Record<string, unknown>;
     } catch (error) {
       throw new UsageError(
-        `无法读取 payload 文件：${error instanceof Error ? error.message : String(error)}`
+        `cannot read payload file: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -138,9 +138,11 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
 async function validateLocalFiles(command: BrowserCommand): Promise<void> {
   if (command.action !== 'page.upload') return;
   for (const filePath of command.filePaths) {
-    if (!path.isAbsolute(filePath)) throw new UsageError(`上传文件必须使用绝对路径：${filePath}`);
+    if (!path.isAbsolute(filePath))
+      throw new UsageError(`upload paths must be absolute: ${filePath}`);
     const info = await stat(filePath).catch(() => null);
-    if (!info?.isFile()) throw new UsageError(`上传文件不存在或不是文件：${filePath}`);
+    if (!info?.isFile())
+      throw new UsageError(`upload target is missing or not a file: ${filePath}`);
   }
 }
 
@@ -154,19 +156,20 @@ async function readDiscovery(): Promise<DiscoveryFile & { token: string }> {
   try {
     decoded = JSON.parse(await readFile(filePath, 'utf8'));
   } catch {
-    throw new Error('EV Desktop 未运行或 Browser CLI 服务不可用');
+    throw new Error('EV Desktop is not running or the Browser CLI service is unavailable');
   }
-  if (!decoded || typeof decoded !== 'object') throw new Error('Browser CLI discovery 文件无效');
+  if (!decoded || typeof decoded !== 'object')
+    throw new Error('Browser CLI discovery file is invalid');
   const value = decoded as Record<string, unknown>;
   if (
     value.protocolVersion !== EV_PROTOCOL_VERSION ||
     typeof value.socketPath !== 'string' ||
     typeof value.tokenPath !== 'string'
   ) {
-    throw new Error('Browser CLI discovery 文件版本或字段无效');
+    throw new Error('Browser CLI discovery file version or fields are invalid');
   }
   const token = (await readFile(value.tokenPath, 'utf8')).trim();
-  if (token.length < 32) throw new Error('Browser CLI token 无效');
+  if (token.length < 32) throw new Error('Browser CLI token is invalid');
   return {
     protocolVersion: EV_PROTOCOL_VERSION,
     socketPath: value.socketPath,
@@ -233,7 +236,7 @@ async function saveOutput(
   outputPath: string
 ): Promise<unknown> {
   if (command.action !== 'page.screenshot') {
-    throw new UsageError('--output 当前仅支持 page.screenshot');
+    throw new UsageError('--output currently supports page.screenshot only');
   }
   if (!data || typeof data !== 'object' || !('data' in data) || typeof data.data !== 'string') {
     throw new Error('Screenshot response does not contain image data');
@@ -260,7 +263,7 @@ export async function run(argv: string[]): Promise<number> {
         return 0;
       }
       if (argv[2] && argv[2] !== 'serve' && argv[2] !== '--background') {
-        throw new UsageError('用法：ev browser host [serve|stop]');
+        throw new UsageError('usage: ev browser host [serve|stop]');
       }
       await runStandaloneHost();
       return 0;
@@ -271,7 +274,7 @@ export async function run(argv: string[]): Promise<number> {
       ...parsed.payload,
     });
     if (!commandResult.success) {
-      throw new UsageError('不支持或参数无效的浏览器 action');
+      throw new UsageError('unsupported browser action or invalid parameters');
     }
     await validateLocalFiles(commandResult.data);
     if (!process.env.EV_BROWSER_CONTROL_FILE?.trim()) await ensureStandaloneHost();

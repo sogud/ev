@@ -33,13 +33,13 @@ describe('SQLite KV store（M1）', () => {
     expect(store.get('theme')).toBe('dark');
   });
 
-  it('重启持久化：resetBackend 后重开仍在', () => {
+  it('persists across restart: still present after resetBackend', () => {
     const store = new Store<{ tasks: number[] }>({
       name: 'agent-desktop',
       defaults: { tasks: [] },
     });
     store.set('tasks', [1, 2, 3]);
-    resetBackend(); // 模拟进程重启
+    resetBackend(); // simulate a process restart
     const reopened = new Store<{ tasks: number[] }>({
       name: 'agent-desktop',
       defaults: { tasks: [] },
@@ -48,7 +48,7 @@ describe('SQLite KV store（M1）', () => {
     expect(existsSync(join(data, 'ev.db'))).toBe(true);
   });
 
-  it('旧 JSON 迁移不丢失且幂等', () => {
+  it('legacy JSON migration loses nothing and is idempotent', () => {
     mkdirSync(legacy, { recursive: true });
     writeFileSync(
       join(legacy, 'agent-desktop.json'),
@@ -60,7 +60,7 @@ describe('SQLite KV store（M1）', () => {
     });
     expect(migrated.get('tasks')).toEqual([{ id: 'old-1' }]);
 
-    // 迁移后写入新值；再次 reset（模拟二次启动）不得被旧文件覆盖。
+    // write a new value after migration; a second reset (simulated reboot) must not be overwritten by the old file.
     migrated.set('tasks', [{ id: 'new-1' }]);
     resetBackend();
     const second = new Store<{ tasks: Array<{ id: string }> }>({
@@ -69,7 +69,7 @@ describe('SQLite KV store（M1）', () => {
     });
     expect(second.get('tasks')).toEqual([{ id: 'new-1' }]);
     expect(existsSync(join(data, 'migrated-to-sqlite.json'))).toBe(true);
-    // 旧文件保留不删
+    // old files are kept, never deleted
     expect(existsSync(join(legacy, 'agent-desktop.json'))).toBe(true);
   });
 });

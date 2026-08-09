@@ -18,7 +18,6 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-
 export async function ensureEvCliLauncher(options: CliLauncherOptions): Promise<CliLauncherResult> {
   const platform = options.platform ?? process.platform;
   const binDirectory = path.join(options.homeDirectory, '.ev', 'bin');
@@ -29,7 +28,11 @@ export async function ensureEvCliLauncher(options: CliLauncherOptions): Promise<
   const launcherPath = path.join(binDirectory, isWindows ? 'ev.cmd' : 'ev');
   const content = isWindows
     ? ['@echo off', `"${options.executablePath}" "${options.cliScript}" %*`, ''].join('\r\n')
-    : ['#!/bin/sh', `exec ${shellQuote(options.executablePath)} ${shellQuote(options.cliScript)} "$@"`, ''].join('\n');
+    : [
+        '#!/bin/sh',
+        `exec ${shellQuote(options.executablePath)} ${shellQuote(options.cliScript)} "$@"`,
+        '',
+      ].join('\n');
   await writeFile(launcherPath, content, { mode: 0o700 });
   if (!isWindows) await chmod(launcherPath, 0o700);
 

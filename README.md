@@ -1,79 +1,113 @@
 # EV — Enhanced Vigilance
 
-EV 是各种 Agent 与各种工具的 **UI 表达层**：不自研 Agent 运行时，为可插拔的 runtime（Pi、Codex，后续 Claude Code / Qoder 等）与通用工具（浏览器控制、媒体下载，后续 git / terminal 等）提供统一、精致的交互表达。个人拥有、本地优先；桌面端通过 CLI 进程适配 runtime，浏览器扩展负责书签、页面上下文和浏览器内交互。
+**A local-first desktop agent that puts your existing coding runtimes — Pi,
+Codex, Claude Code, Qoder — behind one calm interface, on your Mac and on
+your phone.**
 
-## Monorepo
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![ci](https://img.shields.io/badge/ci-verify%20%2B%20lint%20%2B%20golden-green.svg)](.github/workflows/ci.yml)
 
-```text
-apps/
-├── desktop/             # Electron 桌面端与 Pi runtime host
-├── browser-extension/   # Chrome Manifest V3 扩展与 CDP 执行端
-└── cli/                 # Desktop bundled / npm / standalone `ev` CLI
-packages/
-├── browser-host/        # Desktop 与 standalone CLI 共享的 Bridge、Socket 和下载宿主
-├── contracts/           # 跨应用消息与数据契约
-└── design-tokens/       # Desktop 与 Browser 共享主题、密度和语义 token
-skills/
-└── ev-browser/          # 默认加载的浏览器操作 Skill
-```
+## Why EV
 
-Desktop 是任务编排、Trace 和 CLI Runtime Process Host；Pi、Codex、Claude Code 与 Qoder 分别拥有自己的原生会话历史、认证和执行语义。Browser Extension 不保存模型密钥，也不直接执行任意本地命令。浏览器能力由共享的 `@ev/browser-host` 提供：Desktop 运行时 CLI 复用其 Host，没有 Desktop 时 CLI 自动启动 standalone Host。两种模式都只监听 `127.0.0.1`，Extension 地址固定且凭据不暴露给 Agent；Desktop 首次配对需要用户批准，standalone 模式自动接受本机可信扩展。浏览器页面动作由扩展通过 Chrome CDP 执行；Pi 和其他 Agent Runtime 统一使用 `ev browser` CLI 与 `ev-browser` Skill。Agent 可先取得页面资源 `@mN` refs，再把明确选择的直链图片/视频或非 DRM HLS/DASH 流下载到 `Downloads/EV`。Desktop 与 Browser 共同使用 `@ev/design-tokens`，支持跟随系统、浅色和深色主题。
+- **One inbox for every runtime.** Switch Pi / Codex / Claude Code / Qoder
+  per task; auth stays native to each tool — EV never stores credentials.
+- **Local by design.** A headless local server on `127.0.0.1`; the Electron
+  shell, the CLI and the mobile web app are thin clients of the same
+  contract.
+- **Phone access without a cloud.** Optional remote bind to your LAN or
+  Tailscale address with token tiers (observer read-only / operator), so
+  your agent follows you to the couch.
+- **Honest observability.** Live transcripts, per-turn traces, workspace
+  diffs and a read-only inspector instead of opaque "agent did things".
 
-## 开发
+## Features
 
-要求：Bun 1.x、Node.js 22.19+。
+- Task list with per-task runtime, model and thinking effort; locked after
+  the first message to keep sessions honest.
+- Streaming transcript with tool calls, changed-files cards and turn
+  footnotes; workspace diff inspector (diff-first by design).
+- Runtime health drawer: native auth status (read-only), config paths,
+  model catalog — EV displays, never writes, native configs.
+- Browser bridge: paired extension over `127.0.0.1` with explicit approval.
+- Mobile web entry at `/m`: task list, chat, model switch — nothing else.
+- i18n: English (default) and 中文, following your system locale with a
+  per-user override in Settings → General → Language.
+
+## Quick start
+
+Requirements: [Bun](https://bun.sh), Node.js ≥ 20.
 
 ```bash
+# install and build everything
 bun install
+bun run build
+
+# run the desktop app (starts the local server automatically)
 bun run dev:desktop
-bun run dev:extension
 
-# Desktop 可选；不存在时 CLI 自动启动 standalone Browser Host
-bun run --cwd apps/cli build:standalone
-apps/cli/dist/ev-$(node -p "process.platform+'-'+process.arch") browser check
+# or package a local build
+bun run pack                  # Electron app
+bun run package:extension     # browser extension
 ```
 
-完整验证：
+The CLI ships with the app and self-hosts the server when the desktop is
+closed:
 
 ```bash
-bun run verify
+ev status                     # local/remote URLs + token guidance
+ev task create --runtime pi
+ev task prompt <id> "say hi"
+ev task follow <id> --until-idle
 ```
 
-## 远程与手机
-
-- `ev remote on|off|status`：开启后 server 绑定 localhost + 本机私网地址（LAN/ Tailscale，永不 0.0.0.0），`ev server status` 给出 lanUrl/tailscaleUrl 与安全提示。
-- `ev token create --tier observer|operator` / `ev token list` / `ev token revoke <id>`：非 localhost 一律要 token；observer 只读，mutation 403。
-- 手机访问 `http://<host>:<port>/m/?port=<port>&token=<token>`：独立 React entry，仅任务列表/对话/切模型；桌面 UI 零改动。
-
-## 发布
-
-根 `package.json` 是版本号的单一事实源，正式发布时 Desktop 和 Browser Extension 使用同一版本。
+### Phone access (optional)
 
 ```bash
-# 只查看下一版本和操作计划
-bun run release --dry-run patch
-
-# 验证、更新版本、创建提交和 Tag，并原子推送
-bun run release patch
+ev remote on                  # bind localhost + private LAN/Tailscale IPs
+ev token create --tier observer   # read-only token, printed once
+ev status                     # shows lanUrl / tailscaleUrl + masked mobile URL
 ```
 
-发布脚本要求 `master` 工作树干净且与 `origin/master` 同步。推送 `v*` Tag 后，GitHub Actions 会重新验证项目，生成 Desktop DMG/ZIP、Chrome/Firefox Extension ZIP、npm CLI tarball、当前平台 standalone CLI、SHA-256 checksums 和 GitHub Release。可使用 `--no-push` 只创建本地提交与 Tag。
+Open the printed `/m/?port=…&token=…` URL on your phone. LAN is plain HTTP —
+use it on networks you trust; use Tailscale elsewhere. Revoke with
+`ev token revoke <id>`, disable with `ev remote off`.
 
-当前 macOS 产物尚未配置 Apple Developer 签名和 notarization。
+## Architecture
 
-应用说明：
+```
+apps/desktop        Electron shell + renderer (thin client)
+apps/server         headless local server (tasks, runtimes, WS events)
+apps/cli            ev … command-line client
+apps/browser-extension  paired browser bridge
+apps/mobile         standalone mobile web entry (/m)
+packages/contracts  the only shared package: RPC registry + wire types
+packages/locales    i18next resources (en/zh), single source of truth
+```
 
-- [Desktop](./apps/desktop/README.md)
-- [Browser Extension](./apps/browser-extension/README.md)
-- [CLI](./apps/cli/README.md)
+- [Server/client split](docs/specs/server-client-split-v1.md) — why the
+  renderer is a pure HTTP+WS client.
+- [Agent runtime adapters](docs/agent-runtime-adapters.md) — plugin levels
+  and the add-a-runtime checklist.
+- [Roadmap](docs/specs/roadmap.md) — what is in flight and what retired.
 
-Desktop 会自动读取 `~/.pi/agent/sessions/` 中的 Pi 历史和 Codex app-server 的原生 threads。新任务可选择 Pi、Codex CLI、Claude Code 或 Qoder；首条消息前可切换 Runtime，之后固定。
+Server and CLI output is English by design; the UI ships in English and
+中文 (`packages/locales`).
 
-改造前的 in-process Pi SDK 源码可从 Git tag `archive/sdk-runtime-2026-08-04` 查看。
+## Contributing
 
-产品与工程知识：
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first — it covers setup, the
+validation gates, and the AI-contribution policy (disclosure + human review
 
-- [Desktop Design System](./docs/desktop-design-system.md)
-- [Agent Runtime Adapters](./docs/agent-runtime-adapters.md)
+- comment density). The community follows the
+  [Code of Conduct](CODE_OF_CONDUCT.md).
 
-后续功能和优先级见 [docs/specs/roadmap.md](./docs/specs/roadmap.md)。
+## Security
+
+EV binds localhost only by default; remote access is opt-in, token-gated and
+never `0.0.0.0`. Credentials belong to your runtimes, not to EV. If you find
+a vulnerability, please open a private issue or contact the maintainers
+before public disclosure.
+
+## License
+
+[Apache License 2.0](LICENSE)

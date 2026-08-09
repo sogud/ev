@@ -7,13 +7,14 @@ import type { RuntimeDescriptor } from '@ev/contracts';
 export type NativeAuth = NonNullable<RuntimeDescriptor['auth']>;
 
 /**
- * 四家原生登录态只读探测（native-auth-display-v1）。
- * 路径以 2026-08-08 本机实测为准：
- * - pi：~/.pi/agent/auth.json（provider→凭据 的 dict，非空=已登录）
- * - codex：~/.codex/auth.json（tokens/OPENAI_API_KEY 存在=已登录）
- * - claude-code：macOS keychain 条目「Claude Code-credentials」（.credentials.json 本机不存在）
- * - qoder：~/.qoder/.auth/user（不透明加密文件，存在=已登录）
- * EV 只读不写；探测失败返回 unknown，不猜。
+ * Read-only probes for the four native login states (native-auth-display-v1).
+ * Paths verified on this machine on 2026-08-08:
+ * - pi: ~/.pi/agent/auth.json (provider -> credential dict; non-empty = logged in)
+ * - codex: ~/.codex/auth.json (tokens/OPENAI_API_KEY present = logged in)
+ * - claude-code: macOS keychain entry "Claude Code-credentials"
+ *   (.credentials.json does not exist locally)
+ * - qoder: ~/.qoder/.auth/user (opaque encrypted file; present = logged in)
+ * EV never writes these; a failed probe reports unknown instead of guessing.
  */
 
 function readJson(path: string): Record<string, unknown> | null {
@@ -28,7 +29,10 @@ function readJson(path: string): Record<string, unknown> | null {
 export function probePi(): NativeAuth {
   const authPath = join(homedir(), '.pi', 'agent', 'auth.json');
   const settingsPath = join(homedir(), '.pi', 'agent', 'settings.json');
-  const base = { configPaths: [authPath, settingsPath], hint: '运行 pi 并按提示完成原生认证' };
+  const base = {
+    configPaths: [authPath, settingsPath],
+    hint: 'Run pi and finish native auth as prompted',
+  };
   const data = readJson(authPath);
   if (!data) {
     return existsSync(authPath)
@@ -55,7 +59,7 @@ export function probeCodex(): NativeAuth {
 export async function probeClaude(): Promise<NativeAuth> {
   const base = {
     configPaths: [join(homedir(), '.claude')],
-    hint: '运行 claude 并按提示完成原生认证（凭据在 macOS keychain）',
+    hint: 'Run claude and finish native auth as prompted (credentials live in the macOS keychain)',
   };
   return await new Promise<NativeAuth>(resolve => {
     execFile(
@@ -82,7 +86,7 @@ export async function probeClaude(): Promise<NativeAuth> {
 export function probeQoder(): NativeAuth {
   const authDir = join(homedir(), '.qoder', '.auth');
   const userFile = join(authDir, 'user');
-  const base = { configPaths: [authDir], hint: '运行 qodercli 并按提示完成原生认证' };
+  const base = { configPaths: [authDir], hint: 'Run qodercli and finish native auth as prompted' };
   try {
     const info = statSync(userFile);
     return info.size > 0 ? { status: 'logged_in', ...base } : { status: 'logged_out', ...base };

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Check, CircleAlert, GitCompare, LoaderCircle, RefreshCw, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { TaskInspection, TraceEvent } from '../../../shared/types';
@@ -14,6 +15,7 @@ export function InspectorPanel({
   liveTrace: TraceEvent[];
   onClose(): void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<InspectorTab>('trace');
   const [inspection, setInspection] = useState<TaskInspection | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,7 +39,7 @@ export function InspectorPanel({
 
   const trace = liveTrace.length > 0 ? liveTrace : (inspection?.trace ?? []);
   return (
-    <aside className='inspector-panel' aria-label='任务检查器'>
+    <aside className='inspector-panel' aria-label={t('inspector.aria')}>
       <header>
         <div className='inspector-tabs'>
           <button
@@ -50,18 +52,22 @@ export function InspectorPanel({
             className={tab === 'changes' ? 'active' : ''}
             type='button'
             onClick={() => setTab('changes')}>
-            变更
+            {t('inspector.changes')}
           </button>
         </div>
         <button
           className='icon-button'
           type='button'
-          aria-label='刷新'
+          aria-label={t('inspector.refreshAria')}
           disabled={loading}
           onClick={() => void refresh()}>
           <RefreshCw className={loading ? 'spin' : ''} size={15} />
         </button>
-        <button className='icon-button' type='button' aria-label='关闭检查器' onClick={onClose}>
+        <button
+          className='icon-button'
+          type='button'
+          aria-label={t('inspector.closeAria')}
+          onClick={onClose}>
           <X size={16} />
         </button>
       </header>
@@ -78,8 +84,8 @@ export function InspectorPanel({
 }
 
 function TraceList({ trace }: { trace: TraceEvent[] }): React.JSX.Element {
-  if (trace.length === 0)
-    return <div className='inspector-empty'>运行任务后，这里会显示模型和工具调用。</div>;
+  const { t } = useTranslation();
+  if (trace.length === 0) return <div className='inspector-empty'>{t('inspector.empty')}</div>;
   return (
     <div className='trace-list'>
       {trace.map(event => (
@@ -110,16 +116,17 @@ function TraceList({ trace }: { trace: TraceEvent[] }): React.JSX.Element {
 }
 
 /*
- * diff-first（ticket 0005 定案）：文件列表是索引，点选看该文件的 diff 段；
- * 默认选中第一个有 diff 的文件。接受/撤销不属于本规格（见 ticket Resolution）。
+ * Diff-first (ticket 0005): the file list is an index; selecting one shows its diff hunk.
+ * The first file with a diff is selected by default. Accept/revert is out of scope.
  */
 function Changes({ inspection }: { inspection: TaskInspection | null }): React.JSX.Element {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState<string | null>(null);
   const perFile = useMemo(() => splitDiffByFile(inspection?.changes.diff ?? ''), [inspection]);
-  if (!inspection) return <div className='inspector-empty'>正在读取工作区变更…</div>;
+  if (!inspection) return <div className='inspector-empty'>{t('inspector.loading')}</div>;
   const { changes } = inspection;
   if (!changes.isGitRepository)
-    return <div className='inspector-empty'>当前目录不是 Git 仓库。</div>;
+    return <div className='inspector-empty'>{t('inspector.notGit')}</div>;
   const withDiff = changes.files.filter(file => perFile.has(file.path));
   const current =
     selected && (perFile.has(selected) || changes.files.some(f => f.path === selected))
@@ -130,7 +137,7 @@ function Changes({ inspection }: { inspection: TaskInspection | null }): React.J
       <div className='changed-files'>
         <h3>
           <GitCompare size={14} />
-          工作区变更 <span>{changes.files.length}</span>
+          {t('inspector.workspaceChanges')} <span>{changes.files.length}</span>
         </h3>
         {changes.files.map(file => (
           <button
@@ -142,13 +149,13 @@ function Changes({ inspection }: { inspection: TaskInspection | null }): React.J
             <span>{file.path}</span>
           </button>
         ))}
-        {changes.files.length === 0 && <p>没有未提交变更。</p>}
+        {changes.files.length === 0 && <p>{t('inspector.noChanges')}</p>}
       </div>
       {current &&
         (perFile.has(current) ? (
           <pre className='diff-view'>{perFile.get(current)}</pre>
         ) : (
-          <p className='inline-error'>该文件暂无未暂存 diff（可能未跟踪或已暂存）。</p>
+          <p className='inline-error'>{t('inspector.noDiff')}</p>
         ))}
       {changes.error && <p className='inline-error'>{changes.error}</p>}
     </div>

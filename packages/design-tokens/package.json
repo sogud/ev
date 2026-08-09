@@ -8,5 +8,6 @@
   },
   "files": [
     "theme.css"
-  ]
+  ],
+  "license": "Apache-2.0"
 }

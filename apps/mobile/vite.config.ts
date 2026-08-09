@@ -2,7 +2,7 @@ import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
-// /m 独立入口：base '/m/' 让 index.html 的资产 URL 直接落在 server 的 /m/* 静态路由上。
+// Standalone /m entry: base '/m/' so index.html asset URLs land on the server's /m/* static route.
 export default defineConfig({
   base: '/m/',
   plugins: [react()],

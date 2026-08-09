@@ -1,9 +1,11 @@
 import type { TranscriptItem } from '../../shared/types';
 
 /**
- * Transcript 表达层 view-model mapper（spec: desktop-interaction-expression-layer-v1）。
- * 纯函数：runtime 中立的 TranscriptItem[] → 表达结构。
- * 主流程 = 结果（doc 块 + Changed Files 卡片 + turn 脚注）；过程信息 v1 不展示，留给检查器。
+ * Expression-layer view-model mapper for the transcript
+ * (spec: desktop-interaction-expression-layer-v1). Pure function:
+ * runtime-neutral TranscriptItem[] -> presentation structure.
+ * The main flow shows outcomes (doc blocks + changed-files cards + turn footnotes);
+ * process detail stays in the inspector for v1.
  */
 
 export interface ChangedFileView {
@@ -31,7 +33,7 @@ export interface TranscriptView {
   turns: TurnView[];
 }
 
-// 全部小写；匹配时先 toLowerCase，兼容 Claude 报的 Edit/Write/MultiEdit 首字母大写。
+// All lowercase; match after toLowerCase so Claude's capitalized Edit/Write/MultiEdit still hit.
 const MUTATING_TOOLS = new Set([
   'edit',
   'write',
@@ -53,7 +55,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-/** 从工具调用的 content（args 或 item JSON）里提取被修改的文件路径。 */
+/** Extract modified file paths from a tool call's content (args or item JSON). */
 export function extractChangedPaths(toolName: string, content: string): string[] {
   if (!MUTATING_TOOLS.has(toolName.toLowerCase()) || !content) return [];
   const parsed = parseJson(content);

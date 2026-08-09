@@ -17,7 +17,7 @@ async function runCli(
   const cliDir = path.resolve(import.meta.dirname, '..');
   const distEntry = path.join(cliDir, 'dist', 'ev.js');
   if (!existsSync(distEntry)) {
-    // bun 仅构建工具；CLI 运行时为 node（修订口径）。
+    // bun is a build tool only; the CLI runtime is node.
     const built = spawnSync('bun', ['run', 'build'], { cwd: cliDir, stdio: 'ignore' });
     if (built.status !== 0) throw new Error('cli build failed');
   }
@@ -164,6 +164,6 @@ describe('ev browser CLI', () => {
     );
 
     expect(exitCode).toBe(2);
-    expect(stderr).toContain('不支持或参数无效的浏览器 action');
+    expect(stderr).toContain('unsupported browser action or invalid parameters');
   });
 });

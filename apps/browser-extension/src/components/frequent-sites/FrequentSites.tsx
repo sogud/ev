@@ -51,7 +51,7 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
       setLoading(true);
       setError(null);
       if (!chrome.history) {
-        setError('浏览器没有开放历史记录');
+        setError('The browser did not expose history');
         return;
       }
 
@@ -89,7 +89,7 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
       setSites(processedSites);
     } catch (loadError) {
       console.error('Failed to load frequent sites:', loadError);
-      setError('无法加载常用网站');
+      setError('Could not load frequent sites');
     } finally {
       setLoading(false);
     }
@@ -102,9 +102,9 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
   const formatLastVisit = (timestamp: number): string => {
     const hours = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
-    if (days > 0) return `${days} 天前`;
-    if (hours > 0) return `${hours} 小时前`;
-    return '最近访问';
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    return 'recent';
   };
 
   return (
@@ -112,8 +112,8 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
       <div className='ev-section-heading'>
         <div className='ev-section-heading-main'>
           <div>
-            <h2 id='frequent-sites-title'>常用网站</h2>
-            <p>最近 30 天</p>
+            <h2 id='frequent-sites-title'>Frequent sites</h2>
+            <p>Last 30 days</p>
           </div>
         </div>
         {onClose && (
@@ -121,15 +121,15 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
             variant='ghost'
             size='icon'
             onClick={onClose}
-            aria-label='隐藏常用网站'
-            title='隐藏常用网站'>
+            aria-label='Hide frequent sites'
+            title='Hide frequent sites'>
             <X size={14} />
           </Button>
         )}
       </div>
 
       {loading ? (
-        <div className='ev-frequent-grid' aria-busy='true' aria-label='正在加载常用网站'>
+        <div className='ev-frequent-grid' aria-busy='true' aria-label='Loading frequent sites'>
           {Array.from({ length: maxSites }).map((_, index) => (
             <div key={index} className='loading-skeleton ev-frequent-skeleton' />
           ))}
@@ -138,12 +138,12 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
         <div className='ev-inline-empty' role='status'>
           <span>{error}</span>
           <button type='button' onClick={() => void loadFrequentSites()}>
-            重试
+            Retry
           </button>
         </div>
       ) : sites.length === 0 ? (
         <div className='ev-inline-empty' role='status'>
-          浏览一段时间后，常用网站会出现在这里。
+          Browse for a while and frequent sites will show up here.
         </div>
       ) : (
         <div className='ev-frequent-grid'>
@@ -153,7 +153,7 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
               type='button'
               onClick={() => window.open(site.url, '_blank')}
               className='ev-frequent-site'
-              title={`${site.title} · 访问 ${site.visitCount} 次 · ${formatLastVisit(site.lastVisitTime)}`}>
+              title={`${site.title} · ${site.visitCount} visits · ${formatLastVisit(site.lastVisitTime)}`}>
               <span
                 className='ev-frequent-site-icon'
                 data-letter={site.title[0]?.toUpperCase() ?? '·'}

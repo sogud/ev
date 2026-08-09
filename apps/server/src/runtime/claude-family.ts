@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, type Dirent } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -26,9 +26,11 @@ import type {
 const execFileAsync = promisify(execFile);
 
 /**
- * Claude Code 与 Qoder CLI 共享的 stream-json 子进程协议适配。
- * 两个 CLI 同源（-p --input-format stream-json --output-format stream-json，
- * ~/.<cli>/projects/<cwd-encoded>/*.jsonl 会话存储），因此映射与会话索引共用一份。
+ * Shared stream-json subprocess protocol adapter for Claude Code and Qoder CLI.
+ * Both CLIs speak the same protocol (-p --input-format stream-json
+ * --output-format stream-json, session storage under
+ * ~/.<cli>/projects/<cwd-encoded>/*.jsonl), so one mapping and one session index
+ * serve both.
  */
 
 export interface ClaudeFamilyFlavor {
@@ -36,15 +38,15 @@ export interface ClaudeFamilyFlavor {
   executable: string;
   pathEnvVar: string;
   projectsDirName: string; // '.claude' | '.qoder'
-  /** qodercli 不支持 --verbose（P0 回归根因）；claude-code 需要它开 stream-json 详细事件。 */
+  /** qodercli does not support --verbose (P0 regression root cause); claude-code needs it for detailed stream-json events. */
   supportsVerbose: boolean;
-  /** 两家 permission-mode 词表不同：claude=acceptEdits，qoder=accept_edits。 */
+  /** The permission-mode vocabularies differ: claude=acceptEdits, qoder=accept_edits. */
   permissionModeValue: string;
-  /** 思考强度 CLI flag：claude=--effort，qoder=--reasoning-effort。 */
+  /** Thinking-effort CLI flag: claude=--effort, qoder=--reasoning-effort. */
   effortFlag: string;
-  /** EV thinkingLevel → 各家 effort 词表映射（P2 定案）。 */
+  /** EV thinkingLevel -> per-CLI effort vocabulary mapping (settled in P2). */
   effortValue(level: ThinkingLevel): string;
-  /** 模型候选表：claude=官方别名；qoder=`--list-models` 快照（2026-08-08）。 */
+  /** Model candidate table: claude=official aliases; qoder=`--list-models` snapshot (2026-08-08). */
   modelCatalog: Array<{ id: string; name: string }>;
 }
 
@@ -56,7 +58,7 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/** 纯函数：一条 stream-json 记录 → 0..n 个 RuntimeEvent。单测直接喂记录。 */
+/** Pure function: one stream-json record -> 0..n RuntimeEvents. Unit tests feed records directly. */
 export function mapClaudeFamilyRecord(record: unknown): RuntimeEvent[] {
   if (!isRecord(record)) return [];
   const type = asString(record.type);
@@ -115,7 +117,7 @@ export function mapClaudeFamilyRecord(record: unknown): RuntimeEvent[] {
           timestamp: Date.now(),
         });
     } else if (Array.isArray(content)) {
-      // 用户提问进 transcript：text 块合并为一条 user 消息（id 用 record.uuid 兜底）。
+      // user prompts enter the transcript: text blocks merge into a single user message (id falls back to record.uuid).
       const texts = content
         .filter(
           (block): block is Record<string, unknown> => isRecord(block) && block.type === 'text'
@@ -215,8 +217,9 @@ export class ClaudeFamilySession implements RuntimeSession {
       model: input.model,
       thinkingLevel: input.thinkingLevel,
     };
-    // 恢复会话时先用 jsonl 历史填充 transcript，否则恢复的会话看起来是空的，
-    // 且 setRuntime 的「已有消息即锁定」检查会误判为未开始。只留 message 事件。
+    // On resume, seed the transcript from the jsonl history first; otherwise a
+    // resumed session looks empty and setRuntime's "messages mean locked" check
+    // misreads it as never started. Keep only message events.
     for (const record of history) {
       for (const event of mapClaudeFamilyRecord(record)) {
         if (event.type === 'message') this.events.push(event);
@@ -292,9 +295,9 @@ export const CLAUDE_CODE_FLAVOR: ClaudeFamilyFlavor = {
   supportsVerbose: true,
   permissionModeValue: 'acceptEdits',
   effortFlag: '--effort',
-  // claude 有效词表：low/medium/high/xhigh/max（--effort 实测，2026-08-08）。
+  // claude effective vocabulary: low/medium/high/xhigh/max (--effort, verified 2026-08-08).
   effortValue: level => (level === 'off' || level === 'minimal' ? 'low' : level),
-  // 候选来源：claude --model 官方别名（亦接受完整模型名）。
+  // candidates: claude --model official aliases (full model names also accepted).
   modelCatalog: [
     { id: 'sonnet', name: 'Claude Sonnet' },
     { id: 'opus', name: 'Claude Opus' },
@@ -310,14 +313,14 @@ export const QODER_FLAVOR: ClaudeFamilyFlavor = {
   supportsVerbose: false,
   permissionModeValue: 'accept_edits',
   effortFlag: '--reasoning-effort',
-  // qoder 词表收敛到 low/medium/high 三档（--reasoning-effort 实测不报错但档位有限）。
+  // qoder vocabulary narrows to low/medium/high (--reasoning-effort accepts more without error but the effective tiers are limited).
   effortValue: level =>
     level === 'off' || level === 'minimal' || level === 'low'
       ? 'low'
       : level === 'medium'
         ? 'medium'
         : 'high',
-  // 候选来源：`qodercli --list-models` 快照（2026-08-08）。
+  // candidates: `qodercli --list-models` snapshot (2026-08-08).
   modelCatalog: [
     { id: 'Auto', name: 'Auto' },
     { id: 'Ultimate', name: 'Ultimate' },
@@ -387,7 +390,7 @@ export class ClaudeFamilyAdapter implements AgentRuntimeAdapter {
   async createSession(input: RuntimeSessionInput): Promise<RuntimeSession> {
     const executable = await this.executable();
     if (!executable) throw new Error(`${this.flavor.executable} CLI not found`);
-    // macOS GUI 的 PATH 极简，子进程需要登录 shell PATH + 固定兜底列表。
+    // macOS GUI PATH is minimal; children need the login-shell PATH plus a fixed fallback list.
     const environment = await launchEnvironment(input.environment);
     return new ClaudeFamilySession(this.flavor, { ...input, environment }, null, executable);
   }
@@ -411,7 +414,7 @@ export class ClaudeFamilyAdapter implements AgentRuntimeAdapter {
 
 function collectJsonlFiles(dir: string, depth: number): string[] {
   if (depth > 3) return [];
-  let entries: import('node:fs').Dirent[];
+  let entries: Dirent[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
@@ -421,7 +424,7 @@ function collectJsonlFiles(dir: string, depth: number): string[] {
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'subagents') continue; // 子代理侧链，不算主会话
+      if (entry.name === 'subagents') continue; // subagent side chains are not main sessions
       files.push(...collectJsonlFiles(full, depth + 1));
     } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
       files.push(full);
@@ -430,7 +433,7 @@ function collectJsonlFiles(dir: string, depth: number): string[] {
   return files;
 }
 
-/** 读取单个 jsonl 文件的全部记录；文件缺失或行损坏时跳过，不阻断会话索引/恢复。 */
+/** Read every record of one jsonl file; missing files and corrupt lines are skipped without breaking the session index/resume. */
 function readJsonlRecords(file: string): unknown[] {
   let text: string;
   try {
@@ -444,13 +447,13 @@ function readJsonlRecords(file: string): unknown[] {
     try {
       records.push(JSON.parse(line));
     } catch {
-      // 跳过损坏行。
+      // skip corrupt lines.
     }
   }
   return records;
 }
 
-/** 递归 ~/.<cli>/projects 下所有 .jsonl → 原生历史索引（cwd 取自记录自带字段）。 */
+/** Recurse ~/.<cli>/projects for all .jsonl -> native history index (cwd taken from each record's own field). */
 export function listClaudeFamilySessions(
   homeDir: string,
   flavor: ClaudeFamilyFlavor
@@ -460,7 +463,7 @@ export function listClaudeFamilySessions(
   for (const file of collectJsonlFiles(root, 0)) {
     try {
       const stat = statSync(file);
-      let title = '新任务';
+      let title = 'New task';
       let sessionId = path.basename(file, '.jsonl');
       let cwd: string | undefined;
       let messageCount = 0;
@@ -471,7 +474,7 @@ export function listClaudeFamilySessions(
         if (sid) sessionId = sid;
         if (record.type !== 'user') continue;
         messageCount += 1;
-        if (title !== '新任务' || !isRecord(record.message)) continue;
+        if (title !== 'New task' || !isRecord(record.message)) continue;
         const content = (record.message as Record<string, unknown>).content;
         const text =
           typeof content === 'string'
@@ -496,7 +499,7 @@ export function listClaudeFamilySessions(
         messageCount,
       });
     } catch {
-      // 单个会话文件读取失败时跳过该文件。
+      // skip a session file that fails to read.
     }
   }
   return records.sort((a, b) => b.updatedAt - a.updatedAt);

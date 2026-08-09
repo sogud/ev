@@ -1,10 +1,12 @@
+import { i18n } from '../../i18n';
 import type { RuntimeDescriptor, RuntimeId } from '../../../../shared/types';
 import { MenuPicker } from './MenuPicker';
 import { runtimeMonogram } from './runtimeMeta';
 
 /**
- * Runtime 选择器：composer 下方唯一切换入口。
- * 未安装 CLI 的 runtime 在菜单内 disabled；首消息后的锁定态由调用方渲染静态 chip。
+ * Runtime picker: the single switch under the composer.
+ * Runtimes without an installed CLI are disabled in the menu; the post-first-message
+ * locked state is rendered by the caller as a static chip.
  */
 export function RuntimePicker({
   runtimes,
@@ -25,8 +27,8 @@ export function RuntimePicker({
       runtime.availability === 'available'
         ? runtime.version
         : runtime.availability === 'missing'
-          ? 'CLI 未安装'
-          : '当前版本不支持',
+          ? i18n.t('runtime.cliMissing')
+          : i18n.t('runtime.versionUnsupported'),
     disabled: runtime.availability !== 'available',
   }));
   return (
@@ -34,7 +36,7 @@ export function RuntimePicker({
       className={className}
       value={value}
       options={options}
-      ariaLabel='选择 Runtime'
+      ariaLabel={i18n.t('runtime.pickerAria')}
       triggerLabel={selected?.name ?? value}
       leadingIcon={
         <span className='runtime-glyph' aria-hidden='true'>

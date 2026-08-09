@@ -4,7 +4,7 @@ import {
   type BrowserCommand,
 } from '@ev/contracts';
 import type { BrowserBridgeService } from './browser-bridge-service';
-import { MediaDownloadService } from './media-download-service';
+import type { MediaDownloadService } from './media-download-service';
 
 export class BrowserCommandExecutor {
   constructor(

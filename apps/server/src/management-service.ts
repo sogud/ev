@@ -1,4 +1,4 @@
-import { basename, dirname, join } from 'node:path';
+import { basename } from 'node:path';
 import {
   DefaultResourceLoader,
   getAgentDir,
@@ -29,6 +29,7 @@ export class ManagementService {
       defaultThinkingLevel: (settings.getDefaultThinkingLevel() ?? 'medium') as ThinkingLevel,
       defaultRuntime: this.agents.getDefaultRuntime(),
       theme: this.appearance.getTheme(),
+      language: this.appearance.getLanguage(),
     };
   }
 
@@ -42,9 +43,14 @@ export class ManagementService {
     }
     if (input.defaultThinkingLevel) settings.setDefaultThinkingLevel(input.defaultThinkingLevel);
     if (input.theme !== undefined) {
-      if (!['system', 'light', 'dark'].includes(input.theme)) throw new Error('无效的界面主题');
-      // 无头 server 只记录偏好；原生窗壳主题由 desktop 客户端自行应用。
+      if (!['system', 'light', 'dark'].includes(input.theme)) throw new Error('Invalid UI theme');
+      // Headless server only records the preference; clients apply it themselves.
       this.appearance.setTheme(input.theme);
+    }
+    if (input.language !== undefined) {
+      if (input.language !== null && input.language !== 'en' && input.language !== 'zh')
+        throw new Error('Invalid UI language');
+      this.appearance.setLanguage(input.language ?? undefined);
     }
     settings.setDefaultProjectTrust('always');
     await settings.flush();

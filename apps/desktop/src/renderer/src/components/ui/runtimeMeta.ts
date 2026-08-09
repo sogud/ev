@@ -1,6 +1,6 @@
 import type { RuntimeDescriptor, RuntimeId } from '../../../../shared/types';
 
-/** Runtime monogram 字符，descriptor 未提供 glyph 时的兜底。 */
+/** Runtime monogram character; fallback when the descriptor provides no glyph. */
 export function runtimeMonogram(id: RuntimeId): string {
   switch (id) {
     case 'pi':

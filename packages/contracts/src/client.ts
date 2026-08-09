@@ -1,6 +1,6 @@
 /**
- * EV 参考客户端：fetch(HTTP) + WebSocket(事件)，node/bun/browser 通用。
- * CLI、desktop renderer、Web 都用它生成与 AgentDesktopAPI 同形的对象。
+ * Reference EV client: fetch (HTTP) + WebSocket (events); works in node/bun/browser.
+ * CLI, desktop renderer and web all build AgentDesktopAPI-shaped objects from it.
  */
 import type { AgentDesktopAPI, EvWireMessage } from './registry';
 import { ipcRegistry, isIpcToken, type CallToken } from './registry';
@@ -11,9 +11,9 @@ export interface EvClientOptions {
 }
 
 export type EvClient = AgentDesktopAPI & {
-  /** WS 事件订阅（tasks:update 等），返回 unsubscribe；首次订阅时懒建连接。 */
+  /** WS event subscription (tasks:update etc.); returns unsubscribe; connection is lazy on first subscribe. */
   onWire(channel: string, listener: (payload: unknown) => void): () => void;
-  /** WS 断线自动重连（退避）成功后回调；调用方应全量 refetch 收敛丢失事件。 */
+  /** Called after a successful auto-reconnect (backoff); consumers should refetch fully to converge missed events. */
   onReconnect(listener: () => void): () => void;
   close(): void;
 };
@@ -40,23 +40,23 @@ export function createEvClient(options: EvClientOptions): EvClient {
         hadOpen = true;
         backoffMs = 1000;
         resolve(ws);
-        // 重连成功：通知调用方全量 refetch，收敛断线期间丢失的事件。
+        // Reconnect succeeded: ask consumers to refetch fully and converge events missed while down.
         if (isReconnect) for (const listener of reconnectListeners) listener();
       };
-      ws.onerror = () => reject(new Error('EV server WebSocket 连接失败'));
+      ws.onerror = () => reject(new Error('EV server WebSocket connection failed'));
       ws.onmessage = message => {
         try {
           const wire = JSON.parse(String(message.data)) as EvWireMessage;
           const set = listeners.get(wire.channel);
           if (set) for (const listener of set) listener(wire.payload);
         } catch {
-          // 坏帧忽略，保持连接。
+          // Ignore bad frames; keep the connection alive.
         }
       };
       ws.onclose = () => {
         socket = null;
         socketPromise = null;
-        // 断线退避重连（1s→2s→4s…≤8s）；close() 后不再重连。
+        // Backoff reconnect (1s -> 2s -> 4s ... <= 8s); no reconnect after close().
         if (!closed) {
           reconnectTimer = setTimeout(() => {
             void connect().catch(() => undefined);

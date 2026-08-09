@@ -23,7 +23,7 @@ import {
 import { taskTitleFromPrompt } from './task-title';
 import { inspectWorkspace } from './workspace-inspection';
 
-interface PersistedTask extends Omit<TaskSummary, 'status' | 'error'> {}
+type PersistedTask = Omit<TaskSummary, 'status' | 'error'>;
 
 interface StoreSchema {
   defaultWorkspace: string | null;
@@ -58,7 +58,7 @@ export class AgentService {
   ) {
     this.modelRuntime = modelRuntime;
     this.store = store;
-    // 投影/持久化/广播经 hooks 留在本类；lifecycle 只持有并发不变量。
+    // projection/persistence/broadcast stay in this class via hooks; lifecycle only holds the concurrency invariants.
     this.lifecycle = new TaskSessionLifecycle(runtimes, bundledSkillPaths, [EV_IDENTITY], {
       onEvent: (task, runtime, event) => this.onRuntimeEvent(task, runtime, event),
       messageFrom: event => this.transcriptFrom(event),
@@ -67,7 +67,7 @@ export class AgentService {
     });
 
     for (const persisted of store.get('tasks')) {
-      // 剥离历史遗留的 Agent Project 字段，避免把僵尸字段回写进新版 task 数据。
+      // strip legacy Agent Project fields so zombie keys never get rewritten into new task data.
       const {
         agentId: _agentId,
         agentName: _agentName,
@@ -214,14 +214,14 @@ export class AgentService {
 
   async createTask(cwd?: string, requestedRuntime?: RuntimeId): Promise<TaskDetail> {
     const workspace = cwd ?? this.store.get('defaultWorkspace');
-    if (!workspace) throw new Error('请先选择默认目录');
+    if (!workspace) throw new Error('Choose a default directory first');
     await assertWorkspaceDirectory(workspace);
 
     const runtimeId = requestedRuntime ?? this.store.get('defaultRuntime');
     const settings = SettingsManager.create(workspace, getAgentDir(), { projectTrusted: true });
     const defaultProvider = settings.getDefaultProvider();
     const defaultModelId = settings.getDefaultModel();
-    // 原生默认可能已失效（auth/目录变更后 getModel 抛错）：容忍回退，让 pi 自选默认。
+    // the native default may have gone stale (getModel throws after auth/dir changes): fall back and let pi pick its own default.
     let defaultModel: ReturnType<typeof this.modelRuntime.getModel> | undefined;
     if (runtimeId === 'pi' && defaultProvider && defaultModelId) {
       try {
@@ -233,7 +233,7 @@ export class AgentService {
     const now = Date.now();
     const task: TaskSummary = {
       id: randomUUID(),
-      title: '新任务',
+      title: 'New task',
       cwd: workspace,
       status: 'idle',
       createdAt: now,
@@ -279,7 +279,7 @@ export class AgentService {
     const task = this.requireTask(id);
     const runtime = await this.lifecycle.ensure(task);
 
-    if (task.title === '新任务') task.title = taskTitleFromPrompt(text);
+    if (task.title === 'New task') task.title = taskTitleFromPrompt(text);
     task.status = 'running';
     task.error = undefined;
     task.updatedAt = Date.now();
@@ -311,25 +311,27 @@ export class AgentService {
     const task = this.requireTask(id);
     if (this.lifecycle.peekRuntimeId(task) === 'pi') {
       const runtime = await this.lifecycle.ensure(task);
-      if (!runtime.session.setModel) throw new Error('pi 不支持切换模型');
+      if (!runtime.session.setModel) throw new Error('pi does not support model switching');
       await runtime.session.setModel(provider, modelId);
       return;
     }
-    // 非 pi：首消息前「换配置=重建」（reconfigure），之后 throw 锁定。
+    // non-pi: before the first message a reconfigure rebuilds the session; afterwards it throws and locks.
     await this.lifecycle.reconfigure(task, { model: { provider, id: modelId, name: modelId } });
     this.persistTasks();
     this.listener?.({ ...task, messages: [], trace: [] });
   }
 
   /**
-   * 首条消息前允许切换 runtime（composer 下方 chip 行是唯一调用入口，sidebar 纯展示）。
-   * 并发不变量（串行化/锁/所有权）在 TaskSessionLifecycle；这里只落盘与广播。
+   * Runtime switching is allowed before the first message (the chip row under the
+   * composer is the only caller; the sidebar is display-only). Concurrency
+   * invariants (serialization/locks/ownership) live in TaskSessionLifecycle; this
+   * layer only persists and broadcasts.
    */
   async setRuntime(id: string, runtimeId: RuntimeId): Promise<void> {
     const task = this.requireTask(id);
     await this.lifecycle.switchRuntime(task, runtimeId);
     this.persistTasks();
-    // 会话延迟建：切换只付 dispose 成本，广播空 transcript/trace 让 renderer 即时更新（P1）。
+    // sessions are lazy: a switch only pays the dispose cost, and broadcasting an empty transcript/trace lets the renderer update immediately (P1).
     this.listener?.({ ...task, messages: [], trace: [] });
   }
 
@@ -337,7 +339,8 @@ export class AgentService {
     const task = this.requireTask(id);
     if (this.lifecycle.peekRuntimeId(task) === 'pi') {
       const runtime = await this.lifecycle.ensure(task);
-      if (!runtime.session.setThinkingLevel) throw new Error('pi 不支持切换思考强度');
+      if (!runtime.session.setThinkingLevel)
+        throw new Error('pi does not support thinking-level switching');
       await runtime.session.setThinkingLevel(level);
       return;
     }
@@ -441,7 +444,7 @@ export class AgentService {
 
   private requireTask(id: string): TaskSummary {
     const task = this.tasks.get(id);
-    if (!task) throw new Error('任务不存在');
+    if (!task) throw new Error('Task not found');
     return task;
   }
 
@@ -465,7 +468,7 @@ export class AgentService {
     runtime.trace.set(`error-${timestamp}`, {
       id: `error-${timestamp}`,
       type: 'error',
-      title: '运行失败',
+      title: 'Run failed',
       detail: message,
       status: 'error',
       timestamp,

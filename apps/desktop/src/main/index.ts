@@ -6,8 +6,9 @@ import type { ServerInfo } from '@ev/contracts';
 import { app, BrowserWindow, nativeTheme, shell } from 'electron';
 
 /**
- * desktop = 窗壳 + server 监督（server-client-split-v1 / bb desktop 模式）。
- * 所有业务能力在 @ev/server；renderer 经 HTTP+WS 吃同一套契约，Electron IPC 层已删。
+ * desktop = window shell + server supervisor (server-client-split-v1 / bb desktop mode).
+ * All product capabilities live in @ev/server; the renderer consumes the same contract
+ * over HTTP+WS. The Electron IPC layer is gone.
  */
 
 let cleanupStarted = false;
@@ -47,7 +48,7 @@ async function healthOk(info: ServerInfo): Promise<boolean> {
 
 function serverEntry(): string {
   if (process.env.EV_SERVER_ENTRY) return process.env.EV_SERVER_ENTRY;
-  // 解析序：打包 resources → dev dist-server；缺失时先构建（bun 仅构建工具）。
+  // Resolution order: packaged resources -> dev dist-server; build first when missing (bun is build tooling only).
   if (app.isPackaged) return join(process.resourcesPath, 'server', 'server.mjs');
   return join(app.getAppPath(), 'dist-server', 'server.mjs');
 }
@@ -57,7 +58,7 @@ function ensureEntryBuilt(entry: string): void {
   const serverDir = join(app.getAppPath(), '../server');
   const built = spawnSync('bun', ['run', '--cwd', serverDir, 'build'], { stdio: 'ignore' });
   if (built.status !== 0 || !existsSync(entry)) {
-    throw new Error(`server entry 构建失败：${entry}`);
+    throw new Error(`Failed to build server entry: ${entry}`);
   }
 }
 
@@ -66,9 +67,9 @@ async function ensureServer(): Promise<ServerInfo> {
   if (existing && isPidAlive(existing.pid) && (await healthOk(existing))) return existing;
   const entry = serverEntry();
   ensureEntryBuilt(entry);
-  // 纯 Node 运行时口径：优先系统 node（better-sqlite3 原生绑定按系统 node ABI 构建）；
-  // 无系统 node 时回退 Electron 自带 node（ELECTRON_RUN_AS_NODE），
-  // 该路径需 pack 期按 Electron ABI 重编 better-sqlite3（见总结剩余风险）。
+  // Runtime policy: prefer the system node (better-sqlite3 native bindings are built against
+  // the system node ABI); fall back to Electron-bundled node (ELECTRON_RUN_AS_NODE), which
+  // requires rebuilding better-sqlite3 against the Electron ABI at pack time.
   const hasNode = spawnSync('node', ['--version'], { stdio: 'ignore' }).status === 0;
   const child = hasNode
     ? spawn('node', [entry], { detached: true, stdio: 'ignore' })
@@ -83,7 +84,7 @@ async function ensureServer(): Promise<ServerInfo> {
     const info = readServerInfo();
     if (info && isPidAlive(info.pid) && (await healthOk(info))) return info;
   }
-  throw new Error('EV server 启动超时');
+  throw new Error('EV server start timed out');
 }
 
 function createWindow(info: ServerInfo): BrowserWindow {
@@ -110,8 +111,8 @@ function createWindow(info: ServerInfo): BrowserWindow {
     return { action: 'deny' };
   });
 
-  // UI 由 server 经 HTTP 服务（bb 模式，desktop 与 Web 同构）；
-  // bootstrap 走 URL query，不是 IPC 通道。dev 可换 vite HMR 源。
+  // The UI is served by the server over HTTP (bb mode; desktop and web are isomorphic);
+  // bootstrap reads the URL query, not an IPC channel. Dev can swap in the vite HMR source.
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(
       `${process.env.ELECTRON_RENDERER_URL}/#port=${info.port}&token=${encodeURIComponent(info.token)}`
@@ -126,7 +127,7 @@ function createWindow(info: ServerInfo): BrowserWindow {
 
 app.whenReady().then(async () => {
   const info = await ensureServer();
-  // 原生窗壳主题跟 server 记录走；renderer 自身主题应用不变。
+  // The native shell theme follows the server record; the renderer applies it itself.
   try {
     const settings = await (
       await fetch(`http://127.0.0.1:${info.port}/api/settings/get`, {
@@ -146,7 +147,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  // server 常驻（herdr 模式）：关窗不杀 server，任务继续跑。
+  // The server is resident: closing the window does not kill it, tasks keep running.
   app.quit();
 });
 

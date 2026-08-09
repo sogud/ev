@@ -1,5 +1,6 @@
 import { AlertCircle, X } from 'lucide-react';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChatPanel } from './components/ChatPanel';
 import { EvMark } from './components/EvMark';
 import { SettingsModal } from './components/SettingsModal';
@@ -8,6 +9,7 @@ import { useAppStore } from './store/useAppStore';
 
 export default function App(): React.JSX.Element {
   const store = useAppStore();
+  const { t } = useTranslation();
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -57,10 +59,10 @@ export default function App(): React.JSX.Element {
   if (!store.settings) {
     return (
       <div className='app-loading'>
-        <p>无法读取 EV 设置</p>
+        <p>{t('app.loadError')}</p>
         {store.error && <p className='app-error-detail'>{store.error}</p>}
         <button type='button' className='ghost-button' onClick={() => window.location.reload()}>
-          重试
+          {t('app.retry')}
         </button>
       </div>
     );
@@ -73,9 +75,9 @@ export default function App(): React.JSX.Element {
       : '';
   const thinkingLevel = store.detail?.thinkingLevel ?? store.settings.defaultThinkingLevel;
 
-  // Runtime 的唯一切换入口在对话框下方（sidebar 纯展示）：
-  // - canSwitch = 无任务或任务 0 消息；首条消息后 chip 锁定只读；
-  // - onRuntime 按「有空任务 → 任务级 setTaskRuntime，否则 → 全局默认选择」分流。
+  // The only runtime switch lives under the composer (sidebar is display-only):
+  // - canSwitch = no task, or the task has zero messages; locked after the first send;
+  // - onRuntime routes to task-level setTaskRuntime when a free task exists, else the global default.
   const canSwitch = !store.detail || store.detail.messages.length === 0;
   return (
     <div className='app-shell'>
@@ -126,7 +128,7 @@ export default function App(): React.JSX.Element {
         <div className='error-toast' role='alert'>
           <AlertCircle size={17} />
           <span>{store.error}</span>
-          <button type='button' aria-label='关闭错误' onClick={store.clearError}>
+          <button type='button' aria-label={t('app.closeErrorAria')} onClick={store.clearError}>
             <X size={15} />
           </button>
         </div>

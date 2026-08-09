@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ServerInfo } from '@ev/contracts';
 
-/** ~/.ev/server.json：客户端发现 server 的唯一入口（herdr 模式）。 */
+/** ~/.ev/server.json: the only discovery entry for clients (herdr mode). */
 export function serverJsonPath(): string {
   return join(homedir(), '.ev', 'server.json');
 }
@@ -29,7 +29,7 @@ export function clearServerInfo(): void {
   try {
     unlinkSync(serverJsonPath());
   } catch {
-    // 已不存在则忽略。
+    // gone already: ignore.
   }
 }
 
@@ -42,7 +42,7 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
-/** server 探活：server.json 在且 pid 活着。 */
+/** Liveness probe: server.json exists and its pid is alive. */
 export function runningServerInfo(): ServerInfo | null {
   const info = readServerInfo();
   if (!info) return null;

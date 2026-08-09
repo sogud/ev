@@ -13,7 +13,8 @@ import '../../globals.css';
 
 import Folder from '../../components/folder/Folder';
 import Link from '../../components/link/Link';
-import SearchBar, { SearchBarRef } from '../../components/search-bar/SearchBar';
+import type { SearchBarRef } from '../../components/search-bar/SearchBar';
+import SearchBar from '../../components/search-bar/SearchBar';
 import ErrorMessage from '../../components/ui/error-message';
 import { Button } from '../../components/ui/button';
 import ContextMenu from '../../components/context-menu/ContextMenu';
@@ -21,24 +22,25 @@ import FrequentSites from '../../components/frequent-sites/FrequentSites';
 import { SettingsProvider, useSettings } from '../../contexts/SettingsContext';
 import { applyCustomSettings, applySavedBackground } from '../../utils/apply-settings';
 
-import { Bookmark, BookmarkFolder, ChromeBookmarkTreeNode, convertToBookmark } from '../../types';
+import type { Bookmark, BookmarkFolder, ChromeBookmarkTreeNode } from '../../types';
+import { convertToBookmark } from '../../types';
 import { preloadFavicons } from '../../utils/favicon';
 
-// 统一状态管理接口
+// Single state shape for the page.
 interface AppState {
-  // 书签数据
+  // Bookmark data.
   currentFolder: BookmarkFolder;
-  // 完整书签树，用于全局搜索
+  // Full tree, used for global search.
   rootFolder: BookmarkFolder | null;
   folderHistory: BookmarkFolder[];
   searchResults: (Bookmark | BookmarkFolder)[];
   searchTerm: string;
   isLoading: boolean;
   error: string | null;
-  // UI状态
+  // UI state.
   editModalOpen: boolean;
   editingItemId: string | null;
-  // 右键菜单
+  // Context menu.
   contextMenu: {
     isOpen: boolean;
     x: number;
@@ -46,7 +48,7 @@ interface AppState {
     targetItem: Bookmark | BookmarkFolder | null;
     targetType: 'bookmark' | 'folder' | null;
   };
-  // 选中项
+  // Selected item.
   selectedItemId: string | null;
 }
 
@@ -58,7 +60,7 @@ const EditModal: React.FC<{
 }> = ({ isOpen, onClose, onSave, title }) => {
   const [inputTitle, setInputTitle] = useState(title);
 
-  // 弹窗每次打开或编辑对象切换时，同步最新的标题，避免显示上一次编辑的旧值
+  // Re-sync the title whenever the dialog opens or the target changes, so stale text never leaks in.
   useEffect(() => {
     if (isOpen) {
       setInputTitle(title);
@@ -70,7 +72,7 @@ const EditModal: React.FC<{
   return (
     <div className='ev-modal-backdrop'>
       <div className='ev-modal-content'>
-        <h2>编辑书签</h2>
+        <h2>Edit bookmark</h2>
         <input
           type='text'
           value={inputTitle}
@@ -79,16 +81,16 @@ const EditModal: React.FC<{
         />
         <div className='flex gap-2 justify-end'>
           <Button variant='outline' onClick={onClose}>
-            取消
+            Cancel
           </Button>
-          <Button onClick={() => onSave(inputTitle)}>保存</Button>
+          <Button onClick={() => onSave(inputTitle)}>Save</Button>
         </div>
       </div>
     </div>
   );
 };
 
-// 新建书签/文件夹弹窗
+// Create bookmark/folder dialog.
 const CreateModal: React.FC<{
   isOpen: boolean;
   type: 'bookmark' | 'folder';
@@ -98,7 +100,7 @@ const CreateModal: React.FC<{
   const [inputTitle, setInputTitle] = useState('');
   const [inputUrl, setInputUrl] = useState('');
 
-  // 每次打开时重置表单
+  // Reset the form on every open.
   useEffect(() => {
     if (isOpen) {
       setInputTitle('');
@@ -118,13 +120,13 @@ const CreateModal: React.FC<{
   return (
     <div className='ev-modal-backdrop'>
       <div className='ev-modal-content'>
-        <h2>{type === 'bookmark' ? '新建书签' : '新建文件夹'}</h2>
+        <h2>{type === 'bookmark' ? 'New bookmark' : 'New folder'}</h2>
         <input
           type='text'
           value={inputTitle}
           onChange={e => setInputTitle(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          placeholder={type === 'bookmark' ? '输入书签名称...' : '输入文件夹名称...'}
+          placeholder={type === 'bookmark' ? 'Enter bookmark name...' : 'Enter folder name...'}
           autoFocus
           className='ev-input mb-2'
         />
@@ -134,16 +136,16 @@ const CreateModal: React.FC<{
             value={inputUrl}
             onChange={e => setInputUrl(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            placeholder='输入网址，如 example.com'
+            placeholder='Enter a URL, e.g. example.com'
             className='ev-input mb-3'
           />
         )}
         <div className='flex gap-2 justify-end'>
           <Button variant='outline' onClick={onClose}>
-            取消
+            Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={!canSave}>
-            创建
+            Create
           </Button>
         </div>
       </div>
@@ -151,7 +153,7 @@ const CreateModal: React.FC<{
   );
 };
 
-// 删除撤销提示条
+// Undo toast for deletions.
 const UndoToast: React.FC<{
   message: string;
   onUndo: () => void;
@@ -164,19 +166,19 @@ const UndoToast: React.FC<{
         onClick={onUndo}
         className='flex items-center gap-1 text-xs font-medium text-[var(--ev-color-text-link)]'>
         <Undo2 className='h-4 w-4' />
-        撤销
+        Undo
       </button>
       <button
         onClick={onDismiss}
         className='text-[var(--ev-color-icon-tertiary)] hover:text-[var(--ev-color-icon-primary)]'
-        aria-label='关闭提示'>
+        aria-label='Dismiss notice'>
         ✕
       </button>
     </div>
   );
 };
 
-// 递归恢复被删除的文件夹子树
+// Recursively restore a deleted folder subtree.
 const restoreFolderNode = (node: BookmarkFolder, parentId: string) => {
   chrome.bookmarks.create({ parentId, title: node.title, index: node.index }, created => {
     if (chrome.runtime.lastError || !created) {
@@ -221,7 +223,7 @@ function NewtabContent() {
 }
 
 function NewtabApp() {
-  // 统一状态管理
+  // Single state management.
   const [state, setState] = useState<AppState>({
     currentFolder: {
       id: '',
@@ -249,22 +251,22 @@ function NewtabApp() {
     selectedItemId: null,
   });
 
-  // 用于跟踪最近删除的书签
+  // Tracks the most recent deletion for undo.
   const recentlyDeletedRef = useRef<{ id: string; timestamp: number }[]>([]);
 
-  // 搜索框引用，用于快捷键聚焦和清空
+  // Search input ref: shortcut focus + controlled clear.
   const searchBarRef = useRef<SearchBarRef>(null);
 
-  // 书签事件刷新的防抖定时器
+  // Debounce timer for bookmark-event refreshes.
   const reloadTimerRef = useRef<number | null>(null);
 
-  // 新建弹窗状态
+  // Create-dialog state.
   const [createModal, setCreateModal] = useState<{ open: boolean; type: 'bookmark' | 'folder' }>({
     open: false,
     type: 'bookmark',
   });
 
-  // 删除撤销状态
+  // Undo state.
   const [undo, setUndo] = useState<{ message: string; restore: () => void } | null>(null);
   const undoTimerRef = useRef<number | null>(null);
 
@@ -284,7 +286,7 @@ function NewtabApp() {
     setUndo(null);
   }, []);
 
-  // 卸载时清理撤销定时器
+  // Clear the undo timer on unmount.
   useEffect(() => {
     return () => {
       if (undoTimerRef.current !== null) {
@@ -293,12 +295,6 @@ function NewtabApp() {
     };
   }, []);
 
-  // 状态更新函数
-  const updateState = useCallback((updates: Partial<AppState>) => {
-    setState(prev => ({ ...prev, ...updates }));
-  }, []);
-
-  // 先定义这些函数，供 handleKeyDown 使用
   const handleFolderClick = useCallback((folder: BookmarkFolder) => {
     setState(prev => ({
       ...prev,
@@ -329,20 +325,20 @@ function NewtabApp() {
 
   const handleDeleteBookmark = useCallback(
     (id: string) => {
-      // 记录删除来源，避免书签事件监听器重复处理
+      // Record the deletion source so bookmark-event listeners do not double-process it.
       recentlyDeletedRef.current.push({ id, timestamp: Date.now() });
       const now = Date.now();
       recentlyDeletedRef.current = recentlyDeletedRef.current.filter(
         item => now - item.timestamp < 5000
       );
 
-      // 删除前先保存现场，供撤销时恢复
+      // Snapshot state before deletion so undo can restore it.
       const deletedItem = state.currentFolder.children.find(
         child => child.id === id && 'url' in child
       ) as Bookmark | undefined;
       const currentFolderId = state.currentFolder.id;
 
-      // 先做乐观更新，界面立即响应
+      // Optimistic update first so the UI responds immediately.
       setState(prev => ({
         ...prev,
         currentFolder: {
@@ -352,15 +348,15 @@ function NewtabApp() {
         searchResults: prev.searchResults.filter(item => item.id !== id),
       }));
 
-      // 再调用 Chrome API，成功后同步当前文件夹的最新数据
+      // Then call the Chrome API; on success, refresh the current folder data.
       chrome.bookmarks.remove(id, () => {
         if (chrome.runtime.lastError) {
           console.error('Failed to delete bookmark:', chrome.runtime.lastError);
           return;
         }
-        // 提供撤销入口
+        // Offer undo.
         if (deletedItem) {
-          showUndo(`已删除书签 “${deletedItem.title}”`, () => {
+          showUndo(`Deleted bookmark “${deletedItem.title}”`, () => {
             chrome.bookmarks.create(
               {
                 parentId: currentFolderId,
@@ -390,7 +386,7 @@ function NewtabApp() {
 
   const handleDeleteFolder = useCallback(
     (id: string) => {
-      // 删除前先保存完整子树，供撤销时恢复
+      // Snapshot the full subtree before deletion so undo can restore it.
       const deletedFolder = state.currentFolder.children.find(
         child => child.id === id && !('url' in child)
       ) as BookmarkFolder | undefined;
@@ -409,9 +405,9 @@ function NewtabApp() {
           },
           searchResults: prev.searchResults.filter(item => item.id !== id),
         }));
-        // 提供撤销入口：递归重建文件夹及其内容
+        // Offer undo: recursively rebuild the folder and its contents.
         if (deletedFolder) {
-          showUndo(`已删除文件夹 “${deletedFolder.title}”`, () => {
+          showUndo(`Deleted folder “${deletedFolder.title}”`, () => {
             restoreFolderNode(deletedFolder, currentFolderId);
           });
         }
@@ -420,11 +416,11 @@ function NewtabApp() {
     [state.currentFolder, showUndo]
   );
 
-  // 新建书签/文件夹
+  // Create bookmark/folder.
   const handleCreate = useCallback(
     (title: string, url?: string) => {
       const parentId = state.currentFolder.id;
-      // 网址未带协议时自动补全 https 前缀
+      // Prepend https:// when the URL has no scheme.
       const normalizedUrl = url ? (/^[\w-]+:\/\//.test(url) ? url : `https://${url}`) : undefined;
 
       chrome.bookmarks.create({ parentId, title, url: normalizedUrl }, created => {
@@ -433,20 +429,20 @@ function NewtabApp() {
           return;
         }
         setCreateModal(prev => ({ ...prev, open: false }));
-        // 创建事件会触发防抖刷新，界面自动更新
+        // Creation triggers the debounced refresh; the UI updates on its own.
       });
     },
     [state.currentFolder.id]
   );
 
-  // 键盘快捷键支持
+  // Keyboard shortcuts.
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       const isInputFocused =
         target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
-      // Ctrl/Cmd + K 或 Ctrl/Cmd + F 聚焦搜索框
+      // Ctrl/Cmd+K or Ctrl/Cmd+F focuses the search box.
       if ((event.ctrlKey || event.metaKey) && (event.key === 'k' || event.key === 'f')) {
         event.preventDefault();
         searchBarRef.current?.focus();
@@ -455,7 +451,7 @@ function NewtabApp() {
 
       if (isInputFocused && event.key !== 'Escape') return;
 
-      // ESC 键清除搜索、关闭模态框和右键菜单
+      // ESC clears the search and closes modals and the context menu.
       if (event.key === 'Escape') {
         setState(prev => ({
           ...prev,
@@ -466,12 +462,12 @@ function NewtabApp() {
           contextMenu: { ...prev.contextMenu, isOpen: false, targetItem: null, targetType: null },
         }));
         setCreateModal(prev => (prev.open ? { ...prev, open: false } : prev));
-        // 通过受控方式清空搜索框，保证 React 状态同步
+        // Clear the search box in a controlled way so React state stays in sync.
         searchBarRef.current?.clearSearch();
         return;
       }
 
-      // F2 编辑当前选中项
+      // F2 edits the selected item.
       if (event.key === 'F2') {
         setState(prev => {
           if (prev.selectedItemId) {
@@ -482,7 +478,7 @@ function NewtabApp() {
         return;
       }
 
-      // Delete 或 Backspace 删除当前选中项
+      // Delete or Backspace deletes the selected item.
       if ((event.key === 'Delete' || event.key === 'Backspace') && !isInputFocused) {
         if (!state.selectedItemId) return;
         const allItems = [...state.currentFolder.children, ...state.searchResults];
@@ -498,7 +494,7 @@ function NewtabApp() {
         return;
       }
 
-      // Enter 打开书签/进入文件夹
+      // Enter opens a bookmark / enters a folder.
       if (event.key === 'Enter') {
         if (!state.selectedItemId) return;
         const allItems = [...state.currentFolder.children, ...state.searchResults];
@@ -513,14 +509,14 @@ function NewtabApp() {
         return;
       }
 
-      // Alt+Left 返回上一级（Backspace 仅用于删除选中项，避免误操作）
+      // Alt+Left goes up one level (Backspace is reserved for deleting the selection, to avoid misfires).
       if (event.altKey && event.key === 'ArrowLeft' && !event.ctrlKey && !event.metaKey) {
         event.preventDefault();
         handleBack();
         return;
       }
 
-      // 方向键导航
+      // Arrow-key navigation.
       const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
       if (arrowKeys.indexOf(event.key) !== -1) {
         event.preventDefault();
@@ -529,7 +525,7 @@ function NewtabApp() {
             prev.searchResults.length > 0 ? prev.searchResults : prev.currentFolder.children;
           if (allItems.length === 0) return prev;
 
-          let currentIndex = prev.selectedItemId
+          const currentIndex = prev.selectedItemId
             ? allItems.findIndex(item => item.id === prev.selectedItemId)
             : -1;
           let newIndex = currentIndex;
@@ -561,7 +557,7 @@ function NewtabApp() {
     ]
   );
 
-  // 右键菜单处理函数
+  // Context menu handlers.
   const handleContextMenu = useCallback((e: React.MouseEvent, item: Bookmark | BookmarkFolder) => {
     e.preventDefault();
     e.stopPropagation();
@@ -624,14 +620,18 @@ function NewtabApp() {
     };
   }, [handleKeyDown]);
 
-  // 加载书签数据
+  // Load bookmarks.
   const loadBookmarks = useCallback((isInitialLoad = false) => {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
 
     chrome.bookmarks.getTree(bookmarkArray => {
       if (chrome.runtime.lastError) {
         console.error('Failed to load bookmarks:', chrome.runtime.lastError);
-        setState(prev => ({ ...prev, isLoading: false, error: '加载书签失败，请刷新页面重试' }));
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'Failed to load bookmarks; refresh the page and try again',
+        }));
         return;
       }
 
@@ -640,7 +640,7 @@ function NewtabApp() {
         if (rootNode && bookmarkArray[0].children && bookmarkArray[0].children.length > 0) {
           const convertedFolder = convertToBookmark(rootNode) as BookmarkFolder;
 
-          // 同步保存完整书签树，供全局搜索使用
+          // Keep the full tree in sync for global search.
           setState(prev => ({ ...prev, rootFolder: convertedFolder }));
 
           if (isInitialLoad) {
@@ -694,7 +694,7 @@ function NewtabApp() {
           setState(prev => ({
             ...prev,
             isLoading: false,
-            error: '无法找到书签数据，请检查浏览器书签设置',
+            error: 'Bookmark data not found; check your browser bookmark settings',
           }));
         }
       } catch (error) {
@@ -702,22 +702,22 @@ function NewtabApp() {
         setState(prev => ({
           ...prev,
           isLoading: false,
-          error: '处理书签数据时出错，请刷新页面重试',
+          error: 'Error processing bookmark data; refresh the page and try again',
         }));
       }
     });
   }, []);
 
-  // 使用 useRef 存储 loadBookmarks 的引用，避免在事件监听器中捕获过时的函数
+  // Keep loadBookmarks in a ref so event listeners never capture a stale closure.
   const loadBookmarksRef = useRef(loadBookmarks);
   loadBookmarksRef.current = loadBookmarks;
 
-  // 加载书签数据并设置事件监听器
+  // Load bookmarks and attach listeners.
   useEffect(() => {
-    // 初始加载
+    // Initial load.
     loadBookmarksRef.current(true);
 
-    // 防抖刷新：批量变更（如导入书签）时合并为一次全量刷新
+    // Debounced refresh: batch changes (e.g. imports) collapse into one full reload.
     const debouncedReload = () => {
       if (reloadTimerRef.current !== null) {
         window.clearTimeout(reloadTimerRef.current);
@@ -728,13 +728,13 @@ function NewtabApp() {
       }, 200);
     };
 
-    // 监听 Chrome bookmarks API 的事件
+    // Listen to Chrome bookmarks API events.
     const handleBookmarkChanged = () => {
       debouncedReload();
     };
 
     const handleBookmarkRemoved = (id: string) => {
-      // 检查是否是我们手动删除的书签（避免重复处理）
+      // Skip bookmarks we deleted ourselves (avoid double processing).
       const isRecentlyDeleted = recentlyDeletedRef.current.some(item => item.id === id);
       if (isRecentlyDeleted) {
         return;
@@ -746,13 +746,13 @@ function NewtabApp() {
       debouncedReload();
     };
 
-    // 添加事件监听器
+    // Attach listeners.
     chrome.bookmarks.onChanged.addListener(handleBookmarkChanged);
     chrome.bookmarks.onRemoved.addListener(handleBookmarkRemoved);
     chrome.bookmarks.onCreated.addListener(handleBookmarkCreatedOrMoved);
     chrome.bookmarks.onMoved.addListener(handleBookmarkCreatedOrMoved);
 
-    // 组件卸载时移除事件监听器
+    // Detach listeners on unmount.
     return () => {
       chrome.bookmarks.onChanged.removeListener(handleBookmarkChanged);
       chrome.bookmarks.onRemoved.removeListener(handleBookmarkRemoved);
@@ -762,28 +762,7 @@ function NewtabApp() {
         window.clearTimeout(reloadTimerRef.current);
       }
     };
-  }, []); // 只在组件挂载时执行一次，使用 ref 来访问最新的 loadBookmarks
-
-  const handleTitleChange = useCallback((id: string, newTitle: string) => {
-    chrome.bookmarks.update(id, { title: newTitle }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('Failed to update bookmark title:', chrome.runtime.lastError);
-        return;
-      }
-      setState(prev => ({
-        ...prev,
-        currentFolder: {
-          ...prev.currentFolder,
-          title: id === prev.currentFolder.id ? newTitle : prev.currentFolder.title,
-          children: prev.currentFolder.children.map(child =>
-            child.id === id ? { ...child, title: newTitle } : child
-          ),
-        },
-        editModalOpen: false,
-        editingItemId: null,
-      }));
-    });
-  }, []);
+  }, []); // mount-only; refs give access to the latest loadBookmarks
 
   const handleUpdateBookmark = useCallback((id: string, newTitle: string) => {
     chrome.bookmarks.update(id, { title: newTitle }, () => {
@@ -831,7 +810,7 @@ function NewtabApp() {
     });
   }, []);
 
-  // 处理搜索结果回调
+  // Search results callback.
   const handleSearchResult = useCallback(
     (results: (Bookmark | BookmarkFolder)[], searchTerm: string) => {
       setState(prev => ({ ...prev, searchResults: results, searchTerm }));
@@ -841,7 +820,7 @@ function NewtabApp() {
 
   const isSearching = state.searchTerm.trim().length > 0;
   const visibleItems = isSearching ? state.searchResults : state.currentFolder.children;
-  const folderTitle = state.currentFolder.title || '书签';
+  const folderTitle = state.currentFolder.title || 'Bookmarks';
 
   return (
     <div className='ev-newtab-page'>
@@ -856,12 +835,12 @@ function NewtabApp() {
                     <button
                       onClick={handleBack}
                       className='ev-button ev-button-ghost ev-button-icon focus-ring-modern'
-                      title='返回上一级'
-                      aria-label='返回上一级'>
+                      title='Go up one level'
+                      aria-label='Go up one level'>
                       <ArrowLeft size={16} />
                     </button>
                   )}
-                  <nav aria-label='文件夹路径导航'>
+                  <nav aria-label='Folder path navigation'>
                     <ol className='ev-breadcrumb-list'>
                       {state.folderHistory.map((folder, index) => (
                         <li key={folder.id}>
@@ -877,7 +856,7 @@ function NewtabApp() {
                               searchBarRef.current?.clearSearch();
                             }}
                             className='ev-breadcrumb-button'
-                            aria-label={`导航到文件夹: ${folder.title}`}>
+                            aria-label={`Navigate to folder: ${folder.title}`}>
                             {folder.title}
                           </button>
                           <ChevronRight size={13} aria-hidden='true' />
@@ -895,15 +874,15 @@ function NewtabApp() {
               <Button
                 variant='outline'
                 onClick={() => setCreateModal({ open: true, type: 'folder' })}
-                title='在当前文件夹新建文件夹'>
+                title='New folder in the current folder'>
                 <FolderPlus size={15} />
-                <span>文件夹</span>
+                <span>Folder</span>
               </Button>
               <Button
                 onClick={() => setCreateModal({ open: true, type: 'bookmark' })}
-                title='在当前文件夹新建书签'>
+                title='New bookmark in the current folder'>
                 <Plus size={15} />
-                <span>书签</span>
+                <span>Bookmark</span>
               </Button>
             </div>
           </div>
@@ -925,17 +904,21 @@ function NewtabApp() {
             <div className='ev-section-heading'>
               <div className='ev-section-heading-main'>
                 <div>
-                  <h2 id='library-title'>{isSearching ? '搜索结果' : '书签'}</h2>
-                  <p>{isSearching ? `全部书签中与“${state.searchTerm}”匹配的项目` : folderTitle}</p>
+                  <h2 id='library-title'>{isSearching ? 'Search results' : 'Bookmarks'}</h2>
+                  <p>
+                    {isSearching
+                      ? `Items matching “${state.searchTerm}” across all bookmarks`
+                      : folderTitle}
+                  </p>
                 </div>
               </div>
               <span className='ev-section-count' aria-live='polite'>
-                {state.isLoading ? '加载中' : `${visibleItems.length} 项`}
+                {state.isLoading ? 'Loading' : `${visibleItems.length} items`}
               </span>
             </div>
 
             {state.isLoading ? (
-              <div className='ev-bookmark-grid' aria-busy='true' aria-label='正在加载书签'>
+              <div className='ev-bookmark-grid' aria-busy='true' aria-label='Loading bookmarks'>
                 {Array.from({ length: 8 }).map((_, index) => (
                   <div className='skeleton-card ev-bookmark-skeleton' key={index} />
                 ))}
@@ -944,7 +927,7 @@ function NewtabApp() {
               <div
                 className='ev-bookmark-grid'
                 role='grid'
-                aria-label={isSearching ? '搜索结果' : '书签和文件夹'}>
+                aria-label={isSearching ? 'Search results' : 'Bookmarks and folders'}>
                 {visibleItems.map(item =>
                   'url' in item ? (
                     <Link
@@ -976,22 +959,22 @@ function NewtabApp() {
                   <FolderIcon className='empty-state-icon' />
                 )}
                 <h3 className='empty-state-title'>
-                  {isSearching ? '没有匹配的书签' : '这个文件夹还是空的'}
+                  {isSearching ? 'No matching bookmarks' : 'This folder is still empty'}
                 </h3>
                 <p className='empty-state-description'>
                   {isSearching
-                    ? '试试更短的关键词，或按 Esc 清除搜索。'
-                    : '添加一个书签，或创建文件夹开始整理。'}
+                    ? 'Try a shorter keyword, or press Esc to clear the search.'
+                    : 'Add a bookmark, or create a folder to start organizing.'}
                 </p>
                 {!isSearching && (
                   <div className='ev-empty-actions'>
                     <Button
                       variant='outline'
                       onClick={() => setCreateModal({ open: true, type: 'folder' })}>
-                      <FolderPlus size={15} /> 新建文件夹
+                      <FolderPlus size={15} /> New folder
                     </Button>
                     <Button onClick={() => setCreateModal({ open: true, type: 'bookmark' })}>
-                      <Plus size={15} /> 新建书签
+                      <Plus size={15} /> New bookmark
                     </Button>
                   </div>
                 )}

@@ -1,3 +1,4 @@
+import { i18n } from '../../i18n';
 import { Menu } from '@base-ui/react/menu';
 import { Check, ChevronDown } from 'lucide-react';
 import { type ReactNode, useRef, useState } from 'react';
@@ -43,7 +44,9 @@ export function MenuPicker<Value extends string>({
         className={`ui-picker-trigger ${className}`.trim()}
         aria-label={ariaLabel}>
         {leadingIcon && <span className='ui-picker-icon'>{leadingIcon}</span>}
-        <span className='ui-picker-value'>{triggerLabel ?? selected?.label ?? '请选择'}</span>
+        <span className='ui-picker-value'>
+          {triggerLabel ?? selected?.label ?? i18n.t('common.select')}
+        </span>
         <ChevronDown className='ui-picker-chevron' size={13} aria-hidden='true' />
       </Menu.Trigger>
       <Menu.Portal container={portalContainer ?? undefined}>

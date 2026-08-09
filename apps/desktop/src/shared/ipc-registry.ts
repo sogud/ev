@@ -1,2 +1,2 @@
-// IPC 契约唯一处在 @ev/contracts/registry；本文件仅回导（P2 删除）。
+// The IPC contract lives in @ev/contracts/registry; this file re-exports only (P2 removal).
 export * from '@ev/contracts/registry';

@@ -1,5 +1,6 @@
 import { Folder, GitBranch, Plus, Settings2, Sparkles, SquareArrowOutUpRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type {
   ProviderSummary,
   RuntimeDescriptor,
@@ -48,11 +49,12 @@ export function ChatPanel({
   onThinking,
   onRuntime,
 }: ChatPanelProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [branch, setBranch] = useState<string | null>(null);
   const workspace = task?.cwd ?? defaultWorkspace;
-  // capabilities 来自 main 侧 RuntimeDescriptor（runtimes:list）；
-  // pi 兜底 true 是因为 pi 永远注册，descriptor 缺失时按最全能力渲染。
+  // Capabilities come from the main-side RuntimeDescriptor (runtimes:list);
+  // pi defaults to true because it is always registered — render full caps when absent.
   const activeRuntime = runtimes.find(runtime => runtime.id === runtimeId);
   const supportsModels = activeRuntime?.capabilities.models ?? runtimeId === 'pi';
   const supportsThinking = activeRuntime?.capabilities.thinkingLevels ?? runtimeId === 'pi';
@@ -72,10 +74,10 @@ export function ChatPanel({
     };
   }, [task?.id, task?.cwd]);
 
-  // Runtime 的唯一切换入口在对话框下方这一行（sidebar 纯展示）；
-  // 对话开始后（canSwitch=false）退化为静态 chip。
-  // 同一组 chip 复用于 composer 前导与未建任务空态两处；
-  // 顺序：Runtime、思考强度、模型。
+  // The only runtime switch is this row under the composer (sidebar is display-only);
+  // once a conversation starts (canSwitch=false) it degrades to static chips.
+  // The same chip group serves the composer leading slot and the no-task empty state;
+  // order: runtime, thinking effort, model.
   const configChips = (
     <>
       {canSwitch ? (
@@ -83,11 +85,11 @@ export function ChatPanel({
       ) : (
         <span className='config-chip-static'>{activeRuntime?.name ?? runtimeId}</span>
       )}
-      {/* P2：capability=false 显示「暂不支持」禁用态，不再静默隐藏 */}
+      {/* P2: unsupported capability renders a disabled chip instead of hiding silently */}
       {supportsThinking ? (
         <ThinkingPicker value={thinkingLevel} onValueChange={onThinking} />
       ) : (
-        <span className='config-chip-static'>思考：暂不支持</span>
+        <span className='config-chip-static'>{t('chat.thinkingUnsupported')}</span>
       )}
       {runtimeId === 'pi' ? (
         <ModelPicker providers={providers} value={selectedModel} onValueChange={onModel} />
@@ -96,16 +98,16 @@ export function ChatPanel({
           <MenuPicker
             value={task.model?.id ?? ''}
             options={catalog.map(item => ({ value: item.id, label: item.name }))}
-            ariaLabel='选择模型'
-            triggerLabel={task.model?.name ?? '模型：CLI 默认'}
+            ariaLabel={t('chat.modelPickerAria')}
+            triggerLabel={task.model?.name ?? t('chat.modelCliDefault')}
             align='start'
             onValueChange={id => onModel(runtimeId, id)}
           />
         ) : (
-          <span className='config-chip-static'>模型：CLI 默认</span>
+          <span className='config-chip-static'>{t('chat.modelCliDefault')}</span>
         )
       ) : (
-        <span className='config-chip-static'>模型：暂不支持</span>
+        <span className='config-chip-static'>{t('chat.modelUnsupported')}</span>
       )}
     </>
   );
@@ -114,7 +116,7 @@ export function ChatPanel({
     <main className='chat-panel'>
       <header className='chat-header'>
         <div className='header-title'>
-          <strong>{task?.title ?? '新任务默认设置'}</strong>
+          <strong>{task?.title ?? t('chat.defaultSettings')}</strong>
           <button
             type='button'
             title={workspace}
@@ -130,8 +132,8 @@ export function ChatPanel({
             <button
               className='icon-button'
               type='button'
-              title='在编辑器中打开'
-              aria-label='在编辑器中打开'
+              title={t('chat.openInEditor')}
+              aria-label={t('chat.openInEditor')}
               onClick={() => void window.agentDesktop.workspace.openInEditor(workspace)}>
               <SquareArrowOutUpRight size={15} />
             </button>
@@ -140,7 +142,7 @@ export function ChatPanel({
             <button
               className='icon-button'
               type='button'
-              aria-label='任务检查器'
+              aria-label={t('inspector.aria')}
               onClick={() => setInspectorOpen(value => !value)}>
               <Settings2 size={16} />
             </button>
@@ -155,20 +157,19 @@ export function ChatPanel({
                 <div className='empty-icon'>
                   <Sparkles size={22} />
                 </div>
-                <h1>{task.status === 'error' ? '任务工作空间不可用' : '你想做什么？'}</h1>
-                <p>
-                  {task.error ??
-                    'EV 可以读取当前目录、修改文件、运行命令，并使用已启用的 Skills 和 Extensions。'}
-                </p>
+                <h1>
+                  {task.status === 'error' ? t('chat.workspaceUnavailable') : t('chat.emptyTitle')}
+                </h1>
+                <p>{task.error ?? t('chat.emptyDesc')}</p>
                 {task.status !== 'error' && runtimeId === 'pi' && !task.model && (
-                  <p className='empty-hint'>当前 Runtime 需要先在设置里登录模型 / Provider。</p>
+                  <p className='empty-hint'>{t('chat.needsLogin')}</p>
                 )}
                 {task.status === 'error' && (
                   <button
                     className='primary-button empty-create-button'
                     type='button'
                     onClick={onCreate}>
-                    <Plus size={16} /> 使用默认工作空间新建任务
+                    <Plus size={16} /> {t('chat.createWithDefault')}
                   </button>
                 )}
               </div>
@@ -181,7 +182,7 @@ export function ChatPanel({
             )}
             <Composer
               running={task.status === 'running'}
-              // 无模型目录的 runtime（codex/claude/qoder）不以缺 model 禁用输入。
+              // Runtimes without a model catalog (codex/claude/qoder) must not disable input over a missing model.
               disabled={(runtimeId === 'pi' && !task.model) || task.status === 'error'}
               leading={configChips}
               onSend={onSend}
@@ -211,14 +212,14 @@ export function ChatPanel({
             <div className='empty-icon'>
               <Sparkles size={23} />
             </div>
-            <h1>开始一个任务</h1>
-            <p>使用下方模型和默认工作空间创建任务，之后也可以为每个任务单独调整。</p>
+            <h1>{t('chat.startTitle')}</h1>
+            <p>{t('chat.startDesc')}</p>
             <div className='empty-model-row'>{configChips}</div>
             {runtimeId === 'pi' && !selectedModel && (
-              <p className='empty-hint'>当前 Runtime 需要先在设置里登录模型 / Provider。</p>
+              <p className='empty-hint'>{t('chat.needsLogin')}</p>
             )}
             <button className='primary-button empty-create-button' type='button' onClick={onCreate}>
-              <Plus size={16} /> 新建任务
+              <Plus size={16} /> {t('chat.createTask')}
             </button>
           </div>
         </div>

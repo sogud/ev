@@ -20,7 +20,7 @@ export async function readSavedBackgroundImage(): Promise<SavedBackgroundImage |
   const name = stored[BACKGROUND_IMAGE_NAME_STORAGE_KEY];
   return {
     dataUrl,
-    name: typeof name === 'string' && name.trim() ? name : '自定义背景',
+    name: typeof name === 'string' && name.trim() ? name : 'Custom background',
   };
 }
 
@@ -40,22 +40,22 @@ export async function removeBackgroundImage(): Promise<void> {
 
 export function readBackgroundImageFile(file: File): Promise<SavedBackgroundImage> {
   if (!file.type.startsWith('image/')) {
-    return Promise.reject(new Error('请选择图片文件'));
+    return Promise.reject(new Error('Please choose an image file'));
   }
   if (file.size > MAX_BACKGROUND_IMAGE_BYTES) {
-    return Promise.reject(new Error('背景图片不能超过 4 MB'));
+    return Promise.reject(new Error('Background image must be under 4 MB'));
   }
 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== 'string' || !reader.result.startsWith('data:image/')) {
-        reject(new Error('无法读取背景图片'));
+        reject(new Error('Could not read the background image'));
         return;
       }
       resolve({ dataUrl: reader.result, name: file.name });
     };
-    reader.onerror = () => reject(new Error('无法读取背景图片'));
+    reader.onerror = () => reject(new Error('Could not read the background image'));
     reader.readAsDataURL(file);
   });
 }

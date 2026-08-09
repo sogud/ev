@@ -12,8 +12,9 @@ import type {
 import { RuntimeRegistry } from '../runtime/runtime-registry';
 import { TaskSessionLifecycle } from '../task-session-lifecycle';
 
-// TaskSessionLifecycle 只依赖 RuntimeRegistry 与回调钩子，
-// 整组并发语义测试无需 mock 任何外部依赖（electron-store / pi-coding-agent 都不再需要）。
+// TaskSessionLifecycle depends only on the RuntimeRegistry and callback hooks;
+// the whole concurrency suite needs no external mocks (neither electron-store
+// nor pi-coding-agent).
 
 class FakeSession implements RuntimeSession {
   readonly runtimeId: RuntimeId;
@@ -135,7 +136,7 @@ function makeTask(): TaskSummary {
   seq += 1;
   return {
     id: `task-${seq}`,
-    title: '新任务',
+    title: 'New task',
     cwd: os.tmpdir(),
     status: 'idle',
     createdAt: Date.now(),
@@ -175,7 +176,7 @@ describe('TaskSessionLifecycle.switchRuntime', () => {
     const runtime = await lifecycle.ensure(task);
     expect(runtime.transcript.size).toBe(1);
 
-    await expect(lifecycle.switchRuntime(task, 'codex')).rejects.toThrow('Runtime 已锁定');
+    await expect(lifecycle.switchRuntime(task, 'codex')).rejects.toThrow('runtime is locked');
   });
 
   it('locks while the first turn is running even with an empty transcript', async () => {
@@ -185,7 +186,7 @@ describe('TaskSessionLifecycle.switchRuntime', () => {
     await lifecycle.ensure(task);
     task.status = 'running';
 
-    await expect(lifecycle.switchRuntime(task, 'codex')).rejects.toThrow('Runtime 已锁定');
+    await expect(lifecycle.switchRuntime(task, 'codex')).rejects.toThrow('runtime is locked');
   });
 
   it('drops the unused session and rebuilds with the new runtime', async () => {
@@ -199,7 +200,7 @@ describe('TaskSessionLifecycle.switchRuntime', () => {
 
     await lifecycle.switchRuntime(task, 'codex');
 
-    // 延迟语义：切换只 dispose 旧会话，新会话首次 ensure 才建。
+    // lazy semantics: a switch only disposes the old session; the new one is built on first ensure.
     expect(oldSession.disposed).toBe(true);
     expect(codex.createCalls).toHaveLength(0);
 
@@ -219,8 +220,9 @@ describe('TaskSessionLifecycle.switchRuntime', () => {
 
     await lifecycle.switchRuntime(task, 'codex');
 
-    // 第二个任务直接续跑旧原生会话；若 switchRuntime 没有释放 sessionOwners，
-    // 这里会误报「该原生会话已在另一个 EV 任务中打开」。
+    // the second task resumes the old native session directly; if switchRuntime had
+    // not released sessionOwners this would falsely report the session as open in
+    // another EV task.
     const second = makeTask();
     second.runtime = { runtimeId: 'pi', nativeId: oldRef?.nativeId ?? '' };
     await lifecycle.ensure(second);
@@ -230,8 +232,9 @@ describe('TaskSessionLifecycle.switchRuntime', () => {
   });
 });
 
-// 架构审查（2026-08-07）指认的 3 个竞态窗口回归测试：
-// ① in-flight init 回写 ② 重叠 setRuntime ③ dispose 窗口 resume 将死会话。
+// Regression tests for the three race windows flagged by the 2026-08-07 architecture
+// review: (1) in-flight init write-back, (2) overlapping setRuntime, (3) resuming a
+// dying session inside the dispose window.
 describe('TaskSessionLifecycle race regressions', () => {
   it('switchRuntime waits for an in-flight init and disposes its write-back', async () => {
     const { lifecycle, pi, codex } = makeLifecycle();
@@ -241,7 +244,7 @@ describe('TaskSessionLifecycle race regressions', () => {
     const switched = lifecycle.switchRuntime(task, 'codex');
     await Promise.all([init.catch(() => undefined), switched]);
 
-    // 旧会话出生后必须被 dispose；codex 会话延迟到 ensure 才建，终态无泄漏。
+    // the old session must be disposed once born; the codex session is lazy until ensure, leaving no leak.
     expect(pi.sessions).toHaveLength(1);
     expect(pi.sessions[0].disposed).toBe(true);
     expect(codex.createCalls).toHaveLength(0);
@@ -263,10 +266,10 @@ describe('TaskSessionLifecycle race regressions', () => {
     for (const session of [...pi.sessions, ...codex.sessions]) {
       expect(session.disposeCalls).toBeLessThanOrEqual(1);
     }
-    // 延迟语义：中间目标 codex 被第二次切换覆盖，从不浪费 spawn。
+    // lazy semantics: the intermediate codex target is overwritten by the second switch and never spawns.
     expect(codex.createCalls).toHaveLength(0);
     await lifecycle.ensure(task);
-    expect(pi.createCalls).toHaveLength(2); // 初始 + 切回
+    expect(pi.createCalls).toHaveLength(2); // initial + switch back
     expect(task.runtime?.runtimeId).toBe('pi');
     expect(lifecycle.get(task.id)?.session.runtimeId).toBe('pi');
   });
@@ -278,13 +281,13 @@ describe('TaskSessionLifecycle race regressions', () => {
     await lifecycle.ensure(task);
 
     const switched = lifecycle.switchRuntime(task, 'codex');
-    // 等 switchOnce 摘完 active/清完 ref、进入 dispose 悬置期再进入。
+    // enter after switchOnce has detached active/cleared the ref, inside the dispose window.
     await new Promise(resolve => setTimeout(resolve, 5));
     const concurrent = lifecycle.ensure(task);
     await Promise.all([switched.catch(() => undefined), concurrent]);
 
     expect(pi.resumeCalls).toHaveLength(0);
-    // desired 先于 dispose 写入：并发 ensure 直接建 codex，不碰将死 pi。
+    // desired is written before dispose: the concurrent ensure builds codex directly, never touching the dying pi.
     expect(pi.createCalls).toHaveLength(1);
     expect(codex.createCalls).toHaveLength(1);
   });

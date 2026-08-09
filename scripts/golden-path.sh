@@ -90,6 +90,7 @@ echo "== build cli =="
 
 echo "== server + CLI journey（desktop 关闭状态）=="
 run_ev server start >/dev/null || fail "server start"
+run_ev settings set '{"language":"zh"}' >/dev/null || fail "pin language zh"
 CID=$(run_ev task create --runtime pi | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])") || fail "cli create"
 run_ev task set-runtime "$CID" qoder >/dev/null || fail "cli set-runtime"
 run_ev task prompt "$CID" "回复 ok" >/dev/null || fail "cli prompt"
@@ -234,6 +235,23 @@ T=$(ev "[...document.querySelectorAll('button[aria-label=\"思考强度\"]')].ma
 contains "$T" "高" || fail "thinking switch (trigger=$T)"
 ok "thinking switch on qoder"
 
+echo "== 双 locale 冒烟（Web 形态，lang 参数固定）=="
+SP=$(python3 -c "import json;print(json.load(open('$HOME/.ev/server.json'))['port'])")
+ST=$(cat "$HOME/.ev/token")
+agent-browser open "http://127.0.0.1:$SP/?port=$SP&token=$ST&lang=en" >/dev/null || fail "open en web"
+sleep 3
+ENSMOKE=$(ev "document.body.textContent")
+contains "$ENSMOKE" "New task" || fail "en locale smoke missing 'New task'"
+ENARIA=$(ev "document.querySelector('.sidebar-footer [aria-label], nav[aria-label]')?.getAttribute('aria-label') ?? document.querySelector('[aria-label=Settings]')?.getAttribute('aria-label') ?? ''")
+contains "$ENARIA" "Settings" || contains "$ENSMOKE" "Thinking:" || fail "en locale smoke missing Settings/Thinking"
+agent-browser open "http://127.0.0.1:$SP/?port=$SP&token=$ST&lang=zh" >/dev/null || fail "open zh web"
+sleep 3
+ZHSMOKE=$(ev "document.body.textContent")
+contains "$ZHSMOKE" "新任务" || fail "zh locale smoke missing 新任务"
+ZHARIA=$(ev "document.querySelector('[aria-label=设置]')?.getAttribute('aria-label') ?? ''")
+contains "$ZHARIA" "设置" || contains "$ZHSMOKE" "思考" || fail "zh locale smoke missing 设置/思考"
+ok "dual locale smoke: en + zh key strings visible"
+
 echo "== 四 runtime round-trip（纯 CLI，desktop 可关）=="
 for RT in pi codex claude-code qoder; do
 	ID=$(run_ev task create --runtime $RT | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])") || fail "$RT create"
@@ -263,7 +281,7 @@ bun /tmp/ev-golden-emu.ts | grep -q emu-ok || fail "mobile viewport emulation"
 MID=$(run_ev task create --runtime pi | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])") || fail "mobile test task"
 run_ev task prompt "$MID" "回复 ok" >/dev/null || fail "mobile seed prompt"
 sleep 5
-agent-browser open "http://127.0.0.1:$MPORT/m/?port=$MPORT&token=$MTOKEN" >/dev/null || fail "mobile open"
+agent-browser open "http://127.0.0.1:$MPORT/m/?port=$MPORT&token=$MTOKEN&lang=zh" >/dev/null || fail "mobile open"
 sleep 3
 MLIST=$(ev "JSON.stringify({rows: document.querySelectorAll('.m-task').length, status: document.querySelector('.m-status')?.textContent ?? ''})" | tr -d '\\')
 echo "$MLIST" | grep -q '"rows"' || fail "mobile list missing"
@@ -326,7 +344,11 @@ for _ in $(seq 1 10); do
 done
 kill "$WSPID" 2>/dev/null
 contains "$WSOK" WS-SYNC-OK || fail "second client WS sync missing ($WSOK)"
-ok "mobile /m: list→detail→send(WS 上屏)→live reply→model sheet→第二客户端同步"
+agent-browser open "http://127.0.0.1:$MPORT/m/?port=$MPORT&token=$MTOKEN&lang=en" >/dev/null || fail "mobile en open"
+sleep 3
+MEN=$(ev "document.querySelector('.m-status')?.textContent ?? ''")
+contains "$MEN" "Available" || fail "mobile en status line missing 'Available'"
+ok "mobile /m: list→detail→send(WS 上屏)→live reply→model sheet→第二客户端同步→en 冒烟"
 
 echo "== 清理测试任务 =="
 run_ev task list >/tmp/ev-golden-tasks.json 2>/dev/null || true
@@ -337,10 +359,11 @@ try:
     ts = json.load(open('/tmp/ev-golden-tasks.json'))
 except Exception:
     ts = []
-ids = [t['id'] for t in ts if t['createdAt'] >= start and t['title'] in ('回复 ok', '新任务')]
+ids = [t['id'] for t in ts if t['createdAt'] >= start and t['title'] in ('回复 ok', '新任务', 'New task')]
 open(sys.argv[2], 'w').write('\n'.join(ids))
 PY
 while read id; do [ -n "$id" ] && run_ev task remove "$id" >/dev/null 2>&1; done </tmp/ev-golden-cleanup.txt
+run_ev settings set '{"language":null}' >/dev/null 2>&1 || true
 
 echo "== ALL GOLDEN PASSED =="
 exit 0

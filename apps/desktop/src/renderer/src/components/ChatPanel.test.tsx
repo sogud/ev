@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nextProvider } from 'react-i18next';
+import { i18n } from '../i18n';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeDescriptor } from '../../../shared/types';
 import { ChatPanel } from './ChatPanel';
+
+const renderMarkup = (node: React.ReactNode): string =>
+  renderToStaticMarkup(<I18nextProvider i18n={i18n}>{node}</I18nextProvider>);
 
 const runtimes: RuntimeDescriptor[] = [
   {
@@ -52,7 +57,7 @@ const baseProps = {
 
 describe('ChatPanel model controls', () => {
   it('shows the model selector before the first task exists', () => {
-    const html = renderToStaticMarkup(<ChatPanel {...baseProps} runtimeId='pi' />);
+    const html = renderMarkup(<ChatPanel {...baseProps} runtimeId='pi' />);
 
     expect(html).toContain('aria-label="选择模型"');
     expect(html).toContain('aria-label="选择 Runtime"');
@@ -66,7 +71,7 @@ describe('ChatPanel model controls', () => {
   });
 
   it('P2：capability=false 显示「暂不支持」禁用态，不静默隐藏', () => {
-    const html = renderToStaticMarkup(<ChatPanel {...baseProps} runtimeId='codex' />);
+    const html = renderMarkup(<ChatPanel {...baseProps} runtimeId='codex' />);
 
     expect(html).toContain('模型：暂不支持');
     expect(html).toContain('思考：暂不支持');
@@ -100,7 +105,7 @@ describe('ChatPanel model controls', () => {
       trace: [],
       runtime: { runtimeId: 'claude-code' as const, nativeId: 'n1' },
     };
-    const html = renderToStaticMarkup(
+    const html = renderMarkup(
       <ChatPanel {...baseProps} runtimes={[catalogRuntime]} runtimeId='claude-code' task={task} />
     );
 
@@ -110,9 +115,7 @@ describe('ChatPanel model controls', () => {
   });
 
   it('renders static chips when switching is locked', () => {
-    const html = renderToStaticMarkup(
-      <ChatPanel {...baseProps} runtimeId='pi' canSwitch={false} />
-    );
+    const html = renderMarkup(<ChatPanel {...baseProps} runtimeId='pi' canSwitch={false} />);
 
     expect(html).not.toContain('aria-label="选择 Runtime"');
     expect(html).toContain('config-chip-static');

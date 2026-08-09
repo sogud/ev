@@ -1,6 +1,6 @@
 /**
- * EV 域类型唯一处（server / desktop / CLI / Web 共享）。
- * 注意：根 index.ts 的 TaskSummary 等是 browser-extension 协议类型，形状不同，勿混。
+ * Single home for EV domain types (shared by server / desktop / CLI / web).
+ * Caveat: TaskSummary etc. in the root index.ts are browser-extension protocol types with a different shape; do not mix them.
  */
 import type { RuntimeId, RuntimeSessionRef } from './runtime';
 
@@ -22,7 +22,7 @@ export interface TaskSummary {
   cwd: string;
   sessionFile?: string;
   runtime?: RuntimeSessionRef;
-  /** 延迟建会话的切换目标：客户端即时显示，重启后仍生效，首次 ensure 消费。 */
+  /** Lazy session-creation switch target: shown immediately, survives restarts, consumed on first ensure. */
   pendingRuntimeId?: RuntimeId;
   status: TaskStatus;
   createdAt: number;
@@ -91,7 +91,6 @@ export interface ModelSummary {
   available: boolean;
 }
 
-
 export interface ResourceItem {
   name: string;
   description?: string;
@@ -115,6 +114,8 @@ export interface AppSettings {
   defaultThinkingLevel: ThinkingLevel;
   defaultRuntime: RuntimeId;
   theme: ThemePreference;
+  /** UI language preference; null/undefined = follow system locale. */
+  language?: 'en' | 'zh' | null;
 }
 
 export interface ResourceSettingsInput {
@@ -122,7 +123,6 @@ export interface ResourceSettingsInput {
   skillPaths: string[];
   extensionPaths: string[];
 }
-
 
 export interface AuthEventPayload {
   flowId: string;
@@ -133,7 +133,7 @@ export interface AuthEventPayload {
   verificationUri?: string;
 }
 
-/** Browser Bridge 快照（从 @ev/browser-host 下沉，避免 contracts→browser-host 环）。 */
+/** Browser Bridge snapshot (lowered from @ev/browser-host to avoid a contracts -> browser-host cycle). */
 export interface BrowserBridgePendingPairing {
   browserId: string;
   browserName: string;

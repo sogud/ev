@@ -12,8 +12,10 @@ function isRecord(value: unknown): value is UnknownRecord {
 }
 
 /**
- * 纯协议映射：Codex item → RuntimeEvent（照 claude-family mapClaudeFamilyRecord 模式）。
- * 状态机（turn 等待/乱序完成）留在 CodexAppServerSession，本函数可脱离会话单测。
+ * Pure protocol mapping: Codex item -> RuntimeEvent (same pattern as
+ * claude-family's mapClaudeFamilyRecord). The state machine (turn wait /
+ * out-of-order completion) stays in CodexAppServerSession so this function can
+ * be unit-tested without a session.
  */
 export function mapCodexItem(
   item: UnknownRecord,
@@ -333,7 +335,7 @@ export class CodexAppServerSession implements RuntimeSession {
   }
 
   /**
-   * EV thinkingLevel → Codex effort 映射表（P2 定案）：
+   * EV thinkingLevel -> Codex effort mapping (settled in P2):
    * off/minimal→minimal，low→low，medium→medium，high→high，xhigh→xhigh，max→ultra。
    */
   private codexEffort(level: ThinkingLevel): string {

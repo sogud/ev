@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { i18n, langOverride } from '../i18n';
+import { resolveLanguage } from '@ev/locales';
 import type {
   AppSettings,
   ProviderSummary,
@@ -29,7 +31,7 @@ interface AppState {
   setModel(provider: string, model: string): Promise<void>;
   setThinkingLevel(level: ThinkingLevel): Promise<void>;
   refreshProviders(): Promise<void>;
-  /** WS 重连后全量 refetch（列表+当前详情），收敛断线期间丢失的事件。 */
+  /** Full refetch after a WS reconnect (list + current detail) to converge missed events. */
   resync(): Promise<void>;
   setTaskRuntime(id: string, runtimeId: RuntimeId): Promise<void>;
   selectRuntime(id: RuntimeId): void;
@@ -68,6 +70,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         window.agentDesktop.runtimes.list(),
       ]);
       const selectedId = tasks[0]?.id ?? null;
+      if (!langOverride) void i18n.changeLanguage(resolveLanguage(settings.language));
       set({
         settings,
         tasks,
@@ -119,12 +122,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (get().selectedId === selectedId) set({ detail });
       }
     } catch {
-      // 静默：下一次重连或用户操作会再收敛。
+      // Silent: the next reconnect or user action re-converges.
     }
   },
 
   selectTask: async id => {
-    // 切任务即清旧错误，避免 stale toast 误导（P0 连带：「开始对话报错」假象）。
+    // Switching tasks clears stale errors so old toasts cannot mislead (P0 fallout).
     set({ selectedId: id, detail: null, error: null });
     try {
       const detail = await window.agentDesktop.tasks.get(id);
@@ -209,8 +212,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   selectRuntime: selectedRuntimeId => set({ selectedRuntimeId }),
-  // 锁定态由 main 侧裁决（对话已开始会 throw），这里接住转 toast，避免未处理 rejection。
-  // 成功时无需手动 set：main 会通过 tasks:update 推送重建后的 detail。
+  // The main side adjudicates the locked state (throws once a conversation started);
+  // catch here and surface a toast to avoid unhandled rejections.
+  // On success no manual set is needed: tasks:update pushes the rebuilt detail.
   setTaskRuntime: async (id, runtimeId) => {
     try {
       await window.agentDesktop.tasks.setRuntime(id, runtimeId);

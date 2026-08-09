@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { CodexAppServerClient } from '../runtime/codex-app-server-client';
 import { CodexAppServerSession, mapCodexItem } from '../runtime/codex-app-server-session';
 
-/** 进程内 fake client：通知可手动发射，turn/start 返回递增 turn id。 */
+/** In-process fake client: notifications fire manually; turn/start returns increasing turn ids. */
 class FakeClient {
   private notify?: (method: string, params: unknown) => void;
   private turnSeq = 0;
@@ -26,7 +26,7 @@ class FakeClient {
       this.turnSeq += 1;
       const id = `turn-${this.turnSeq}`;
       if (this.completeOnStart) {
-        // 极端乱序：completion 先于 turn/start 响应返回到达。
+        // extreme reordering: the completion arrives before the turn/start response.
         this.emit('turn/started', { threadId: 'thread-1', turn: { id } });
         this.emit('turn/completed', {
           threadId: 'thread-1',
@@ -58,16 +58,16 @@ function makeSession(completeOnStart = false): {
 
 const threadId = 'thread-1';
 
-describe('Codex turn state machine（乱序 turn-complete 表驱动）', () => {
+describe('Codex turn state machine (table-driven out-of-order turn-complete)', () => {
   const cases: Array<{
     name: string;
     run: (ctx: { session: CodexAppServerSession; client: FakeClient }) => Promise<void>;
   }> = [
     {
-      name: 'completion 在 waitForTurn 之后到达 → resolve',
+      name: 'completion arrives after waitForTurn -> resolve',
       run: async ({ session, client }) => {
         const prompt = session.promptAndWait('hi');
-        // 等 performStartTurn 消费完 turn/start 响应，再模拟服务端通知。
+        // let performStartTurn consume the turn/start response, then simulate the server notification.
         await new Promise(resolve => setTimeout(resolve, 0));
         client.emit('turn/started', { threadId, turn: { id: 'turn-1' } });
         client.emit('turn/completed', { threadId, turn: { id: 'turn-1', status: 'completed' } });
@@ -75,7 +75,7 @@ describe('Codex turn state machine（乱序 turn-complete 表驱动）', () => {
       },
     },
     {
-      name: 'completion 先于 turn/start 响应到达（极端乱序）→ waitForTurn 走快路径',
+      name: 'completion arrives before the turn/start response (extreme reorder) -> waitForTurn takes the fast path',
       run: async () => {
         const { session } = makeSession(true);
         await session.promptAndWait('hi');
@@ -83,7 +83,7 @@ describe('Codex turn state machine（乱序 turn-complete 表驱动）', () => {
       },
     },
     {
-      name: 'failed turn → reject 且状态 error',
+      name: 'failed turn -> reject with error state',
       run: async ({ session, client }) => {
         const prompt = session.promptAndWait('hi');
         client.emit('turn/started', { threadId, turn: { id: 'turn-1' } });
@@ -96,7 +96,7 @@ describe('Codex turn state machine（乱序 turn-complete 表驱动）', () => {
       },
     },
     {
-      name: '别的 turn 的 completion 不误触当前 waiter',
+      name: 'a completion for another turn does not trip the current waiter',
       run: async ({ session, client }) => {
         const prompt = session.promptAndWait('hi');
         await new Promise(resolve => setTimeout(resolve, 0));
@@ -105,7 +105,7 @@ describe('Codex turn state machine（乱序 turn-complete 表驱动）', () => {
           threadId,
           turn: { id: 'other-turn', status: 'completed' },
         });
-        // waiter 只认自己的 turnId：此刻 prompt 必须仍未 settle。
+        // the waiter only accepts its own turnId: the prompt must still be unsettled here.
         const settled = await Promise.race([
           prompt.then(
             () => 'resolved',
@@ -125,8 +125,8 @@ describe('Codex turn state machine（乱序 turn-complete 表驱动）', () => {
   }
 });
 
-describe('mapCodexItem 纯映射', () => {
-  it('userMessage / agentMessage / reasoning 映射为对应 role', () => {
+describe('mapCodexItem pure mapping', () => {
+  it('userMessage / agentMessage / reasoning map to the matching role', () => {
     const user = mapCodexItem(
       { id: 'u1', type: 'userMessage', content: [{ text: 'hello' }] },
       1,
@@ -141,7 +141,7 @@ describe('mapCodexItem 纯映射', () => {
     expect(thinking).toEqual([expect.objectContaining({ role: 'thinking', content: 's' })]);
   });
 
-  it('commandExecution 的 running/done/error 三态', () => {
+  it('commandExecution running/done/error states', () => {
     const running = mapCodexItem({ id: 'c1', type: 'commandExecution', command: 'ls' }, 1, false);
     expect(running[0]).toMatchObject({ role: 'tool', toolStatus: 'running' });
 
@@ -160,13 +160,13 @@ describe('mapCodexItem 纯映射', () => {
     expect(failed[0]).toMatchObject({ toolStatus: 'error' });
   });
 
-  it('fileChange/mcpToolCall/dynamicToolCall 带 toolName，未知类型返回空', () => {
+  it('fileChange/mcpToolCall/dynamicToolCall carry toolName; unknown types return nothing', () => {
     const fileChange = mapCodexItem({ id: 'f1', type: 'fileChange' }, 1, true);
     expect(fileChange[0]).toMatchObject({ role: 'tool', toolName: 'fileChange' });
     expect(mapCodexItem({ id: 'x1', type: 'unknown' }, 1, true)).toEqual([]);
   });
 
-  it('delta 累积仍经 record 覆盖同 id 事件', () => {
+  it('delta accumulation still overwrites same-id events via records', () => {
     const { session, client } = makeSession();
     const events: RuntimeEvent[] = [];
     session.subscribe(event => events.push(event));

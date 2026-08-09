@@ -7,15 +7,14 @@ import React, {
   useCallback,
 } from 'react';
 import { Search, X, Command } from 'lucide-react';
-import { Bookmark, BookmarkFolder } from '../../types';
+import type { Bookmark, BookmarkFolder } from '../../types';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { searchBookmarks } from '../../utils/search';
-import { cn } from '../../lib/utils';
 
 interface SearchBarProps {
   currentFolder: BookmarkFolder;
-  /** 完整书签树，存在时进行全局搜索，否则仅搜索当前文件夹 */
+  /** Full bookmark tree; when present, search is global, otherwise scoped to the current folder. */
   rootFolder?: BookmarkFolder | null;
   onSearchResult: (results: (Bookmark | BookmarkFolder)[], searchTerm: string) => void;
 }
@@ -35,7 +34,7 @@ const SearchBar = forwardRef<SearchBarRef, SearchBarProps>(
     const handleSearch = useCallback(
       (term: string) => {
         if (term.trim()) {
-          // 优先在完整书签树中全局搜索，排除搜索范围自身（根文件夹）
+          // Prefer global search over the full tree, excluding the search root itself.
           const scope = rootFolder ?? currentFolder;
           const results = searchBookmarks(term, scope).filter(item => item.id !== scope.id);
           setResultCount(results.length);
@@ -52,7 +51,7 @@ const SearchBar = forwardRef<SearchBarRef, SearchBarProps>(
       handleSearch(searchTerm);
     }, [searchTerm, handleSearch]);
 
-    // 使用 useImperativeHandle 暴露方法给父组件
+    // Expose imperative methods to the parent via useImperativeHandle.
     useImperativeHandle(ref, () => ({
       refreshSearch: () => {
         handleSearch(searchTerm);
@@ -75,8 +74,8 @@ const SearchBar = forwardRef<SearchBarRef, SearchBarProps>(
             type='text'
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            placeholder='搜索全部书签和文件夹…'
-            aria-label='搜索全部书签和文件夹'
+            placeholder='Search all bookmarks and folders…'
+            aria-label='Search all bookmarks and folders'
             className='search-input pl-9 pr-14'
           />
           <div className='search-shortcut'>
@@ -97,8 +96,8 @@ const SearchBar = forwardRef<SearchBarRef, SearchBarProps>(
           <div className='search-indicator' aria-live='polite'>
             <span>
               {resultCount > 0
-                ? `找到 ${resultCount} 个与 "${searchTerm}" 相关的结果`
-                : `未找到与 "${searchTerm}" 相关的结果`}
+                ? `${resultCount} results for "${searchTerm}"`
+                : `No results for "${searchTerm}"`}
             </span>
           </div>
         )}

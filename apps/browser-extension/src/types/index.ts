@@ -21,18 +21,18 @@ export interface BookmarkFolder {
 export interface Options {
   theme: 'light' | 'dark' | 'auto';
   sortBy: 'date' | 'name' | 'url';
-  // 图标颜色设置
+  // Icon color settings.
   iconColor: {
     bookmark: string;
     folder: string;
   };
-  // 背景设置
+  // Background settings.
   background: {
     type: 'gradient' | 'image' | 'color';
     value: string;
     opacity: number;
   };
-  // 界面自定义
+  // UI customization.
   uiCustomization: {
     cardStyle: 'modern' | 'minimal' | 'glass';
     animationEnabled: boolean;
@@ -40,13 +40,13 @@ export interface Options {
   };
 }
 
-// 拖拽相关类型
+// Drag-and-drop types.
 export interface DragState {
   activeId: string | null;
   overId: string | null;
 }
 
-// UI状态类型
+// UI state types.
 export interface BookmarkState {
   currentFolder: BookmarkFolder;
   folderHistory: BookmarkFolder[];
@@ -60,12 +60,12 @@ export interface UIModalState {
   editingItemId: string | null;
 }
 
-// 事件处理函数类型
+// Event handler types.
 export type BookmarkHandler = (id: string, title: string) => void;
 export type FolderHandler = (id: string) => void;
 export type SearchHandler = (results: (Bookmark | BookmarkFolder)[], searchTerm: string) => void;
 
-// 组件Props类型
+// Component props types.
 export interface BaseItemProps {
   onContextMenuOpen?: () => void;
   onContextMenuClose?: () => void;
@@ -85,7 +85,7 @@ export interface FolderItemProps extends BaseItemProps {
   onDeleteFolder?: FolderHandler;
 }
 
-// Chrome Bookmarks API 类型
+// Chrome Bookmarks API types.
 export interface ChromeBookmarkTreeNode {
   id: string;
   parentId?: string;

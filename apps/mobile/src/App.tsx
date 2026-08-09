@@ -1,12 +1,16 @@
 /**
- * EV 移动端独立 Web entry（P3 R3，React 版）：/m 路由，390×844 基准。
- * 只复用 contracts client + design-tokens；组件独立实现，不搬桌面 renderer。
- * 最小功能集：任务列表 → 详情（transcript+发送，乐观上屏）→ 切模型 + runtime 状态行。
+ * Standalone mobile web entry (P3 R3, React): /m route, 390x844 baseline.
+ * Reuses only the contracts client + design tokens; components are written
+ * independently from the desktop renderer. Minimal feature set: task list ->
+ * detail (transcript + send) -> model switch + runtime status line.
  */
 import type { ProviderSummary, TaskDetail, TaskSummary } from '@ev/contracts/domain';
 import type { RuntimeDescriptor } from '@ev/contracts';
 import { createEvClient } from '@ev/contracts/client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { hasLangOverride, i18n } from './i18n';
+import { resolveLanguage } from '@ev/locales';
 import '@ev/design-tokens/theme.css';
 import './style.css';
 
@@ -18,9 +22,9 @@ const api = createEvClient({
 
 function timeAgo(ts: number): string {
   const minutes = Math.max(0, Math.round((Date.now() - ts) / 60000));
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.round(minutes / 60)}h ago`;
+  if (minutes < 1) return i18n.t('common.justNow');
+  if (minutes < 60) return i18n.t('common.minutesAgo', { count: minutes });
+  return i18n.t('common.hoursAgo', { count: Math.round(minutes / 60) });
 }
 
 interface ModelOption {
@@ -30,12 +34,13 @@ interface ModelOption {
 }
 
 function authLabel(status: string | undefined): string {
-  if (status === 'logged_in') return '已登录';
-  if (status === 'logged_out') return '未登录';
-  return '状态未知';
+  if (status === 'logged_in') return i18n.t('common.loggedIn');
+  if (status === 'logged_out') return i18n.t('common.loggedOut');
+  return i18n.t('common.authUnknown');
 }
 
 export function App(): React.JSX.Element {
+  const { t } = useTranslation();
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [runtimes, setRuntimes] = useState<RuntimeDescriptor[]>([]);
   const [providers, setProviders] = useState<ProviderSummary[]>([]);
@@ -45,8 +50,15 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([api.tasks.list(), api.runtimes.list(), api.providers.list()])
-      .then(([taskList, runtimeList, providerList]) => {
+    void Promise.all([
+      api.tasks.list(),
+      api.runtimes.list(),
+      api.providers.list(),
+      api.settings.get().catch(() => null),
+    ])
+      .then(([taskList, runtimeList, providerList, settings]) => {
+        if (settings && !hasLangOverride)
+          void i18n.changeLanguage(resolveLanguage(settings.language));
         if (!alive) return;
         setTasks(taskList);
         setRuntimes(runtimeList);
@@ -56,7 +68,7 @@ export function App(): React.JSX.Element {
         if (alive) setError(err instanceof Error ? err.message : String(err));
       });
     const offReconnect = api.onReconnect(() => {
-      // 断线重连后全量 refetch 收敛：列表 + 当前详情。
+      // Full refetch after a reconnect to converge events missed while offline.
       void api.tasks.list().then(list => {
         if (alive) setTasks(list);
       });
@@ -101,12 +113,16 @@ export function App(): React.JSX.Element {
 
   const statusLine = useMemo(() => {
     const runtime = runtimeOf(detail) ?? runtimes[0];
-    if (!runtime) return 'runtime 未知';
+    if (!runtime) return i18n.t('mobile.runtimeUnknown');
     const auth = authLabel(runtime.auth?.status);
-    return `${runtime.name} · ${runtime.availability === 'available' ? '可用' : '不可用'} · ${auth}`;
+    const availability =
+      runtime.availability === 'available'
+        ? i18n.t('common.available')
+        : i18n.t('common.unavailable');
+    return `${runtime.name} · ${availability} · ${auth}`;
   }, [detail, runtimes]);
 
-  if (error) return <p className='m-empty'>连不上 EV server：{error}</p>;
+  if (error) return <p className='m-empty'>{t('mobile.connectError', { error })}</p>;
 
   return detail ? (
     <DetailView
@@ -121,12 +137,12 @@ export function App(): React.JSX.Element {
         setSheetOpen(false);
       }}
       onSend={text => {
-        // 不靠本地回显：user turn 在 tasks:update 事件流里，WS 送达即上屏。
+        // No local echo: the user turn arrives via the tasks:update event stream.
         void api.tasks.prompt(detail.id, text);
       }}
       onModel={(provider, id) => {
         setSheetOpen(false);
-        // setModel 无返回体；tasks:update 广播会校正 detail。
+        // setModel has no response body; the tasks:update broadcast reconciles detail.
         void api.tasks.setModel(detail.id, provider, id);
       }}
     />
@@ -137,7 +153,7 @@ export function App(): React.JSX.Element {
         <span className='m-status'>{statusLine}</span>
       </header>
       <main className='m-list'>
-        {tasks.length === 0 && <p className='m-empty'>暂无任务，桌面端创建后这里可见</p>}
+        {tasks.length === 0 && <p className='m-empty'>{t('mobile.emptyTasks')}</p>}
         {tasks.map(task => (
           <button
             type='button'
@@ -150,7 +166,7 @@ export function App(): React.JSX.Element {
                 setSheetOpen(false);
               });
             }}>
-            <strong>{task.title || '新任务'}</strong>
+            <strong>{task.title || t('common.newTask')}</strong>
             <span>
               {runtimeOf(task)?.glyph ?? '·'} {timeAgo(task.updatedAt)}
             </span>
@@ -163,8 +179,9 @@ export function App(): React.JSX.Element {
 
 function modelLabelOf(detail: TaskDetail, runtime: RuntimeDescriptor | undefined): string {
   if (detail.model) return detail.model.id;
-  if (runtime && runtime.id !== 'pi') return runtime.modelCatalog?.[0]?.name ?? '模型';
-  return '模型';
+  if (runtime && runtime.id !== 'pi')
+    return runtime.modelCatalog?.[0]?.name ?? i18n.t('mobile.model');
+  return i18n.t('mobile.model');
 }
 
 function DetailView(props: {
@@ -178,6 +195,7 @@ function DetailView(props: {
   onSend: (text: string) => void;
   onModel: (provider: string, id: string) => void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const {
     detail,
     statusLine,
@@ -189,7 +207,7 @@ function DetailView(props: {
     onSend,
     onModel,
   } = props;
-  // 非受控输入：外部自动化（golden）直接赋 value 也能读到，真实键入同样工作。
+  // Uncontrolled input: automation (golden) can assign .value directly; real typing works the same.
   const inputRef = useRef<HTMLInputElement | null>(null);
   const transcriptRef = useRef<HTMLElement | null>(null);
 
@@ -226,10 +244,15 @@ function DetailView(props: {
   return (
     <>
       <header className='m-header'>
-        <button type='button' className='m-back' data-back='1' aria-label='返回' onClick={onBack}>
+        <button
+          type='button'
+          className='m-back'
+          data-back='1'
+          aria-label={t('common.back')}
+          onClick={onBack}>
           ‹
         </button>
-        <h1>{detail.title || '任务'}</h1>
+        <h1>{detail.title || t('mobile.taskFallback')}</h1>
         <span className='m-status'>{statusLine}</span>
       </header>
       <main className='m-transcript' ref={transcriptRef as React.RefObject<HTMLElement>}>
@@ -237,7 +260,7 @@ function DetailView(props: {
           .filter(message => message.kind === 'user' || message.kind === 'assistant')
           .map(message => (
             <div key={message.id} className={`m-msg ${message.kind}`}>
-              <span className='m-role'>{message.kind === 'user' ? '你' : 'EV'}</span>
+              <span className='m-role'>{message.kind === 'user' ? t('mobile.you') : 'EV'}</span>
               <p>{message.content}</p>
             </div>
           ))}
@@ -247,20 +270,25 @@ function DetailView(props: {
           type='button'
           className='m-chip'
           data-sheet='model'
-          aria-label='切换模型'
+          aria-label={t('mobile.switchModel')}
           onClick={() => setSheetOpen(true)}>
           {modelLabel}
         </button>
         <input
           id='m-input'
-          placeholder='发送一句话…'
+          placeholder={t('mobile.placeholder')}
           enterKeyHint='send'
           ref={inputRef}
           onKeyDown={event => {
             if (event.key === 'Enter') submit();
           }}
         />
-        <button type='button' className='m-send' data-send='1' aria-label='发送' onClick={submit}>
+        <button
+          type='button'
+          className='m-send'
+          data-send='1'
+          aria-label={t('common.send')}
+          onClick={submit}>
           ↑
         </button>
       </footer>
@@ -269,11 +297,11 @@ function DetailView(props: {
           <button
             type='button'
             className='m-sheet-backdrop'
-            aria-label='关闭模型列表'
+            aria-label={t('mobile.closeSheet')}
             onClick={() => setSheetOpen(false)}
           />
-          <div className='m-sheet-card' role='dialog' aria-label='选择模型'>
-            {modelOptions.length === 0 && <p className='m-empty'>以原生为准</p>}
+          <div className='m-sheet-card' role='dialog' aria-label={t('mobile.switchModel')}>
+            {modelOptions.length === 0 && <p className='m-empty'>{t('mobile.nativeSource')}</p>}
             {modelOptions.map(option => (
               <button
                 type='button'

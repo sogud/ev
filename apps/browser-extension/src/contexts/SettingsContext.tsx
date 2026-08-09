@@ -3,7 +3,7 @@ import {
   BACKGROUND_IMAGE_NAME_STORAGE_KEY,
   BACKGROUND_IMAGE_STORAGE_KEY,
 } from '../shared/background-image';
-import { Options } from '../types';
+import type { Options } from '../types';
 
 interface SettingsContextType {
   settings: Options;
@@ -85,7 +85,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [settings, setSettings] = useState<Options>(defaultSettings);
 
   useEffect(() => {
-    // 从 Chrome 存储加载设置
+    // Load settings from Chrome storage.
     chrome.storage.sync.get(defaultSettings, items => {
       setSettings(items as Options);
     });

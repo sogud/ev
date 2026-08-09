@@ -1,7 +1,7 @@
 /**
- * EV 调用/事件契约唯一处：call/event token + 权限分级 + HTTP/WS 映射。
- * server 按它挂路由与强制权限；CLI/desktop/Web 按它生成客户端。
- * 通道字符串全仓唯一处（server-client-split-v1 定案）。
+ * Single home for the EV call/event contract: call/event tokens + permission tiers + HTTP/WS mapping.
+ * The server mounts routes and enforces permissions from it; CLI/desktop/web generate clients from it.
+ * Channel strings are repo-wide unique here (settled in server-client-split-v1).
  */
 import type {
   AppSettings,
@@ -16,7 +16,7 @@ import type {
 } from './domain';
 import type { RuntimeDescriptor, RuntimeId } from './runtime';
 
-/** 权限分级（P3 远程接入的必选项，契约第一天实现）：observer=只读+审批，operator=全操作。 */
+/** Permission tiers (required by P3 remote access, implemented since day one): observer = read-only + approvals, operator = full control. */
 export type PermissionLevel = 'observer' | 'operator';
 
 export interface CallToken<Args extends unknown[], Ret> {
@@ -66,7 +66,7 @@ export const ipcRegistry = {
     get: call<[string], TaskInspection>('inspection:get', 'observer'),
   },
   providers: {
-    // 只读（native-auth-display-v1）：EV 零凭据持有，登录类 call 全删。
+    // Read-only (native-auth-display-v1): EV holds zero credentials; all login calls are removed.
     list: call<[], ProviderSummary[]>('providers:list', 'observer'),
   },
   resources: {
@@ -112,7 +112,7 @@ type ClientLeaf<T> =
       ? (listener: (payload: Payload) => void) => () => void
       : never;
 
-/** 客户端 API 形状（CLI/desktop/Web 对等）。 */
+/** Client API shape (CLI/desktop/web are peers). */
 export type ClientOf<Node> = {
   readonly [K in keyof Node]: Node[K] extends AnyToken ? ClientLeaf<Node[K]> : ClientOf<Node[K]>;
 };
@@ -120,7 +120,7 @@ export type ClientOf<Node> = {
 type HandlerLeaf<T> =
   T extends CallToken<infer Args, infer Ret> ? (...args: Args) => Ret | Promise<Ret> : never;
 
-/** server 侧 handler 对象形状：与 registry 同形，漏/多一个 handler 都是编译错误。 */
+/** Server-side handler object shape: mirrors the registry; a missing or extra handler is a compile error. */
 export type HandlersOf<Node> = {
   readonly [K in keyof Node as Node[K] extends EventToken<unknown> ? never : K]: Node[K] extends
     CallToken<unknown[], unknown> | EventToken<unknown>
@@ -130,9 +130,9 @@ export type HandlersOf<Node> = {
 
 export type AgentDesktopAPI = ClientOf<typeof ipcRegistry>;
 
-// ---- HTTP / WS 映射（server-client-split-v1）----
+// ---- HTTP / WS mapping (server-client-split-v1) ----
 
-/** HTTP 路由：POST /api/<ns>/<method>，body = { args: [...] }。 */
+/** HTTP route: POST /api/<ns>/<method>, body = { args: [...] }. */
 export function httpRoute(namespace: string, method: string): string {
   return `/api/${namespace}/${method}`;
 }
@@ -143,7 +143,7 @@ export function parseHttpRoute(pathname: string): { namespace: string; method: s
   return { namespace: match[1], method: match[2] };
 }
 
-/** 在 registry 里按 channel 找 call token（server 路由分发/权限检查用）。 */
+/** Find a call token by channel in the registry (server route dispatch / permission checks). */
 export function findCallToken(
   namespace: string,
   method: string
@@ -153,27 +153,27 @@ export function findCallToken(
   return token && token.kind === 'call' ? (token as CallToken<unknown[], unknown>) : null;
 }
 
-/** WS 线上消息：单连接多路复用，channel 与 event token 同名。 */
+/** WS wire message: one connection multiplexed; channel shares the event token name. */
 export interface EvWireMessage {
   channel: string;
   payload: unknown;
 }
 
-// ---- 认证 / 生命周期 ----
+// ---- auth / lifecycle ----
 
-/** ~/.ev/server.json 内容：客户端发现 server 的唯一入口。 */
+/** Contents of ~/.ev/server.json: the only entry for clients to discover the server. */
 export interface ServerInfo {
   port: number;
   token: string;
   pid: number;
   version: string;
   startedAt: number;
-  /** remote.enabled 时绑定的私网地址（绝不 0.0.0.0/公网）；缺省=仅 loopback。 */
+  /** Private addresses bound when remote.enabled (never 0.0.0.0/public); absent = loopback only. */
   lanIps?: string[];
   tailscaleIp?: string | null;
 }
 
-/** ~/.ev/tokens.json 里的分级远程 token（P3 远程接入）。 */
+/** Tiered remote tokens stored in ~/.ev/tokens.json (P3 remote access). */
 export interface IssuedToken {
   id: string;
   token: string;

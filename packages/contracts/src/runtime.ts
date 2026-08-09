@@ -26,11 +26,11 @@ export const RuntimeDescriptorSchema = z.object({
   version: z.string().max(100).optional(),
   message: z.string().max(500).optional(),
   glyph: z.string().max(4).optional(),
-  /** 非 pi runtime 的模型候选表（pi 走 provider 目录）；空/缺省 = UI 显示「暂不支持」。 */
+  /** Model candidates for non-pi runtimes (pi uses the provider catalog); empty/absent = UI shows "unsupported". */
   modelCatalog: z
     .array(z.object({ id: z.string().max(200), name: z.string().max(200) }))
     .optional(),
-  /** 原生认证只读探测（native-auth-display-v1）：EV 零凭据持有，只看不写。 */
+  /** Read-only native auth probe (native-auth-display-v1): EV holds zero credentials, observes only. */
   auth: z
     .object({
       status: z.enum(['logged_in', 'logged_out', 'unknown']),

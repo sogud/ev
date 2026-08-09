@@ -1,6 +1,8 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { Cable, ChevronRight, Cpu, FolderOpen, Settings, X } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { i18n } from '../i18n';
 import type { RuntimeDescriptor } from '../../../shared/types';
 import { useAppStore } from '../store/useAppStore';
 import { BrowserBridgeSettings } from './settings/BrowserBridgeSettings';
@@ -10,16 +12,19 @@ import { ResourceSettings } from './settings/ResourceSettings';
 type Tab = 'browser' | 'general' | 'runtimes';
 
 /*
- * Runtime 页=紧凑行列表+抽屉详情（2026-08-09 重设计）：
- * 行四列等构（glyph/name+version/状态徽章/能力chips/chevron），整行 button 键盘可达；
- * 抽屉=认证说明+配置路径打开+模型目录只读；pi 抽屉另含能力与资源管理。
- * EV 零凭据持有：打开走系统编辑器，复制只到剪贴板，绝不代写原生配置。
+ * Runtimes page = compact row list + drawer detail:
+ * rows are four-column (glyph / name+version / status badge / capability chips / chevron),
+ * whole row is a keyboard-reachable button; drawer shows auth hints, read-only config
+ * paths and the read-only model catalog; the pi drawer adds capabilities and resources.
+ * EV holds zero credentials: opens go through the system editor, copies hit the
+ * clipboard only, native configs are never written by EV.
  */
 function statusTextOf(runtime: RuntimeDescriptor): string {
   const auth = runtime.auth;
-  if (auth?.status === 'logged_in') return `已登录${auth.account ? `（${auth.account}）` : ''}`;
-  if (auth?.status === 'logged_out') return '未登录';
-  return '无法确定';
+  if (auth?.status === 'logged_in')
+    return i18n.t('runtimes.loggedIn', { suffix: auth.account ? ` (${auth.account})` : '' });
+  if (auth?.status === 'logged_out') return i18n.t('common.loggedOut');
+  return i18n.t('runtimes.authUnknown');
 }
 
 function copyText(text: string): void {
@@ -33,11 +38,12 @@ function RuntimeDrawer({
   runtime: RuntimeDescriptor;
   onClose(): void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const providers = useAppStore(state => state.providers);
   const auth = runtime.auth;
   return (
-    <aside className='runtime-drawer' aria-label={`${runtime.name} 详情`}>
+    <aside className='runtime-drawer' aria-label={t('runtimes.drawerAria', { name: runtime.name })}>
       <header>
         <span className='runtime-glyph' aria-hidden='true'>
           {runtime.glyph ?? runtime.id.slice(0, 2)}
@@ -47,13 +53,17 @@ function RuntimeDrawer({
         <span className={`auth-status ${runtime.auth?.status ?? 'unknown'}`}>
           {statusTextOf(runtime)}
         </span>
-        <button type='button' className='icon-button' aria-label='关闭详情' onClick={onClose}>
+        <button
+          type='button'
+          className='icon-button'
+          aria-label={t('runtimes.closeDrawerAria')}
+          onClick={onClose}>
           <X size={15} />
         </button>
       </header>
       <section>
-        <h3>原生认证</h3>
-        <p className='muted'>{auth?.hint ?? '凭据由该 runtime 原生管理，EV 只读展示。'}</p>
+        <h3>{t('runtimes.nativeAuth')}</h3>
+        <p className='muted'>{auth?.hint ?? t('runtimes.authHint')}</p>
         {auth?.loginCommand && (
           <button
             type='button'
@@ -63,20 +73,22 @@ function RuntimeDrawer({
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}>
-            {copied ? '已复制' : `复制登录命令：${auth.loginCommand}`}
+            {copied
+              ? t('runtimes.copied')
+              : t('runtimes.copyLogin', { command: auth.loginCommand })}
           </button>
         )}
       </section>
       {auth?.configPaths && auth.configPaths.length > 0 && (
         <section>
-          <h3>配置文件（只读）</h3>
+          <h3>{t('runtimes.configFiles')}</h3>
           {auth.configPaths.map(path => (
             <span key={path} className='auth-path'>
               <code title={path}>{path.replace(/^\/Users\/[^/]+/, '~')}</code>
               <button
                 type='button'
                 className='icon-button'
-                aria-label={`打开 ${path}`}
+                aria-label={t('runtimes.openAria', { path })}
                 onClick={() => void window.agentDesktop.settings.openPath(path)}>
                 <FolderOpen size={13} />
               </button>
@@ -85,7 +97,7 @@ function RuntimeDrawer({
         </section>
       )}
       <section>
-        <h3>模型目录（只读）</h3>
+        <h3>{t('runtimes.modelCatalog')}</h3>
         {runtime.modelCatalog && runtime.modelCatalog.length > 0 ? (
           <ul className='drawer-model-list'>
             {runtime.modelCatalog.map(model => (
@@ -98,12 +110,15 @@ function RuntimeDrawer({
               .filter(provider => provider.models.some(model => model.available))
               .map(provider => (
                 <li key={provider.id}>
-                  {provider.name} · {provider.models.filter(model => model.available).length} 个可用
+                  {provider.name} ·{' '}
+                  {t('runtimes.modelsAvailable', {
+                    count: provider.models.filter(model => model.available).length,
+                  })}
                 </li>
               ))}
           </ul>
         ) : (
-          <p className='muted'>以原生为准</p>
+          <p className='muted'>{t('runtimes.nativeSource')}</p>
         )}
       </section>
       {runtime.id === 'pi' && <ResourceSettings />}
@@ -120,6 +135,7 @@ function RuntimeRow({
   open: boolean;
   onToggle(): void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const caps = runtime.capabilities;
   const chip = (label: string, on: boolean): React.JSX.Element => (
     <span key={label} className={`cap-chip${on ? '' : ' off'}`}>
@@ -131,7 +147,7 @@ function RuntimeRow({
       type='button'
       className={`runtime-row${open ? ' open' : ''}`}
       aria-expanded={open}
-      aria-label={`${runtime.name} 详情`}
+      aria-label={t('runtimes.drawerAria', { name: runtime.name })}
       onClick={onToggle}>
       <span className='runtime-glyph' aria-hidden='true'>
         {runtime.glyph ?? runtime.id.slice(0, 2)}
@@ -144,9 +160,9 @@ function RuntimeRow({
         {statusTextOf(runtime)}
       </span>
       <span className='cap-chips'>
-        {chip('模型', caps.models)}
-        {chip('思考', caps.thinkingLevels)}
-        {chip('续话', caps.resumeSession)}
+        {chip(t('runtimes.capsModels'), caps.models)}
+        {chip(t('runtimes.capsThinking'), caps.thinkingLevels)}
+        {chip(t('runtimes.capsResume'), caps.resumeSession)}
       </span>
       <ChevronRight size={15} className='row-chevron' aria-hidden='true' />
     </button>
@@ -154,6 +170,7 @@ function RuntimeRow({
 }
 
 function RuntimesPage(): React.JSX.Element {
+  const { t } = useTranslation();
   const runtimes = useAppStore(state => state.runtimes);
   const [openId, setOpenId] = useState<string | null>(null);
   const openRuntime = runtimes.find(runtime => runtime.id === openId);
@@ -161,7 +178,7 @@ function RuntimesPage(): React.JSX.Element {
     <div className='runtimes-page'>
       <div className='settings-page-heading'>
         <h2>Runtime</h2>
-        <p>原生认证只读展示；点行查看认证、配置与模型目录。</p>
+        <p>{t('runtimes.pageDesc')}</p>
       </div>
       <div className='runtime-rows' role='list'>
         {runtimes.map(runtime => (
@@ -179,6 +196,7 @@ function RuntimesPage(): React.JSX.Element {
 }
 
 export function SettingsModal({ onClose }: { onClose(): void }): React.JSX.Element {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('general');
 
   const navButton = (value: Tab, icon: React.ReactNode, label: string): React.JSX.Element => (
@@ -197,15 +215,17 @@ export function SettingsModal({ onClose }: { onClose(): void }): React.JSX.Eleme
       <Dialog.Portal>
         <Dialog.Backdrop className='modal-backdrop' />
         <Dialog.Popup className='settings-modal'>
-          <Dialog.Description className='sr-only'>管理 EV 的运行时与界面设置</Dialog.Description>
+          <Dialog.Description className='sr-only'>{t('runtimes.dialogDesc')}</Dialog.Description>
           <aside className='settings-nav'>
-            <Dialog.Title className='settings-nav-title'>设置</Dialog.Title>
-            {navButton('general', <Settings size={16} />, '通用')}
+            <Dialog.Title className='settings-nav-title'>{t('settings.title')}</Dialog.Title>
+            {navButton('general', <Settings size={16} />, t('settings.general'))}
             {navButton('runtimes', <Cpu size={16} />, 'Runtime')}
             {navButton('browser', <Cable size={16} />, 'Browser')}
           </aside>
           <div className='settings-content'>
-            <Dialog.Close className='modal-close icon-button' aria-label='关闭设置'>
+            <Dialog.Close
+              className='modal-close icon-button'
+              aria-label={t('runtimes.closeSettingsAria')}>
               <X size={18} />
             </Dialog.Close>
             {tab === 'general' && <GeneralSettings />}

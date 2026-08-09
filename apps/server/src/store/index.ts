@@ -1,10 +1,10 @@
 import { getBackend } from './backend';
 
-
 /**
- * electron-store 同形 API，SQLite（~/.ev/ev.db）后端（M1 事实源）。
- * 服务代码零改动：get/set 语义与 JSON 时代一致；值以 JSON blob 存 KV 表。
- * 驱动缝在 ./backend（bun:sqlite / node:sqlite 双实现）。
+ * electron-store-shaped API over SQLite (~/.ev/ev.db), the M1 source of truth.
+ * Service code stays untouched: get/set semantics match the JSON era; values are
+ * JSON blobs in the KV table. The driver seam lives in ./backend
+ * (bun:sqlite / node:sqlite implementations).
  */
 export default class Store<T extends object> {
   constructor(
@@ -21,7 +21,7 @@ export default class Store<T extends object> {
       try {
         return JSON.parse(raw) as T[K];
       } catch {
-        // 坏值落回默认，不炸启动。
+        // corrupt values fall back to defaults instead of breaking startup.
       }
     }
     return (this.options.defaults as Record<string, unknown> | undefined)?.[key as string] as T[K];

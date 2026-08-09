@@ -1,5 +1,7 @@
 import { FolderOpen, Plus, Settings, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { i18n } from '../i18n';
 import type { RuntimeDescriptor, TaskSummary } from '../../../shared/types';
 import { runtimeMonogram } from './ui/runtimeMeta';
 
@@ -16,15 +18,15 @@ interface SidebarProps {
 
 function timeAgo(timestamp: number): string {
   const delta = Date.now() - timestamp;
-  if (delta < 60_000) return '刚刚';
+  if (delta < 60_000) return i18n.t('common.justNow');
   if (delta < 3_600_000) return `${Math.floor(delta / 60_000)}m ago`;
   if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h ago`;
   return `${Math.floor(delta / 86_400_000)}d ago`;
 }
 
 /*
- * sidebar 纯展示：平铺任务列表 + 只读 runtime glyph。
- * Runtime 的切换入口在对话框下方，sidebar 不放任何切换交互。
+ * The sidebar is display-only: flat task list + read-only runtime glyph.
+ * Runtime switching lives under the composer, never here.
  */
 export function Sidebar({
   tasks,
@@ -36,6 +38,7 @@ export function Sidebar({
   onRemove,
   onSettings,
 }: SidebarProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
   const sorted = [...tasks].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -44,8 +47,8 @@ export function Sidebar({
     task.status !== 'idle' || Date.now() - task.updatedAt < recentWindow;
   const visible = expanded ? sorted : sorted.filter(isRecent);
   const hiddenCount = sorted.length - visible.length;
-  // 任务行的 runtime 只是只读展示：descriptor glyph 优先，monogram 兜底；
-  // 历史任务无 session ref 时按 pi 显示。
+  // Read-only runtime hint per row: descriptor glyph first, monogram fallback;
+  // legacy tasks without a session ref render as pi.
   const glyphOf = (task: TaskSummary): string => {
     const id = task.runtime?.runtimeId ?? 'pi';
     return runtimes.find(runtime => runtime.id === id)?.glyph ?? runtimeMonogram(id);
@@ -57,12 +60,12 @@ export function Sidebar({
       <div className='new-task-row'>
         <button className='new-task-button' type='button' onClick={onCreate}>
           <Plus size={16} />
-          新任务
+          {t('common.newTask')}
           <kbd>⌘N</kbd>
         </button>
       </div>
 
-      <nav className='task-list' aria-label='任务列表'>
+      <nav className='task-list' aria-label={t('sidebar.taskListAria')}>
         {visible.map(task => (
           <div className={`task-row ${selectedId === task.id ? 'active' : ''}`} key={task.id}>
             <button type='button' className='task-select' onClick={() => onSelect(task.id)}>
@@ -78,7 +81,7 @@ export function Sidebar({
             <button
               className='task-remove'
               type='button'
-              aria-label={`删除 ${task.title}`}
+              aria-label={t('sidebar.deleteTask', { title: task.title })}
               onClick={() => onRemove(task.id)}>
               <Trash2 size={14} />
             </button>
@@ -89,18 +92,24 @@ export function Sidebar({
             className='task-show-more'
             type='button'
             onClick={() => setExpanded(value => !value)}>
-            {expanded ? '收起历史' : `显示更多（${hiddenCount}）`}
+            {expanded
+              ? t('sidebar.collapseHistory')
+              : t('sidebar.showMore', { count: hiddenCount })}
           </button>
         )}
-        {sorted.length === 0 && <p className='sidebar-empty'>还没有任务</p>}
+        {sorted.length === 0 && <p className='sidebar-empty'>{t('sidebar.empty')}</p>}
       </nav>
 
       <div className='sidebar-footer'>
         <div className='workspace-summary' title={defaultWorkspace ?? ''}>
           <FolderOpen size={15} />
-          <span>{defaultWorkspace?.split('/').pop() ?? '未选择目录'}</span>
+          <span>{defaultWorkspace?.split('/').pop() ?? t('sidebar.noWorkspace')}</span>
         </div>
-        <button className='icon-button' type='button' aria-label='设置' onClick={onSettings}>
+        <button
+          className='icon-button'
+          type='button'
+          aria-label={t('settings.title')}
+          onClick={onSettings}>
           <Settings size={17} />
         </button>
       </div>

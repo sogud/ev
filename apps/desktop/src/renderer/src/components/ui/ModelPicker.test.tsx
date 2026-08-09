@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nextProvider } from 'react-i18next';
+import { i18n } from '../../i18n';
 import { describe, expect, it, vi } from 'vitest';
 import type { ProviderSummary } from '../../../../shared/types';
 import { buildModelPickerGroups, filterModelPickerItem, ModelPicker } from './ModelPicker';
+
+const renderMarkup = (node: React.ReactNode): string =>
+  renderToStaticMarkup(<I18nextProvider i18n={i18n}>{node}</I18nextProvider>);
 
 const provider: ProviderSummary = {
   id: 'fixture-provider',
@@ -60,9 +65,7 @@ describe('ModelPicker', () => {
   });
 
   it('keeps the trigger visible when no provider is configured', () => {
-    const html = renderToStaticMarkup(
-      <ModelPicker providers={[]} value='' onValueChange={vi.fn()} />
-    );
+    const html = renderMarkup(<ModelPicker providers={[]} value='' onValueChange={vi.fn()} />);
 
     expect(html).toContain('aria-label="选择模型"');
     expect(html).toContain('没有可用模型');

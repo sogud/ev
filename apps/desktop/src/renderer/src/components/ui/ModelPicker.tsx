@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Popover } from '@base-ui/react/popover';
 import { Command } from 'cmdk';
 import { Check, ChevronDown, Search } from 'lucide-react';
@@ -66,6 +67,7 @@ export function ModelPicker({
   onValueChange,
   onAutomatic,
 }: ModelPickerProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const portalContainer = useDialogPortalContainer(triggerRef);
@@ -73,7 +75,7 @@ export function ModelPicker({
   const models = groups.flatMap(group => group.models);
   const selected = models.find(model => `${model.providerId}/${model.id}` === value);
   const fallbackModelId = value.slice(value.indexOf('/') + 1);
-  const triggerName = selected?.name ?? (value ? fallbackModelId : '选择模型');
+  const triggerName = selected?.name ?? (value ? fallbackModelId : t('chat.modelPickerAria'));
   const triggerProvider = selected?.providerName ?? (value ? value.split('/')[0] : null);
   const hasChoices = allowAutomatic || models.some(model => model.available);
 
@@ -87,15 +89,19 @@ export function ModelPicker({
       <Popover.Trigger
         ref={triggerRef}
         className={`ui-picker-trigger model-picker-trigger ${className}`.trim()}
-        aria-label='选择模型'
+        aria-label={t('chat.modelPickerAria')}
         disabled={!hasChoices}
-        title={selected && !selected.available ? `${triggerName} 当前不可用` : undefined}>
+        title={
+          selected && !selected.available
+            ? t('model.unavailableNow', { name: triggerName })
+            : undefined
+        }>
         <span className='model-picker-current'>
-          <span>{hasChoices || value ? triggerName : '没有可用模型'}</span>
+          <span>{hasChoices || value ? triggerName : t('model.none')}</span>
           {triggerProvider && <small>{triggerProvider}</small>}
         </span>
         {selected && !selected.available && (
-          <span className='model-picker-unavailable'>不可用</span>
+          <span className='model-picker-unavailable'>{t('common.unavailable')}</span>
         )}
         <ChevronDown className='ui-picker-chevron' size={13} aria-hidden='true' />
       </Popover.Trigger>
@@ -103,18 +109,22 @@ export function ModelPicker({
         <Popover.Positioner align='end' sideOffset={6}>
           <Popover.Popup className='ui-popover-content model-picker-popover'>
             <Command
-              label='选择模型'
+              label={t('chat.modelPickerAria')}
               loop
               defaultValue={value || (allowAutomatic ? 'automatic default model' : undefined)}
               filter={filterModelPickerItem}>
               <div className='model-picker-search'>
                 <Search size={14} aria-hidden='true' />
-                <Command.Input aria-label='搜索模型' placeholder='搜索模型或 Provider' autoFocus />
+                <Command.Input
+                  aria-label={t('model.searchAria')}
+                  placeholder={t('model.searchPlaceholder')}
+                  autoFocus
+                />
               </div>
               <Command.List>
-                <Command.Empty>没有匹配的可用模型</Command.Empty>
+                <Command.Empty>{t('model.noMatch')}</Command.Empty>
                 {allowAutomatic && (
-                  <Command.Group heading='默认行为'>
+                  <Command.Group heading={t('model.defaultGroup')}>
                     <Command.Item
                       value='automatic default model'
                       onSelect={() => {
@@ -125,8 +135,8 @@ export function ModelPicker({
                         {!value && <Check size={14} strokeWidth={2.2} />}
                       </span>
                       <span className='model-picker-item-copy'>
-                        <span>自动选择</span>
-                        <small>使用第一个可用模型</small>
+                        <span>{t('model.auto')}</span>
+                        <small>{t('model.autoDesc')}</small>
                       </span>
                     </Command.Item>
                   </Command.Group>
@@ -149,7 +159,7 @@ export function ModelPicker({
                             <span>{model.name}</span>
                             <small>{model.id}</small>
                           </span>
-                          {!model.available && <em>不可用</em>}
+                          {!model.available && <em>{t('common.unavailable')}</em>}
                         </Command.Item>
                       );
                     })}

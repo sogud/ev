@@ -1,8 +1,9 @@
 import type { BrowserBridgePersistedState, BrowserBridgeStore } from '@ev/browser-host';
 import Store from './store';
 
-/** 无头版 bridge 持久化： pairing token 落 ~/.ev/browser-bridge.json（600）。
- * 旧 desktop 用 Electron safeStorage 加密；无头阶段以文件权限保护，P3 硬化项。 */
+/** Headless bridge persistence: the pairing token lives in
+ * ~/.ev/browser-bridge.json (mode 600). The old desktop app encrypted it with
+ * Electron safeStorage; headless we rely on file permissions (P3 hardening). */
 export function createBrowserBridgeStore(): BrowserBridgeStore {
   const store = new Store<BrowserBridgePersistedState>({
     name: 'browser-bridge',

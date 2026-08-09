@@ -24,7 +24,7 @@ export function MenuPicker<Value extends string>({
   return (
     <Menu.Root open={open} onOpenChange={setOpen}>
       <Menu.Trigger className='ev-menu-trigger' aria-label={ariaLabel}>
-        <span>{selected?.label ?? '请选择'}</span>
+        <span>{selected?.label ?? 'Select'}</span>
         <ChevronDown size={12} aria-hidden='true' />
       </Menu.Trigger>
       <Menu.Portal>
