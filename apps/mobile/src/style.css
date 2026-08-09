@@ -1,0 +1,201 @@
+/* EV 移动端（/m）：单列、底部操作栏、≥44px 命中区；390×844 基准。 */
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: var(--ev-color-bg-base);
+  color: var(--ev-color-text-primary);
+  font-family: var(--ev-font-family);
+  font-size: var(--ev-font-size-m);
+  -webkit-tap-highlight-color: transparent;
+}
+#root {
+  display: flex;
+  flex-direction: column;
+}
+.m-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ev-color-border-subtle);
+  flex-shrink: 0;
+}
+.m-header h1 {
+  margin: 0;
+  font-size: var(--ev-font-size-l);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-status {
+  margin-left: auto;
+  color: var(--ev-color-text-tertiary);
+  font-size: var(--ev-font-size-2xs);
+  white-space: nowrap;
+}
+.m-back {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ev-color-text-secondary);
+  font-size: 22px;
+  cursor: pointer;
+}
+.m-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.m-task {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--ev-color-border-subtle);
+  border-radius: var(--ev-radius-md);
+  background: var(--ev-color-bg-raised);
+  color: var(--ev-color-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.m-task strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-task span {
+  color: var(--ev-color-text-tertiary);
+  font-size: var(--ev-font-size-2xs);
+  flex-shrink: 0;
+}
+.m-empty {
+  color: var(--ev-color-text-tertiary);
+  font-size: var(--ev-font-size-s);
+  padding: 24px 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.m-transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.m-msg {
+  max-width: 86%;
+  padding: 8px 10px;
+  border-radius: var(--ev-radius-lg);
+  background: var(--ev-color-bg-raised);
+}
+.m-msg.user {
+  align-self: flex-end;
+  background: var(--ev-color-bg-hover);
+}
+.m-msg p {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.m-role {
+  color: var(--ev-color-text-tertiary);
+  font-size: var(--ev-font-size-2xs);
+}
+.m-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ev-color-border-subtle);
+  flex-shrink: 0;
+}
+.m-chip {
+  min-height: 44px;
+  max-width: 110px;
+  padding: 0 10px;
+  border: 1px solid var(--ev-color-border-subtle);
+  border-radius: 999px;
+  background: var(--ev-color-action-secondary-bg);
+  color: var(--ev-color-text-tertiary);
+  font-size: var(--ev-font-size-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.m-bar input {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--ev-color-border-default);
+  border-radius: 999px;
+  background: var(--ev-color-bg-input);
+  color: var(--ev-color-text-primary);
+  font-size: var(--ev-font-size-m);
+  outline: 0;
+}
+.m-send {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ev-color-action-primary-bg);
+  color: var(--ev-color-action-primary-text);
+  font-size: 18px;
+  cursor: pointer;
+}
+.m-sheet {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.5);
+  display: flex;
+  align-items: flex-end;
+}
+.m-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.m-sheet-card {
+  position: relative;
+  width: 100%;
+  max-height: 60%;
+  overflow-y: auto;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+  border-radius: var(--ev-radius-xl) var(--ev-radius-xl) 0 0;
+  background: var(--ev-color-bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.m-sheet-item {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ev-radius-md);
+  background: transparent;
+  color: var(--ev-color-text-primary);
+  text-align: left;
+  font-size: var(--ev-font-size-s);
+  cursor: pointer;
+}
+.m-sheet-item:active {
+  background: var(--ev-color-bg-hover);
+}

@@ -1,0 +1,157 @@
+import { EventEmitter } from 'node:events';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { PassThrough } from 'node:stream';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MediaDownloadService } from '../media-download-service';
+
+const directories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map(directory => rm(directory, { recursive: true })));
+});
+
+function fakeProcess(): ChildProcessWithoutNullStreams {
+  const process = new EventEmitter() as ChildProcessWithoutNullStreams;
+  process.stdin = new PassThrough();
+  process.stdout = new PassThrough();
+  process.stderr = new PassThrough();
+  process.kill = vi.fn(() => true);
+  return process;
+}
+
+describe('MediaDownloadService', () => {
+  it('starts a bounded yt-dlp job without exposing the media URL in process arguments', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const downloadDirectory = path.join(root, 'Downloads', 'EV');
+    const child = fakeProcess();
+    let input = '';
+    const stdin = child.stdin as PassThrough;
+    const stdout = child.stdout as PassThrough;
+    stdin.setEncoding('utf8');
+    stdin.on('data', chunk => {
+      input += String(chunk);
+    });
+    const launch = vi.fn(
+      (
+        _executable: string,
+        _args: string[],
+        _options: { stdio: ['pipe', 'pipe', 'pipe']; env: NodeJS.ProcessEnv }
+      ) => {
+        queueMicrotask(() => child.emit('spawn'));
+        return child;
+      }
+    );
+    const service = new MediaDownloadService({
+      downloadDirectory,
+      launch,
+      resolveAddresses: async () => ['93.184.216.34'],
+    });
+
+    const started = await service.start({
+      backend: 'external',
+      mediaKind: 'stream',
+      pageUrl: 'https://example.com/watch',
+      url: 'https://cdn.example.com/master.m3u8?signature=secret',
+    });
+
+    expect(started).toMatchObject({ backend: 'local', state: 'in_progress' });
+    const [, args, processOptions] = launch.mock.calls[0];
+    expect(args).toContain('--batch-file');
+    expect(args).toContain('--proxy');
+    expect(processOptions.env).toMatchObject({ NO_PROXY: '', no_proxy: '' });
+    expect(args.join(' ')).not.toContain('signature=secret');
+    expect(input).toBe('https://cdn.example.com/master.m3u8?signature=secret\n');
+
+    const filename = path.join(downloadDirectory, 'video.mp4');
+    stdout.write(`${filename}\n`);
+    child.emit('close', 0);
+    await new Promise(resolve => setImmediate(resolve));
+    expect(service.status(started.downloadId)).toEqual({
+      downloadId: started.downloadId,
+      backend: 'local',
+      state: 'complete',
+      filename,
+    });
+  });
+
+  it('rejects stream URLs that resolve to a local or private network', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const launch = vi.fn();
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      launch,
+      resolveAddresses: async () => ['127.0.0.1'],
+    });
+
+    await expect(
+      service.start({
+        backend: 'external',
+        mediaKind: 'stream',
+        pageUrl: 'https://example.com/watch',
+        url: 'https://media.example.com/master.m3u8',
+      })
+    ).rejects.toThrow('local or private network');
+    expect(launch).not.toHaveBeenCalled();
+  });
+
+  it('does not evict an active download when the job limit is reached', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const child = fakeProcess();
+    const launch = vi.fn(() => {
+      queueMicrotask(() => child.emit('spawn'));
+      return child;
+    });
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      launch,
+      resolveAddresses: async () => ['93.184.216.34'],
+      maxJobs: 1,
+    });
+    const request = {
+      backend: 'external' as const,
+      mediaKind: 'stream' as const,
+      pageUrl: 'https://example.com/watch',
+      url: 'https://cdn.example.com/master.m3u8',
+    };
+
+    const started = await service.start(request);
+    await expect(service.start(request)).rejects.toThrow('Too many active media downloads');
+    expect(service.status(started.downloadId).state).toBe('in_progress');
+    expect(launch).toHaveBeenCalledOnce();
+    service.dispose();
+  });
+
+  it('interrupts active downloads on disposal', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const child = fakeProcess();
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      launch: () => {
+        queueMicrotask(() => child.emit('spawn'));
+        return child;
+      },
+      resolveAddresses: async () => ['93.184.216.34'],
+    });
+    const started = await service.start({
+      backend: 'external',
+      mediaKind: 'stream',
+      pageUrl: 'https://example.com/watch',
+      url: 'https://cdn.example.com/master.m3u8',
+    });
+
+    service.dispose();
+
+    expect(child.kill).toHaveBeenCalledOnce();
+    expect(service.status(started.downloadId)).toMatchObject({
+      state: 'interrupted',
+      error: 'Browser Host stopped before the download completed',
+    });
+  });
+});

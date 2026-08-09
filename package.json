@@ -1,0 +1,36 @@
+{
+  "name": "ev",
+  "private": true,
+  "version": "0.1.0",
+  "description": "EV local-first agent workspace",
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "overrides": {
+    "postcss": "8.5.25",
+    "undici": "8.9.0",
+    "ws": "8.21.0"
+  },
+  "scripts": {
+    "dev": "bun run dev:desktop",
+    "dev:desktop": "bun run --cwd apps/cli build && bun run --cwd apps/desktop dev",
+    "dev:extension": "bun run --cwd apps/browser-extension dev",
+    "typecheck": "bun run --cwd packages/contracts typecheck && bun run --cwd packages/browser-host typecheck && bun run --cwd apps/cli typecheck && bun run --cwd apps/server typecheck && bun run --cwd apps/mobile typecheck && bun run --cwd apps/desktop typecheck && bun run --cwd apps/browser-extension typecheck",
+    "test": "bun run --cwd packages/contracts test && bun run --cwd packages/browser-host test && bun run --cwd apps/cli test && bun run --cwd apps/server test && bun run --cwd apps/desktop test && bun run --cwd apps/browser-extension test",
+    "format:check": "bun run --cwd packages/browser-host format:check && bun run --cwd apps/cli format:check && bun run --cwd apps/desktop format:check && bun run --cwd apps/browser-extension format:check",
+    "build": "bun run --cwd apps/cli build && bun run --cwd apps/desktop build && bun run --cwd apps/browser-extension build",
+    "pack": "bun run --cwd apps/desktop pack",
+    "dist": "bun run --cwd apps/desktop dist",
+    "package:extension": "bun run --cwd apps/browser-extension package",
+    "build:extension:firefox": "bun run --cwd apps/browser-extension build:firefox",
+    "package:extension:firefox": "bun run --cwd apps/browser-extension package:firefox",
+    "package:cli": "bun run --cwd apps/cli package",
+    "golden": "bash scripts/golden-path.sh",
+    "verify": "bun run format:check && bun run typecheck && bun run test && bun run build",
+    "release:check": "bun scripts/check-release-version.ts",
+    "release": "bash scripts/release.sh",
+    "release:checksums": "bun scripts/create-release-checksums.ts"
+  }
+}

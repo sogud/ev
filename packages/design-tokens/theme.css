@@ -1,0 +1,147 @@
+:root {
+  color-scheme: light dark;
+
+  /* Typography */
+  --ev-font-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI',
+    sans-serif;
+  --ev-font-mono: 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+  --ev-font-size-2xs: 9px;
+  --ev-font-size-xs: 10px;
+  --ev-font-size-sm: 11px;
+  --ev-font-size-md: 12px;
+  --ev-font-size-base: 13px;
+  --ev-font-size-lg: 15px;
+  --ev-font-size-xl: 18px;
+  --ev-font-size-2xl: 22px;
+  --ev-line-height-tight: 1.2;
+  --ev-line-height-snug: 1.4;
+  --ev-line-height-normal: 1.5;
+  --ev-line-height-relaxed: 1.65;
+  --ev-font-weight-regular: 400;
+  --ev-font-weight-medium: 500;
+  --ev-font-weight-semibold: 600;
+  --ev-font-weight-bold: 700;
+
+  /* Spacing */
+  --ev-space-0: 0;
+  --ev-space-1: 4px;
+  --ev-space-2: 8px;
+  --ev-space-3: 12px;
+  --ev-space-4: 16px;
+  --ev-space-5: 20px;
+  --ev-space-6: 24px;
+  --ev-space-8: 32px;
+  --ev-space-10: 40px;
+  --ev-space-12: 48px;
+  --ev-space-16: 64px;
+
+  /* Shape and control density */
+  --ev-radius-xs: 4px;
+  --ev-radius-sm: 6px;
+  --ev-radius-md: 8px;
+  --ev-radius-lg: 10px;
+  --ev-radius-xl: 12px;
+  --ev-radius-full: 999px;
+  --ev-control-height-sm: 26px;
+  --ev-control-height-md: 30px;
+  --ev-control-height-lg: 34px;
+  --ev-control-height-xl: 38px;
+
+  /* Primitive palette */
+  --ev-gray-0: #ffffff;
+  --ev-gray-50: #f7f7f8;
+  --ev-gray-100: #ededee;
+  --ev-gray-200: #d6d6d8;
+  --ev-gray-300: #b4b4b7;
+  --ev-gray-400: #8b8c90;
+  --ev-gray-500: #686a6f;
+  --ev-gray-600: #4b4d52;
+  --ev-gray-700: #33353a;
+  --ev-gray-800: #242629;
+  --ev-gray-900: #181a1c;
+  --ev-gray-950: #111315;
+  --ev-gray-1000: #0d0f10;
+  --ev-blue-300: #61adff;
+  --ev-blue-400: #3d9bff;
+  --ev-green-400: #79bd8b;
+  --ev-amber-400: #d8ad67;
+  --ev-red-300: #f09a9c;
+  --ev-red-400: #e3787b;
+  --ev-white-a04: rgb(255 255 255 / 0.04);
+  --ev-white-a06: rgb(255 255 255 / 0.06);
+  --ev-white-a08: rgb(255 255 255 / 0.08);
+  --ev-white-a12: rgb(255 255 255 / 0.12);
+  --ev-black-a04: rgb(0 0 0 / 0.04);
+  --ev-black-a06: rgb(0 0 0 / 0.06);
+  --ev-black-a08: rgb(0 0 0 / 0.08);
+  --ev-black-a12: rgb(0 0 0 / 0.12);
+  --ev-black-a40: rgb(0 0 0 / 0.4);
+  --ev-black-a64: rgb(0 0 0 / 0.64);
+  --ev-black-a76: rgb(0 0 0 / 0.76);
+
+  /* Semantic colors: light-dark(light, dark). */
+  --ev-color-bg-canvas: light-dark(#f7f7f8, #181818);
+  --ev-color-bg-sidebar: light-dark(#ececef, #201f21);
+  --ev-color-bg-sunken: light-dark(#e5e5e7, #141414);
+  --ev-color-bg-surface: light-dark(#ffffff, #1d1d1f);
+  --ev-color-bg-raised: light-dark(#f2f2f4, #242426);
+  --ev-color-bg-overlay: light-dark(rgb(250 250 252 / 0.97), rgb(39 39 42 / 0.96));
+  --ev-color-bg-hover: light-dark(var(--ev-black-a04), var(--ev-white-a06));
+  --ev-color-bg-active: light-dark(var(--ev-black-a06), var(--ev-white-a08));
+  --ev-color-bg-selected: light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.11));
+  --ev-color-bg-input: light-dark(#ffffff, #29292c);
+  --ev-color-bg-scrim: light-dark(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.48));
+  --ev-color-text-primary: light-dark(rgb(0 0 0 / 0.86), rgb(255 255 255 / 0.88));
+  --ev-color-text-secondary: light-dark(rgb(0 0 0 / 0.68), rgb(255 255 255 / 0.72));
+  --ev-color-text-tertiary: light-dark(rgb(0 0 0 / 0.55), rgb(255 255 255 / 0.58));
+  --ev-color-text-quaternary: light-dark(rgb(0 0 0 / 0.46), rgb(255 255 255 / 0.46));
+  --ev-color-text-inverse: light-dark(#ffffff, #181818);
+  --ev-color-text-link: light-dark(#1769cf, #8eb7ff);
+  --ev-color-icon-primary: light-dark(rgb(0 0 0 / 0.78), rgb(255 255 255 / 0.82));
+  --ev-color-icon-secondary: light-dark(rgb(0 0 0 / 0.56), rgb(255 255 255 / 0.58));
+  --ev-color-icon-tertiary: light-dark(rgb(0 0 0 / 0.4), rgb(255 255 255 / 0.4));
+  --ev-color-brand-mark: light-dark(#247896, #b9f2ff);
+  --ev-color-border-subtle: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.07));
+  --ev-color-border-default: light-dark(rgb(0 0 0 / 0.11), rgb(255 255 255 / 0.11));
+  --ev-color-border-strong: light-dark(rgb(0 0 0 / 0.2), rgb(255 255 255 / 0.18));
+  --ev-color-border-focus: light-dark(#1769cf, var(--ev-blue-400));
+  --ev-focus-ring: 0 0 0 2px light-dark(rgb(23 105 207 / 0.2), rgb(61 155 255 / 0.28));
+  --ev-color-action-primary-bg: light-dark(#262628, var(--ev-gray-100));
+  --ev-color-action-primary-bg-hover: light-dark(#111113, var(--ev-gray-0));
+  --ev-color-action-primary-text: light-dark(#ffffff, #181818);
+  --ev-color-action-secondary-bg: light-dark(var(--ev-black-a04), var(--ev-white-a06));
+  --ev-color-action-secondary-bg-hover: light-dark(var(--ev-black-a08), var(--ev-white-a08));
+  --ev-color-action-ghost-bg-hover: light-dark(var(--ev-black-a06), var(--ev-white-a06));
+  --ev-color-status-info: light-dark(#1769cf, var(--ev-blue-300));
+  --ev-color-status-success: light-dark(#28793e, var(--ev-green-400));
+  --ev-color-status-warning: light-dark(#9a5a00, var(--ev-amber-400));
+  --ev-color-status-danger: light-dark(#b4232d, var(--ev-red-300));
+  --ev-color-status-danger-strong: light-dark(#961923, var(--ev-red-400));
+  --ev-color-status-danger-surface: light-dark(#fbeaec, #2c2022);
+  --ev-color-status-success-surface: light-dark(#e8f5eb, #1d3023);
+  --ev-color-status-warning-surface: light-dark(#fff3dc, #30291e);
+  --ev-color-status-info-surface: light-dark(#e8f1fd, #1d2835);
+  --ev-shadow-raised: 0 1px 2px light-dark(rgb(0 0 0 / 0.1), rgb(0 0 0 / 0.32));
+  --ev-shadow-overlay: 0 14px 40px light-dark(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.48));
+  --ev-shadow-modal: 0 28px 80px light-dark(rgb(0 0 0 / 0.24), rgb(0 0 0 / 0.56));
+  --ev-duration-fast: 100ms;
+  --ev-duration-normal: 160ms;
+  --ev-duration-slow: 220ms;
+  --ev-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ev-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ev-z-header: 10;
+  --ev-z-modal: 80;
+  --ev-z-popover: 90;
+  --ev-z-toast: 100;
+}
+
+:root[data-theme='light'],
+:root.light {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'],
+:root.dark {
+  color-scheme: dark;
+}

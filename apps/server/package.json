@@ -1,0 +1,26 @@
+{
+  "name": "@ev/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "bun src/server.ts",
+    "build": "bun build src/server.ts --target=node --format=esm --external better-sqlite3 --outfile ../../apps/desktop/dist-server/server.mjs && node scripts/ship-native.mjs && bun run --cwd ../mobile build"
+  },
+  "dependencies": {
+    "@ev/contracts": "workspace:*",
+    "@ev/browser-host": "workspace:*",
+    "@earendil-works/pi-coding-agent": "0.83.0",
+    "ws": "8.21.0",
+    "better-sqlite3": "^12.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10",
+    "@types/node": "^22.19.0",
+    "@types/ws": "^8.18.1",
+    "@types/better-sqlite3": "^7.6.13"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@sogud/ev",
+  "private": false,
+  "version": "0.1.0",
+  "description": "EV local command-line interface",
+  "type": "module",
+  "bin": {
+    "ev": "./dist/ev.js"
+  },
+  "files": [
+    "dist/ev.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "rm -rf dist && bun build src/cli.ts --target=node --format=esm --outfile=dist/ev.js && chmod +x dist/ev.js",
+    "build:standalone": "mkdir -p dist && bun scripts/build-standalone.ts",
+    "package": "bun run build && bun run build:standalone && npm pack --pack-destination dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "format": "prettier --write --ignore-path ../../.prettierignore .",
+    "format:check": "prettier --check --ignore-path ../../.prettierignore ."
+  },
+  "devDependencies": {
+    "@ev/browser-host": "workspace:*",
+    "@ev/contracts": "workspace:*",
+    "@types/node": "22.10.5",
+    "prettier": "3.4.2",
+    "typescript": "5.7.3",
+    "vitest": "4.1.10"
+  }
+}

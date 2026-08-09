@@ -1,0 +1,97 @@
+{
+  "name": "@ev/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "EV — a personal, local-first desktop agent powered by Pi",
+  "type": "module",
+  "main": "./dist-electron/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit",
+    "build": "bun run --cwd ../server build && bun run typecheck && electron-vite build && bun scripts/check-main-bundle.ts",
+    "preview": "electron-vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "format": "prettier --write --ignore-path ../../.prettierignore .",
+    "format:check": "prettier --check --ignore-path ../../.prettierignore .",
+    "pack": "bun run --cwd ../cli build && bun run clean:release && bun run build && electron-builder --mac dir",
+    "dist": "bun run --cwd ../cli build && bun run clean:release && bun run build && electron-builder --mac",
+    "clean:release": "bun ../../scripts/clean-release-output.ts"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "@earendil-works/pi-coding-agent": "0.83.0",
+    "@ev/browser-host": "workspace:*",
+    "@ev/contracts": "workspace:*",
+    "@ev/design-tokens": "workspace:*",
+    "cmdk": "1.1.1",
+    "electron-store": "8.1.0",
+    "lucide-react": "0.468.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ws": "8.21.0",
+    "yaml": "2.8.1",
+    "zustand": "4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@types/ws": "8.18.1",
+    "@vitejs/plugin-react": "5.2.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "autoprefixer": "10.4.20",
+    "electron": "39.8.10",
+    "electron-builder": "26.15.3",
+    "electron-builder-squirrel-windows": "26.15.3",
+    "electron-vite": "5.0.0",
+    "postcss": "8.5.25",
+    "prettier": "3.4.2",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.7.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.10"
+  },
+  "build": {
+    "appId": "com.enhancedvigilance.desktop",
+    "productName": "EV",
+    "directories": {
+      "output": "release/${version}",
+      "buildResources": "resources"
+    },
+    "files": [
+      "dist-electron"
+    ],
+    "extraResources": [
+      {
+        "from": "../cli/dist/ev.js",
+        "to": "cli/ev.js"
+      },
+      {
+        "from": "../../skills/ev-browser",
+        "to": "skills/ev-browser"
+      },
+      {
+        "from": "dist-server",
+        "to": "server"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/@silvia-odwyer/photon-node/**/*"
+    ],
+    "mac": {
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "resources/icon.icns",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "forceCodeSigning": false
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "name": "@ev/browser-extension",
+  "version": "0.1.0",
+  "description": "EV Browser - bookmark and browser-context app for EV",
+  "keywords": [
+    "bookmark",
+    "management",
+    "tool",
+    "chrome-extension"
+  ],
+  "scripts": {
+    "dev": "wxt",
+    "watch": "wxt",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "build": "wxt build",
+    "test": "vitest run --passWithNoTests",
+    "format": "prettier --write \"entrypoints/**/*.{ts,tsx,json,html}\" \"src/**/*.{ts,tsx}\" \"wxt.config.ts\"",
+    "format:check": "prettier --check \"entrypoints/**/*.{ts,tsx,json,html}\" \"src/**/*.{ts,tsx}\" \"wxt.config.ts\"",
+    "package": "wxt zip",
+    "build:firefox": "wxt build -b firefox",
+    "package:firefox": "wxt zip -b firefox"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "@ev/contracts": "workspace:*",
+    "@ev/design-tokens": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.11",
+    "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.525.0",
+    "postcss": "^8.5.6",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss": "^4.1.11",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.0.280",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.10",
+    "wxt": "^0.21.3"
+  },
+  "private": true,
+  "type": "module"
+}
