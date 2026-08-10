@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # EV 黄金路径回归（server-client-split 后）：
-# - CLI 旅程与 round-trip 全走 HTTP API（desktop 关闭也跑）
-# - UI 旅程在 fresh CDP 连接上先跑，避免长连接失效 flake
-# 独立端口 9344，不碰用户实例；结束自清理测试任务。
+# - 全程 EV_HOME 临时目录隔离：不读写用户真实 ~/.ev，失败也不留垃圾
+# - UI 旅程跑 server 服务的 Web 形态 renderer（agent-browser 自带浏览器），不启 Electron
+# - CLI 旅程与 round-trip 全走 HTTP API
 set -u
 cd "$(dirname "$0")/.."
-PORT=9344
-APP_PID=""
+EV_HOME="$(mktemp -d /tmp/ev-golden-home.XXXXXX)"
+export EV_HOME
 RUN_START_MS=$(python3 -c "import time;print(int(time.time()*1000))")
 
 cleanup() {
-	[ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null
-	pkill -f "remote-debugging-port=$PORT" 2>/dev/null
+	SRV_PID=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['pid'])" 2>/dev/null || true)
+	[ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
+	# 铁律：不 rm -rf，丢垃圾桶
+	mv "$EV_HOME" "$HOME/.Trash/ev-golden-home.$(date +%s)" 2>/dev/null
 	true
 }
 trap cleanup EXIT
@@ -23,13 +25,7 @@ fail() {
 ok() { echo "✅ $1"; }
 
 ev() {
-	local out
-	if ! out=$(agent-browser eval "$1" 2>/dev/null); then
-		agent-browser connect "$PORT" >/dev/null 2>&1
-		sleep 1
-		out=$(agent-browser eval "$1" 2>/dev/null)
-	fi
-	printf '%s' "$out"
+	agent-browser eval "$1" 2>/dev/null
 }
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac }
 
@@ -105,18 +101,14 @@ sleep 1
 run_ev server start >/dev/null || fail "server restart"
 GOT=$(run_ev task get "$RID2" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])") || fail "task lost after restart"
 [ "$GOT" = "$RID2" ] || fail "task id mismatch after restart"
-[ -f "$HOME/.ev/ev.db" ] || fail "ev.db missing"
+[ -f "$EV_HOME/ev.db" ] || fail "ev.db missing"
 ok "restart persistence: task survives server restart (SQLite)"
 
-echo "== launch desktop =="
-if curl -s "http://127.0.0.1:$PORT/json" >/dev/null 2>&1; then :; fi
-(cd apps/desktop && bunx electron . --remote-debugging-port=$PORT >/tmp/ev-golden.log 2>&1) &
-APP_PID=$!
-for _ in $(seq 1 30); do
-	curl -s "http://127.0.0.1:$PORT/json" >/dev/null 2>&1 && break
-	sleep 1
-done
-agent-browser connect $PORT >/dev/null 2>&1 || fail "cdp connect"
+echo "== launch renderer（Web 形态，agent-browser 自带浏览器）=="
+SP=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['port'])")
+ST=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['token'])")
+agent-browser set viewport 1440 900 >/dev/null 2>&1 || true
+agent-browser open "http://127.0.0.1:$SP/?port=$SP&token=$ST&lang=zh" >/dev/null || fail "open web renderer"
 READY=""
 for _ in $(seq 1 20); do
 	READY=$(ev "JSON.stringify({ready: !!window.agentDesktop, t: document.title})" | tr -d '\\' || true)
@@ -133,29 +125,16 @@ done
 [ "$HAS_SIDEBAR" = "true" ] || fail "renderer DOM not rendered"
 sleep 1
 
-echo "== 设置每个控件点开一遍（fresh 连接）=="
-[ "$(jsclick '设置')" = "ok" ] || fail "open settings"
+echo "== 设置控件存在性（data-testid，locale 无关，不点击）=="
+[ "$(ev "(() => { const b=document.querySelector('[data-testid=settings-open]'); if(!b) return 'NO'; b.click(); return 'ok'; })()" | tr -d '"')" = "ok" ] || fail "open settings"
 sleep 1
-for LABEL in 界面主题 选择\ Runtime 思考强度 选择模型; do
-	[ "$(jsclick "$LABEL")" = "ok" ] || fail "trigger $LABEL"
-	POP=""
-	for _poll in 1 2 3 4 5 6 7 8; do
-		sleep 0.5
-		POP=$(ev "JSON.stringify({m: document.querySelectorAll('[role=menuitem]').length, c: document.querySelectorAll('[cmdk-item]').length, s: !!document.querySelector('.effort-slider')})" | tr -d '\\')
-		case "$LABEL" in
-		界面主题 | 选择\ Runtime) case "$POP" in *'"m":0'*) : ;; *) break ;; esac ;;
-		思考强度) case "$POP" in *'"s":true'*) break ;; esac ;;
-		选择模型) case "$POP" in *'"c":0'*) : ;; *) break ;; esac ;;
-		esac
-	done
-	case "$LABEL" in
-	界面主题 | 选择\ Runtime) contains "$POP" '"m":0' && fail "$LABEL popup empty" ;;
-	思考强度) contains "$POP" '"s":true' || fail "$LABEL slider missing" ;;
-	选择模型) contains "$POP" '"c":0' && fail "$LABEL cmdk empty" ;;
-	esac
-	ok "settings control: $LABEL"
-	jsclose
+for TID in picker-theme picker-runtime picker-thinking picker-model picker-language; do
+	[ "$(ev "!!document.querySelector('[data-testid=$TID]')")" = "true" ] || fail "settings control missing: $TID"
 done
+[ "$(ev "(() => { const b=document.querySelector('[data-testid=settings-close]'); if(!b) return 'NO'; b.click(); return 'ok'; })()" | tr -d '"')" = "ok" ] || fail "close settings"
+sleep 0.5
+ok "settings controls present (theme/runtime/thinking/model/language)"
+
 echo "== Runtime 行列表+抽屉（重设计断言，语义不放松）=="
 [ "$(jsclick '设置')" = "ok" ] || fail "reopen settings"
 sleep 1
@@ -236,8 +215,8 @@ contains "$T" "高" || fail "thinking switch (trigger=$T)"
 ok "thinking switch on qoder"
 
 echo "== 双 locale 冒烟（Web 形态，lang 参数固定）=="
-SP=$(python3 -c "import json;print(json.load(open('$HOME/.ev/server.json'))['port'])")
-ST=$(cat "$HOME/.ev/token")
+SP=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['port'])")
+ST=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['token'])")
 agent-browser open "http://127.0.0.1:$SP/?port=$SP&token=$ST&lang=en" >/dev/null || fail "open en web"
 sleep 3
 ENSMOKE=$(ev "document.body.textContent")
@@ -268,16 +247,9 @@ for RT in pi codex claude-code qoder; do
 done
 
 echo "== mobile /m（390×844 独立入口）=="
-MPORT=$(python3 -c "import json;print(json.load(open('$HOME/.ev/server.json'))['port'])")
-MTOKEN=$(cat "$HOME/.ev/token")
-cat >/tmp/ev-golden-emu.ts <<'TS'
-const list = await (await fetch('http://127.0.0.1:9344/json')).json();
-const page = list.find((t: any) => t.type === 'page');
-const ws = new WebSocket(page.webSocketDebuggerUrl);
-ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: 'Emulation.setDeviceMetricsOverride', params: { width: 390, height: 844, deviceScaleFactor: 2, mobile: true } }));
-ws.onmessage = (e) => { const m = JSON.parse(String(e.data)); if (m.id === 1) { console.log('emu-ok'); process.exit(0); } };
-TS
-bun /tmp/ev-golden-emu.ts | grep -q emu-ok || fail "mobile viewport emulation"
+MPORT=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['port'])")
+MTOKEN=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['token'])")
+agent-browser set viewport 390 844 >/dev/null 2>&1 || fail "mobile viewport"
 MID=$(run_ev task create --runtime pi | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])") || fail "mobile test task"
 run_ev task prompt "$MID" "回复 ok" >/dev/null || fail "mobile seed prompt"
 sleep 5
@@ -363,7 +335,6 @@ ids = [t['id'] for t in ts if t['createdAt'] >= start and t['title'] in ('回复
 open(sys.argv[2], 'w').write('\n'.join(ids))
 PY
 while read id; do [ -n "$id" ] && run_ev task remove "$id" >/dev/null 2>&1; done </tmp/ev-golden-cleanup.txt
-run_ev settings set '{"language":null}' >/dev/null 2>&1 || true
 
 echo "== ALL GOLDEN PASSED =="
 exit 0

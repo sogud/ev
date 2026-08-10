@@ -110,6 +110,7 @@ export function ThinkingPicker({
       <Popover.Trigger
         ref={triggerRef}
         className={`ui-picker-trigger thinking-picker-trigger ${className}`.trim()}
+        data-testid='picker-thinking'
         aria-label={i18n.t('thinking.aria')}>
         <span>{i18n.t('thinking.trigger', { label: thinkingLevelLabel(value) })}</span>
         <ChevronDown className='ui-picker-chevron' size={13} aria-hidden='true' />

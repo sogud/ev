@@ -66,3 +66,11 @@ builds for every affected workspace.
 - This repository is the source of truth for every EV app and shared package.
 - Treat workspace-changing commands and Git operations as user-visible actions.
 - Do not commit build output, local settings, API keys, tokens, or browser profile data.
+
+## 测试与验证红线
+
+- UI 验证禁止启动 Electron：renderer 是纯 Web 客户端，一律用 agent-browser 自带浏览器
+  测 server 服务的 Web 形态（`/?port&token`），视口用 `agent-browser set viewport`。
+- 任何自动化测试必须 `EV_HOME` 临时目录隔离，结束（含失败）把临时目录移入
+  `~/.Trash`，永不读写用户真实 `~/.ev`。
+- 铁律：不 `rm -rf` 任何目录/文件；删除一律移入垃圾桶（`~/.Trash`）。

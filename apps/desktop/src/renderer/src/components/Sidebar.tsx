@@ -109,6 +109,7 @@ export function Sidebar({
           className='icon-button'
           type='button'
           aria-label={t('settings.title')}
+          data-testid='settings-open'
           onClick={onSettings}>
           <Settings size={17} />
         </button>

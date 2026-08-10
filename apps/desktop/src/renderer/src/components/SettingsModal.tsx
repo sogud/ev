@@ -225,6 +225,7 @@ export function SettingsModal({ onClose }: { onClose(): void }): React.JSX.Eleme
           <div className='settings-content'>
             <Dialog.Close
               className='modal-close icon-button'
+              data-testid='settings-close'
               aria-label={t('runtimes.closeSettingsAria')}>
               <X size={18} />
             </Dialog.Close>

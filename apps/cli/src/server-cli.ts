@@ -2,6 +2,11 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
+
+/** EV_HOME overrides the data directory so tests/golden never touch the user's real store. */
+function evDataDir(): string {
+  return process.env.EV_HOME?.trim() || join(homedir(), '.ev');
+}
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createEvClient, type EvClient } from '@ev/contracts/client';
@@ -25,7 +30,7 @@ function out(value: unknown): void {
 
 function readServerInfo(): ServerInfo | null {
   try {
-    const info = JSON.parse(readFileSync(join(homedir(), '.ev', 'server.json'), 'utf8'));
+    const info = JSON.parse(readFileSync(join(evDataDir(), 'server.json'), 'utf8'));
     return typeof info?.port === 'number' && typeof info?.token === 'string'
       ? (info as ServerInfo)
       : null;
@@ -98,7 +103,7 @@ function flag(args: string[], name: string): string | undefined {
 }
 
 function tokensJsonPath(): string {
-  return join(homedir(), '.ev', 'tokens.json');
+  return join(evDataDir(), 'tokens.json');
 }
 
 function readIssuedTokens(): IssuedToken[] {
@@ -198,7 +203,7 @@ export async function runServerCli(argv: string[]): Promise<number> {
   }
 
   if (group === 'remote') {
-    const remotePath = join(homedir(), '.ev', 'remote.json');
+    const remotePath = join(evDataDir(), 'remote.json');
     if (command === 'on' || command === 'off') {
       mkdirSync(dirname(remotePath), { recursive: true, mode: 0o700 });
       writeFileSync(remotePath, JSON.stringify({ enabled: command === 'on' }, null, 2), {

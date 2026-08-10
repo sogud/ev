@@ -56,7 +56,7 @@ class SqliteKv implements KvBackend {
 }
 
 export function dataDir(): string {
-  return process.env.EV_DATA_DIR ?? join(homedir(), '.ev');
+  return process.env.EV_DATA_DIR ?? process.env.EV_HOME?.trim() ?? join(homedir(), '.ev');
 }
 
 export function legacyDir(): string {

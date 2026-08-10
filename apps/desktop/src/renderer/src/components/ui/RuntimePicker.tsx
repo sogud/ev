@@ -13,10 +13,12 @@ export function RuntimePicker({
   value,
   onValueChange,
   className = '',
+  testId,
 }: {
   runtimes: RuntimeDescriptor[];
   value: RuntimeId;
   onValueChange(value: RuntimeId): void;
+  testId?: string;
   className?: string;
 }): React.JSX.Element {
   const selected = runtimes.find(runtime => runtime.id === value);
@@ -34,6 +36,7 @@ export function RuntimePicker({
   return (
     <MenuPicker
       className={className}
+      testId={testId}
       value={value}
       options={options}
       ariaLabel={i18n.t('runtime.pickerAria')}

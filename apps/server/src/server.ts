@@ -48,7 +48,7 @@ function broadcast(channel: string, payload: unknown): void {
 }
 
 function readOrCreateToken(): string {
-  const dir = join(homedir(), '.ev');
+  const dir = evDataDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const tokenPath = join(dir, 'token');
   if (existsSync(tokenPath)) return readFileSync(tokenPath, 'utf8').trim();
@@ -61,7 +61,7 @@ function readOrCreateToken(): string {
 function readRemoteEnabled(): boolean {
   try {
     return Boolean(
-      JSON.parse(readFileSync(join(homedir(), '.ev', 'remote.json'), 'utf8'))?.enabled
+      JSON.parse(readFileSync(join(evDataDir(), 'remote.json'), 'utf8'))?.enabled
     );
   } catch {
     return false;
@@ -91,7 +91,7 @@ function privateInterfaces(): { lan: string[]; tailscale: string[] } {
 /** Tiered token table (~/.ev/tokens.json, mode 600); read per request, the file is tiny. */
 function readIssuedTokens(): IssuedToken[] {
   try {
-    const raw = JSON.parse(readFileSync(join(homedir(), '.ev', 'tokens.json'), 'utf8')) as {
+    const raw = JSON.parse(readFileSync(join(evDataDir(), 'tokens.json'), 'utf8')) as {
       tokens?: IssuedToken[];
     };
     return Array.isArray(raw.tokens) ? raw.tokens : [];
@@ -106,6 +106,11 @@ function tokenTier(mainToken: string, auth: string): PermissionLevel | null {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** EV_HOME overrides the data directory so tests/golden never touch the user's real store. */
+function evDataDir(): string {
+  return process.env.EV_HOME?.trim() ?? join(homedir(), '.ev');
+}
 
 const rendererDir = (): string =>
   process.env.EV_RENDERER_DIR ?? join(here, '../../desktop/dist-electron/renderer');

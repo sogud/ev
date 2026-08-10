@@ -1,11 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+
+/** EV_HOME overrides the data directory so tests/golden never touch the user's real store. */
+function evDataDir(): string {
+  return process.env.EV_HOME?.trim() || join(homedir(), '.ev');
+}
 import { join } from 'node:path';
 import type { ServerInfo } from '@ev/contracts';
 
 /** ~/.ev/server.json: the only discovery entry for clients (herdr mode). */
 export function serverJsonPath(): string {
-  return join(homedir(), '.ev', 'server.json');
+  return join(evDataDir(), 'server.json');
 }
 
 export function readServerInfo(): ServerInfo | null {
@@ -20,7 +25,7 @@ export function readServerInfo(): ServerInfo | null {
 }
 
 export function writeServerInfo(info: ServerInfo): void {
-  const dir = join(homedir(), '.ev');
+  const dir = evDataDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   writeFileSync(serverJsonPath(), JSON.stringify(info, null, 2), { mode: 0o600 });
 }

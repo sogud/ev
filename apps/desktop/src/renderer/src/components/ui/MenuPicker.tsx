@@ -20,6 +20,7 @@ interface MenuPickerProps<Value extends string> {
   className?: string;
   align?: 'start' | 'center' | 'end';
   onValueChange(value: Value): void;
+  testId?: string;
 }
 
 export function MenuPicker<Value extends string>({
@@ -31,6 +32,7 @@ export function MenuPicker<Value extends string>({
   className = '',
   align = 'end',
   onValueChange,
+  testId,
 }: MenuPickerProps<Value>): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const selected = options.find(option => option.value === value);
@@ -42,6 +44,7 @@ export function MenuPicker<Value extends string>({
       <Menu.Trigger
         ref={triggerRef}
         className={`ui-picker-trigger ${className}`.trim()}
+        data-testid={testId}
         aria-label={ariaLabel}>
         {leadingIcon && <span className='ui-picker-icon'>{leadingIcon}</span>}
         <span className='ui-picker-value'>

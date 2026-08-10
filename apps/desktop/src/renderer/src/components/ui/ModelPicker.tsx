@@ -89,6 +89,7 @@ export function ModelPicker({
       <Popover.Trigger
         ref={triggerRef}
         className={`ui-picker-trigger model-picker-trigger ${className}`.trim()}
+        data-testid='picker-model'
         aria-label={t('chat.modelPickerAria')}
         disabled={!hasChoices}
         title={

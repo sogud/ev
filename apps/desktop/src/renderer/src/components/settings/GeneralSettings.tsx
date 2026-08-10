@@ -51,6 +51,7 @@ export function GeneralSettings(): React.JSX.Element {
           </span>
           <MenuPicker
             className='settings-picker'
+            testId='picker-theme'
             value={settings.theme}
             options={themeOptions}
             ariaLabel={t('settings.theme')}
@@ -64,6 +65,7 @@ export function GeneralSettings(): React.JSX.Element {
           </span>
           <MenuPicker
             className='settings-picker'
+            testId='picker-language'
             value={settings.language ?? 'system'}
             options={languageOptions}
             ariaLabel={t('settings.language')}
@@ -93,6 +95,7 @@ export function GeneralSettings(): React.JSX.Element {
           </span>
           <RuntimePicker
             className='settings-picker'
+            testId='picker-runtime'
             runtimes={runtimes}
             value={settings.defaultRuntime}
             onValueChange={defaultRuntime => void update({ defaultRuntime })}
