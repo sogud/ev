@@ -11,7 +11,11 @@
 - **RuntimeSession** — Runtime 的原生会话引用（runtimeId + nativeId + sessionFile），EV 不复制会话正文。
 - **Task 会话生命周期** — Task 绑定 RuntimeSession 的替换、锁定与原生会话所有权仲裁规则：
   首条消息前可换引擎（丢弃未起跑会话重建），首条消息后锁定；同一原生会话不能被两个 Task 占用。
-  承载模块：`apps/desktop/src/main/task-session-lifecycle.ts`（TaskSessionLifecycle）。
+  承载模块：`apps/server/src/task-session-lifecycle.ts`（2026-08 深化评审后并入 TaskSession）。
+- **TaskSession** — EV 侧每 Task 的深 module（2026-08-10 架构评审定案）：owns RuntimeSession、
+  Transcript/Trace 投影与状态机，自持久化（共享 Store），对外同步 snapshot + subscribe；
+  所有权仲裁规则在此，跨 Task 的 OwnerIndex 数据留 registry（AgentService）。
+  不与 **RuntimeSession**（原生会话引用）混用；旧 `TaskRuntime` interface 退化为它的内部状态。
 - **Transcript** — Task 的消息流（user/assistant/thinking/tool/error），由 Runtime 事件投影而来。
 - **Trace** — Task 的过程事件流（tool/model/retry/error），检查器（Inspector）消费。
 - **IPC 契约** — main 与 renderer 之间的通道声明（call/event），唯一处 `shared/ipc-registry.ts`；

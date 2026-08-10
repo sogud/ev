@@ -1,7 +1,7 @@
 import os from 'node:os';
 import type { RuntimeDescriptor, RuntimeEvent, RuntimeId, RuntimeSessionRef } from '@ev/contracts';
+import type { TaskSummary, TraceEvent } from '@ev/contracts/domain';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { TaskSummary, TranscriptItem } from '@ev/contracts/domain';
 import type {
   AgentRuntimeAdapter,
   RuntimeSession,
@@ -10,15 +10,20 @@ import type {
   RuntimeSessionState,
 } from '../runtime/runtime-adapter';
 import { RuntimeRegistry } from '../runtime/runtime-registry';
-import { TaskSessionLifecycle } from '../task-session-lifecycle';
+import {
+  TaskSession,
+  type OwnerIndex,
+  type TaskPersistence,
+} from '../task-session';
 
-// TaskSessionLifecycle depends only on the RuntimeRegistry and callback hooks;
-// the whole concurrency suite needs no external mocks (neither electron-store
-// nor pi-coding-agent).
+// TaskSession depends only on the RuntimeRegistry plus two narrow ports
+// (OwnerIndex, TaskPersistence); the whole concurrency suite needs no external
+// mocks (neither the Store nor pi-coding-agent).
 
 class FakeSession implements RuntimeSession {
   readonly runtimeId: RuntimeId;
   disposed = false;
+  disposeCalls = 0;
   private readonly state: RuntimeSessionState;
   private readonly initialEvents: RuntimeEvent[];
   private readonly listeners = new Set<(event: RuntimeEvent) => void>();
@@ -57,8 +62,6 @@ class FakeSession implements RuntimeSession {
     };
   }
 
-  disposeCalls = 0;
-
   async dispose(): Promise<void> {
     this.disposeCalls += 1;
     if (this.disposeDelayMs > 0)
@@ -73,10 +76,10 @@ class FakeAdapter implements AgentRuntimeAdapter {
   createCalls: RuntimeSessionInput[] = [];
   resumeCalls: RuntimeSessionInput[] = [];
   sessions: FakeSession[] = [];
-  private nextNative = 0;
-  private readonly seedMessage: boolean;
   createDelayMs = 0;
   disposeDelayMs = 0;
+  private nextNative = 0;
+  private readonly seedMessage: boolean;
 
   constructor(id: RuntimeId, seedMessage = false) {
     this.id = id;
@@ -145,149 +148,177 @@ function makeTask(): TaskSummary {
   };
 }
 
-function makeLifecycle(options: { seedPiMessage?: boolean } = {}) {
-  const pi = new FakeAdapter('pi', options.seedPiMessage ?? false);
-  const codex = new FakeAdapter('codex');
-  const lifecycle = new TaskSessionLifecycle(new RuntimeRegistry([pi, codex]), [], [], {
-    onEvent: () => undefined,
-    messageFrom: (event): TranscriptItem => ({
-      id: event.id,
-      kind: event.role,
-      content: event.content,
-      timestamp: event.timestamp,
-    }),
-    loadTrace: () => [],
-    ownsMetadata: () => true,
-  });
-  return { lifecycle, pi, codex };
+function makeOwnerIndex(): OwnerIndex {
+  const owners = new Map<string, string>();
+  return {
+    owner: key => owners.get(key),
+    acquire: (key, taskId) => {
+      owners.set(key, taskId);
+    },
+    release: (key, taskId) => {
+      if (owners.get(key) === taskId) owners.delete(key);
+    },
+    releaseAll: taskId => {
+      for (const [key, owner] of owners) {
+        if (owner === taskId) owners.delete(key);
+      }
+    },
+  };
 }
 
-const lifecycles: TaskSessionLifecycle[] = [];
+function makePersistence(): TaskPersistence & { traces: Map<string, TraceEvent[]> } {
+  const traces = new Map<string, TraceEvent[]>();
+  return {
+    traces,
+    saveTask: () => undefined,
+    saveTrace: (taskId, trace) => {
+      traces.set(taskId, trace);
+    },
+    loadTrace: taskId => traces.get(taskId) ?? [],
+  };
+}
+
+function makeSession(options: { seedPiMessage?: boolean; ownerIndex?: OwnerIndex } = {}) {
+  const pi = new FakeAdapter('pi', options.seedPiMessage ?? false);
+  const codex = new FakeAdapter('codex');
+  const task = makeTask();
+  const session = new TaskSession(
+    task,
+    {
+      registry: new RuntimeRegistry([pi, codex]),
+      ownerIndex: options.ownerIndex ?? makeOwnerIndex(),
+      persistence: makePersistence(),
+      bundledSkillPaths: [],
+      systemPrompts: [],
+    },
+    true
+  );
+  return { session, task, pi, codex };
+}
+
+const sessions: TaskSession[] = [];
 
 afterEach(async () => {
-  await Promise.all(lifecycles.splice(0).map(lifecycle => lifecycle.disposeAll()));
+  await Promise.all(sessions.splice(0).map(session => session.release()));
 });
 
-describe('TaskSessionLifecycle.switchRuntime', () => {
+describe('TaskSession.switchRuntime', () => {
   it('locks the runtime once the transcript has messages', async () => {
-    const { lifecycle } = makeLifecycle({ seedPiMessage: true });
-    lifecycles.push(lifecycle);
-    const task = makeTask();
-    const runtime = await lifecycle.ensure(task);
-    expect(runtime.transcript.size).toBe(1);
+    const { session, task } = makeSession({ seedPiMessage: true });
+    sessions.push(session);
+    await session.ensure();
+    expect(session.getState().messages).toHaveLength(1);
 
-    await expect(lifecycle.switchRuntime(task, 'codex')).rejects.toThrow('runtime is locked');
+    await expect(session.switchRuntime('codex')).rejects.toThrow('runtime is locked');
+    void task;
   });
 
   it('locks while the first turn is running even with an empty transcript', async () => {
-    const { lifecycle } = makeLifecycle();
-    lifecycles.push(lifecycle);
-    const task = makeTask();
-    await lifecycle.ensure(task);
+    const { session, task } = makeSession();
+    sessions.push(session);
+    await session.ensure();
     task.status = 'running';
 
-    await expect(lifecycle.switchRuntime(task, 'codex')).rejects.toThrow('runtime is locked');
+    await expect(session.switchRuntime('codex')).rejects.toThrow('runtime is locked');
   });
 
   it('drops the unused session and rebuilds with the new runtime', async () => {
-    const { lifecycle, pi, codex } = makeLifecycle();
-    lifecycles.push(lifecycle);
-    const task = makeTask();
-    await lifecycle.ensure(task);
+    const { session, task, pi, codex } = makeSession();
+    sessions.push(session);
+    await session.ensure();
     expect(pi.createCalls).toHaveLength(1);
     const oldSession = pi.sessions[0];
     expect(task.runtime?.runtimeId).toBe('pi');
 
-    await lifecycle.switchRuntime(task, 'codex');
+    await session.switchRuntime('codex');
 
     // lazy semantics: a switch only disposes the old session; the new one is built on first ensure.
     expect(oldSession.disposed).toBe(true);
     expect(codex.createCalls).toHaveLength(0);
 
-    await lifecycle.ensure(task);
+    await session.ensure();
     expect(codex.createCalls).toHaveLength(1);
     expect(codex.resumeCalls).toHaveLength(0);
     expect(task.runtime?.runtimeId).toBe('codex');
   });
 
   it('releases the old session key so another task can take it', async () => {
-    const { lifecycle, pi } = makeLifecycle();
-    lifecycles.push(lifecycle);
-    const task = makeTask();
-    await lifecycle.ensure(task);
-    const oldRef = task.runtime;
+    const ownerIndex = makeOwnerIndex();
+    const first = makeSession({ ownerIndex });
+    sessions.push(first.session);
+    await first.session.ensure();
+    const oldRef = first.task.runtime;
     expect(oldRef?.runtimeId).toBe('pi');
 
-    await lifecycle.switchRuntime(task, 'codex');
+    await first.session.switchRuntime('codex');
 
     // the second task resumes the old native session directly; if switchRuntime had
-    // not released sessionOwners this would falsely report the session as open in
+    // not released the OwnerIndex this would falsely report the session as open in
     // another EV task.
-    const second = makeTask();
-    second.runtime = { runtimeId: 'pi', nativeId: oldRef?.nativeId ?? '' };
-    await lifecycle.ensure(second);
+    const second = makeSession({ ownerIndex });
+    sessions.push(second.session);
+    second.task.runtime = { runtimeId: 'pi', nativeId: oldRef?.nativeId ?? '' };
+    await second.session.ensure();
 
-    expect(pi.resumeCalls).toHaveLength(1);
-    expect(second.runtime?.runtimeId).toBe('pi');
+    expect(second.pi.resumeCalls).toHaveLength(1);
+    expect(second.task.runtime?.runtimeId).toBe('pi');
   });
 });
 
 // Regression tests for the three race windows flagged by the 2026-08-07 architecture
 // review: (1) in-flight init write-back, (2) overlapping setRuntime, (3) resuming a
 // dying session inside the dispose window.
-describe('TaskSessionLifecycle race regressions', () => {
+describe('TaskSession race regressions', () => {
   it('switchRuntime waits for an in-flight init and disposes its write-back', async () => {
-    const { lifecycle, pi, codex } = makeLifecycle();
+    const { session, task, pi, codex } = makeSession();
+    sessions.push(session);
     pi.createDelayMs = 20;
-    const task = makeTask();
-    const init = lifecycle.ensure(task);
-    const switched = lifecycle.switchRuntime(task, 'codex');
+    const init = session.ensure();
+    const switched = session.switchRuntime('codex');
     await Promise.all([init.catch(() => undefined), switched]);
 
     // the old session must be disposed once born; the codex session is lazy until ensure, leaving no leak.
     expect(pi.sessions).toHaveLength(1);
     expect(pi.sessions[0].disposed).toBe(true);
     expect(codex.createCalls).toHaveLength(0);
-    await lifecycle.ensure(task);
+    await session.ensure();
     expect(codex.createCalls).toHaveLength(1);
     expect(task.runtime?.runtimeId).toBe('codex');
-    expect(lifecycle.get(task.id)?.session.runtimeId).toBe('codex');
   });
 
   it('overlapping switchRuntime calls serialize without double-dispose', async () => {
-    const { lifecycle, pi, codex } = makeLifecycle();
-    const task = makeTask();
-    await lifecycle.ensure(task);
+    const { session, task, pi, codex } = makeSession();
+    sessions.push(session);
+    await session.ensure();
 
-    const first = lifecycle.switchRuntime(task, 'codex');
-    const second = lifecycle.switchRuntime(task, 'pi');
+    const first = session.switchRuntime('codex');
+    const second = session.switchRuntime('pi');
     await Promise.all([first, second]);
 
-    for (const session of [...pi.sessions, ...codex.sessions]) {
-      expect(session.disposeCalls).toBeLessThanOrEqual(1);
+    for (const fake of [...pi.sessions, ...codex.sessions]) {
+      expect(fake.disposeCalls).toBeLessThanOrEqual(1);
     }
     // lazy semantics: the intermediate codex target is overwritten by the second switch and never spawns.
     expect(codex.createCalls).toHaveLength(0);
-    await lifecycle.ensure(task);
+    await session.ensure();
     expect(pi.createCalls).toHaveLength(2); // initial + switch back
     expect(task.runtime?.runtimeId).toBe('pi');
-    expect(lifecycle.get(task.id)?.session.runtimeId).toBe('pi');
   });
 
   it('concurrent ensure during the dispose window never resumes the dying ref', async () => {
-    const { lifecycle, pi, codex } = makeLifecycle();
+    const { session, pi, codex } = makeSession();
+    sessions.push(session);
     pi.disposeDelayMs = 20;
-    const task = makeTask();
-    await lifecycle.ensure(task);
+    await session.ensure();
 
-    const switched = lifecycle.switchRuntime(task, 'codex');
-    // enter after switchOnce has detached active/cleared the ref, inside the dispose window.
+    const switched = session.switchRuntime('codex');
+    // enter after switchOnce has detached/cleared the ref, inside the dispose window.
     await new Promise(resolve => setTimeout(resolve, 5));
-    const concurrent = lifecycle.ensure(task);
+    const concurrent = session.ensure();
     await Promise.all([switched.catch(() => undefined), concurrent]);
 
     expect(pi.resumeCalls).toHaveLength(0);
-    // desired is written before dispose: the concurrent ensure builds codex directly, never touching the dying pi.
+    // the target is recorded before dispose: the concurrent ensure builds codex directly, never touching the dying pi.
     expect(pi.createCalls).toHaveLength(1);
     expect(codex.createCalls).toHaveLength(1);
   });
