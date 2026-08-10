@@ -2,90 +2,13 @@ import type { RuntimeEvent } from '@ev/contracts';
 import { RuntimeEventSchema } from '@ev/contracts';
 import type { ThinkingLevel } from '@ev/contracts/domain';
 import type { CodexAppServerClient } from './codex-app-server-client';
+import { boundedText, codexEffort, codexMessage, mapCodexItem } from './codex-event-map';
 import type { RuntimeSession, RuntimeSessionState } from './runtime-adapter';
 
-const MAX_CONTENT_CHARS = 1024 * 1024;
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null;
-}
-
-/**
- * Pure protocol mapping: Codex item -> RuntimeEvent (same pattern as
- * claude-family's mapClaudeFamilyRecord). The state machine (turn wait /
- * out-of-order completion) stays in CodexAppServerSession so this function can
- * be unit-tested without a session.
- */
-export function mapCodexItem(
-  item: UnknownRecord,
-  timestamp: number,
-  completed: boolean
-): RuntimeEvent[] {
-  const id = typeof item.id === 'string' ? item.id : `codex-${timestamp}`;
-  if (item.type === 'userMessage') {
-    const content = Array.isArray(item.content)
-      ? item.content
-          .filter(isRecord)
-          .map(value => value.text)
-          .filter((value): value is string => typeof value === 'string')
-          .join('\n')
-      : '';
-    return [codexMessage(id, 'user', content, timestamp)];
-  }
-  if (item.type === 'agentMessage') {
-    return [codexMessage(id, 'assistant', boundedText(item.text), timestamp)];
-  }
-  if (item.type === 'reasoning') {
-    const summary = Array.isArray(item.summary) ? item.summary.join('\n') : '';
-    const content = Array.isArray(item.content) ? item.content.join('\n') : '';
-    return [codexMessage(id, 'thinking', summary || content, timestamp)];
-  }
-  if (item.type === 'commandExecution') {
-    return [
-      codexMessage(id, 'tool', boundedText(item.aggregatedOutput ?? item.command), timestamp, {
-        toolName: 'command',
-        toolStatus: completed ? (item.status === 'failed' ? 'error' : 'done') : 'running',
-      }),
-    ];
-  }
-  if (
-    item.type === 'fileChange' ||
-    item.type === 'mcpToolCall' ||
-    item.type === 'dynamicToolCall'
-  ) {
-    return [
-      codexMessage(id, 'tool', boundedText(item), timestamp, {
-        toolName: String(item.type),
-        toolStatus: completed ? 'done' : 'running',
-      }),
-    ];
-  }
-  return [];
-}
-
-function codexMessage(
-  id: string,
-  role: Extract<RuntimeEvent, { type: 'message' }>['role'],
-  content: string,
-  timestamp: number,
-  extra: { toolName?: string; toolStatus?: 'running' | 'done' | 'error' } = {}
-): RuntimeEvent {
-  return RuntimeEventSchema.parse({ type: 'message', id, role, content, timestamp, ...extra });
-}
-
-function boundedText(value: unknown): string {
-  const text =
-    typeof value === 'string'
-      ? value
-      : (() => {
-          try {
-            return JSON.stringify(value, null, 2);
-          } catch {
-            return String(value);
-          }
-        })();
-  return text.slice(0, MAX_CONTENT_CHARS);
 }
 
 export class CodexAppServerSession implements RuntimeSession {
@@ -229,7 +152,7 @@ export class CodexAppServerSession implements RuntimeSession {
       threadId: this.state.ref.nativeId,
       input: [{ type: 'text', text, text_elements: [] }],
       ...(this.modelId ? { model: this.modelId } : {}),
-      ...(this.state.thinkingLevel ? { effort: this.codexEffort(this.state.thinkingLevel) } : {}),
+      ...(this.state.thinkingLevel ? { effort: codexEffort(this.state.thinkingLevel) } : {}),
     });
     if (!isRecord(result) || !isRecord(result.turn) || typeof result.turn.id !== 'string') {
       throw new Error('Codex turn/start returned an invalid turn');
@@ -334,14 +257,4 @@ export class CodexAppServerSession implements RuntimeSession {
     for (const listener of this.listeners) listener(event);
   }
 
-  /**
-   * EV thinkingLevel -> Codex effort mapping (settled in P2):
-   * off/minimal→minimal，low→low，medium→medium，high→high，xhigh→xhigh，max→ultra。
-   */
-  private codexEffort(level: ThinkingLevel): string {
-    if (level === 'off' || level === 'minimal') return 'minimal';
-    if (level === 'xhigh') return 'xhigh';
-    if (level === 'max') return 'ultra';
-    return level;
-  }
 }

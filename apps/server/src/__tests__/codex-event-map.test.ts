@@ -1,7 +1,8 @@
 import type { RuntimeEvent } from '@ev/contracts';
 import { describe, expect, it } from 'vitest';
 import type { CodexAppServerClient } from '../runtime/codex-app-server-client';
-import { CodexAppServerSession, mapCodexItem } from '../runtime/codex-app-server-session';
+import { codexEffort, mapCodexItem } from '../runtime/codex-event-map';
+import { CodexAppServerSession } from '../runtime/codex-app-server-session';
 
 /** In-process fake client: notifications fire manually; turn/start returns increasing turn ids. */
 class FakeClient {
@@ -58,7 +59,119 @@ function makeSession(completeOnStart = false): {
 
 const threadId = 'thread-1';
 
-describe('Codex turn state machine (table-driven out-of-order turn-complete)', () => {
+describe('mapCodexItem table-driven mapping (every item kind)', () => {
+  const cases: Array<{
+    name: string;
+    item: Record<string, unknown>;
+    completed?: boolean;
+    expect: (events: RuntimeEvent[]) => void;
+  }> = [
+    {
+      name: 'userMessage joins text blocks',
+      item: { id: 'u1', type: 'userMessage', content: [{ text: 'hello' }, { text: 'world' }] },
+      expect: events =>
+        expect(events).toEqual([
+          expect.objectContaining({ role: 'user', content: 'hello\nworld' }),
+        ]),
+    },
+    {
+      name: 'userMessage without content array maps to empty text',
+      item: { id: 'u2', type: 'userMessage' },
+      expect: events =>
+        expect(events).toEqual([expect.objectContaining({ role: 'user', content: '' })]),
+    },
+    {
+      name: 'agentMessage maps to assistant',
+      item: { id: 'a1', type: 'agentMessage', text: 'answer' },
+      expect: events =>
+        expect(events).toEqual([expect.objectContaining({ role: 'assistant', content: 'answer' })]),
+    },
+    {
+      name: 'reasoning prefers summary over content',
+      item: { id: 'r1', type: 'reasoning', summary: ['s'], content: ['c'] },
+      expect: events =>
+        expect(events).toEqual([expect.objectContaining({ role: 'thinking', content: 's' })]),
+    },
+    {
+      name: 'reasoning falls back to content',
+      item: { id: 'r2', type: 'reasoning', content: ['c'] },
+      expect: events =>
+        expect(events).toEqual([expect.objectContaining({ role: 'thinking', content: 'c' })]),
+    },
+    {
+      name: 'commandExecution running',
+      item: { id: 'c1', type: 'commandExecution', command: 'ls' },
+      completed: false,
+      expect: events =>
+        expect(events[0]).toMatchObject({
+          role: 'tool',
+          toolName: 'command',
+          toolStatus: 'running',
+        }),
+    },
+    {
+      name: 'commandExecution completed',
+      item: { id: 'c1', type: 'commandExecution', command: 'ls', status: 'completed' },
+      completed: true,
+      expect: events => expect(events[0]).toMatchObject({ toolStatus: 'done' }),
+    },
+    {
+      name: 'commandExecution failed',
+      item: { id: 'c1', type: 'commandExecution', command: 'ls', status: 'failed' },
+      completed: true,
+      expect: events => expect(events[0]).toMatchObject({ toolStatus: 'error' }),
+    },
+    {
+      name: 'fileChange carries toolName and done/running',
+      item: { id: 'f1', type: 'fileChange' },
+      completed: true,
+      expect: events =>
+        expect(events[0]).toMatchObject({
+          role: 'tool',
+          toolName: 'fileChange',
+          toolStatus: 'done',
+        }),
+    },
+    {
+      name: 'mcpToolCall running',
+      item: { id: 'm1', type: 'mcpToolCall' },
+      completed: false,
+      expect: events =>
+        expect(events[0]).toMatchObject({ toolName: 'mcpToolCall', toolStatus: 'running' }),
+    },
+    {
+      name: 'dynamicToolCall done',
+      item: { id: 'd1', type: 'dynamicToolCall' },
+      completed: true,
+      expect: events =>
+        expect(events[0]).toMatchObject({ toolName: 'dynamicToolCall', toolStatus: 'done' }),
+    },
+    {
+      name: 'unknown kind maps to nothing',
+      item: { id: 'x1', type: 'unknown' },
+      expect: events => expect(events).toEqual([]),
+    },
+    {
+      name: 'missing id falls back to a timestamp-derived id',
+      item: { type: 'agentMessage', text: 'x' },
+      expect: events => expect(events[0]).toMatchObject({ id: 'codex-7' }),
+    },
+  ];
+
+  for (const testCase of cases) {
+    it(testCase.name, () => {
+      testCase.expect(mapCodexItem(testCase.item, 7, testCase.completed ?? true));
+    });
+  }
+
+  it('codexEffort is the settled P2 table', () => {
+    expect(
+      (['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const).map(codexEffort)
+    ).toEqual(['minimal', 'minimal', 'low', 'medium', 'high', 'xhigh', 'ultra']);
+  });
+});
+
+describe('Codex turn state machine (out-of-order turn-complete)', () => {
   const cases: Array<{
     name: string;
     run: (ctx: { session: CodexAppServerSession; client: FakeClient }) => Promise<void>;
@@ -75,7 +188,7 @@ describe('Codex turn state machine (table-driven out-of-order turn-complete)', (
       },
     },
     {
-      name: 'completion arrives before the turn/start response (extreme reorder) -> waitForTurn takes the fast path',
+      name: 'completion arrives before the turn/start response (extreme reorder) -> fast path',
       run: async () => {
         const { session } = makeSession(true);
         await session.promptAndWait('hi');
@@ -123,50 +236,8 @@ describe('Codex turn state machine (table-driven out-of-order turn-complete)', (
   for (const testCase of cases) {
     it(testCase.name, () => testCase.run(makeSession()));
   }
-});
 
-describe('mapCodexItem pure mapping', () => {
-  it('userMessage / agentMessage / reasoning map to the matching role', () => {
-    const user = mapCodexItem(
-      { id: 'u1', type: 'userMessage', content: [{ text: 'hello' }] },
-      1,
-      true
-    );
-    expect(user).toEqual([expect.objectContaining({ role: 'user', content: 'hello' })]);
-
-    const assistant = mapCodexItem({ id: 'a1', type: 'agentMessage', text: 'answer' }, 2, true);
-    expect(assistant).toEqual([expect.objectContaining({ role: 'assistant', content: 'answer' })]);
-
-    const thinking = mapCodexItem({ id: 'r1', type: 'reasoning', summary: ['s'] }, 3, true);
-    expect(thinking).toEqual([expect.objectContaining({ role: 'thinking', content: 's' })]);
-  });
-
-  it('commandExecution running/done/error states', () => {
-    const running = mapCodexItem({ id: 'c1', type: 'commandExecution', command: 'ls' }, 1, false);
-    expect(running[0]).toMatchObject({ role: 'tool', toolStatus: 'running' });
-
-    const done = mapCodexItem(
-      { id: 'c1', type: 'commandExecution', command: 'ls', status: 'completed' },
-      1,
-      true
-    );
-    expect(done[0]).toMatchObject({ toolStatus: 'done' });
-
-    const failed = mapCodexItem(
-      { id: 'c1', type: 'commandExecution', command: 'ls', status: 'failed' },
-      1,
-      true
-    );
-    expect(failed[0]).toMatchObject({ toolStatus: 'error' });
-  });
-
-  it('fileChange/mcpToolCall/dynamicToolCall carry toolName; unknown types return nothing', () => {
-    const fileChange = mapCodexItem({ id: 'f1', type: 'fileChange' }, 1, true);
-    expect(fileChange[0]).toMatchObject({ role: 'tool', toolName: 'fileChange' });
-    expect(mapCodexItem({ id: 'x1', type: 'unknown' }, 1, true)).toEqual([]);
-  });
-
-  it('delta accumulation still overwrites same-id events via records', () => {
+  it('delta accumulation overwrites same-id events', () => {
     const { session, client } = makeSession();
     const events: RuntimeEvent[] = [];
     session.subscribe(event => events.push(event));
