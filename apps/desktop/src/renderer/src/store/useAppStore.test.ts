@@ -46,6 +46,10 @@ describe('app initialization', () => {
   it('keeps settings usable when a persisted task workspace is missing', async () => {
     installApi({
       settings: { get: vi.fn().mockResolvedValue(persistedSettings) },
+      enableTaskSync: vi.fn(),
+      taskList: vi.fn().mockResolvedValue([staleTask]),
+      subscribeTaskList: vi.fn().mockReturnValue(() => undefined),
+      onResynced: vi.fn().mockReturnValue(() => undefined),
       tasks: {
         list: vi.fn().mockResolvedValue([staleTask]),
         get: vi.fn().mockRejectedValue(new Error('ENOENT: workspace missing')),

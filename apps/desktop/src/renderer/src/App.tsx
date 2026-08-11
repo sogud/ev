@@ -18,13 +18,13 @@ export default function App(): React.JSX.Element {
       if (active) unsubscribe = cleanup;
       else cleanup();
     });
-    const offReconnect = window.agentDesktop.onReconnect(() => {
-      void useAppStore.getState().resync();
+    const offResync = window.agentDesktop.onResynced(() => {
+      void useAppStore.getState().refreshAfterResync();
     });
     return () => {
       active = false;
       unsubscribe?.();
-      offReconnect();
+      offResync();
     };
   }, []);
 

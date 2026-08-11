@@ -50,8 +50,12 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let alive = true;
+    api.enableTaskSync();
+    const offList = api.subscribeTaskList(list => {
+      if (alive) setTasks(list);
+    });
     void Promise.all([
-      api.tasks.list(),
+      api.taskList(),
       api.runtimes.list(),
       api.providers.list(),
       api.settings.get().catch(() => null),
@@ -67,11 +71,16 @@ export function App(): React.JSX.Element {
       .catch(err => {
         if (alive) setError(err instanceof Error ? err.message : String(err));
       });
-    const offReconnect = api.onReconnect(() => {
-      // Full refetch after a reconnect to converge events missed while offline.
-      void api.tasks.list().then(list => {
-        if (alive) setTasks(list);
-      });
+    // Thin delegation: the client converges the task list itself; mobile only
+    // refreshes state the client cannot know (open detail, runtimes, providers).
+    const offResync = api.onResynced(() => {
+      void Promise.all([api.runtimes.list(), api.providers.list()]).then(
+        ([runtimeList, providerList]) => {
+          if (!alive) return;
+          setRuntimes(runtimeList);
+          setProviders(providerList);
+        }
+      );
       setDetail(prev => {
         if (prev) void api.tasks.get(prev.id).then(fresh => setDetail(fresh));
         return prev;
@@ -79,30 +88,13 @@ export function App(): React.JSX.Element {
     });
     const off = api.onWire('tasks:update', payload => {
       const task = payload as TaskDetail;
-      setTasks(prev => {
-        const known = prev.some(item => item.id === task.id);
-        const summary: TaskSummary = {
-          id: task.id,
-          title: task.title,
-          cwd: task.cwd,
-          status: task.status,
-          createdAt: task.createdAt,
-          updatedAt: task.updatedAt,
-          thinkingLevel: task.thinkingLevel,
-          runtime: task.runtime,
-          pendingRuntimeId: task.pendingRuntimeId,
-          model: task.model,
-        };
-        return known
-          ? prev.map(item => (item.id === task.id ? { ...item, ...summary } : item))
-          : [summary, ...prev];
-      });
       setDetail(prev => (prev?.id === task.id ? task : prev));
     });
     return () => {
       alive = false;
       off();
-      offReconnect();
+      offList();
+      offResync();
     };
   }, []);
 

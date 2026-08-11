@@ -2,6 +2,7 @@
  * Reference EV client: fetch (HTTP) + WebSocket (events); works in node/bun/browser.
  * CLI, desktop renderer and web all build AgentDesktopAPI-shaped objects from it.
  */
+import type { TaskDetail, TaskSummary } from './domain';
 import type { AgentDesktopAPI, EvWireMessage } from './registry';
 import { ipcRegistry, isIpcToken, type CallToken } from './registry';
 
@@ -13,14 +14,30 @@ export interface EvClientOptions {
 export type EvClient = AgentDesktopAPI & {
   /** WS event subscription (tasks:update etc.); returns unsubscribe; connection is lazy on first subscribe. */
   onWire(channel: string, listener: (payload: unknown) => void): () => void;
-  /** Called after a successful auto-reconnect (backoff); consumers should refetch fully to converge missed events. */
-  onReconnect(listener: () => void): () => void;
+  /**
+   * Deep sync: keep a cached task list, apply tasks:update locally, and refetch
+   * fully after every reconnect. UI clients activate once; CLI one-shots never
+   * call it and stay WS-free.
+   */
+  enableTaskSync(): void;
+  /** Read-through cached task list (first call fetches). */
+  taskList(): Promise<TaskSummary[]>;
+  /** Subscribe to the cached list; fires on upsert and on post-reconnect refetch. */
+  subscribeTaskList(listener: (tasks: TaskSummary[]) => void): () => void;
+  /**
+   * Fires after the client converged the list post-reconnect. Thin-delegation
+   * hook for state the client cannot know (e.g. the currently open detail).
+   */
+  onResynced(listener: () => void): () => void;
   close(): void;
 };
 
 export function createEvClient(options: EvClientOptions): EvClient {
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
-  const reconnectListeners = new Set<() => void>();
+  const resyncedListeners = new Set<() => void>();
+  let taskCache: TaskSummary[] | null = null;
+  const taskCacheListeners = new Set<(tasks: TaskSummary[]) => void>();
+  let taskSyncEnabled = false;
   let socket: WebSocket | null = null;
   let socketPromise: Promise<WebSocket> | null = null;
   let closed = false;
@@ -40,8 +57,9 @@ export function createEvClient(options: EvClientOptions): EvClient {
         hadOpen = true;
         backoffMs = 1000;
         resolve(ws);
-        // Reconnect succeeded: ask consumers to refetch fully and converge events missed while down.
-        if (isReconnect) for (const listener of reconnectListeners) listener();
+        // Reconnect succeeded: the cache converges itself (full refetch); consumers
+        // only get a thin notification for state the client cannot know.
+        if (isReconnect && taskSyncEnabled) void resyncTaskCache();
       };
       ws.onerror = () => reject(new Error('EV server WebSocket connection failed'));
       ws.onmessage = message => {
@@ -119,6 +137,33 @@ export function createEvClient(options: EvClientOptions): EvClient {
   };
 
   const api = buildNode(ipcRegistry as unknown as Record<string, unknown>) as EvClient;
+  const rawTaskList = api.tasks.list;
+
+  const notifyTaskCache = (): void => {
+    if (!taskCache) return;
+    for (const listener of taskCacheListeners) listener([...taskCache]);
+  };
+
+  const sortByUpdated = (tasks: TaskSummary[]): TaskSummary[] =>
+    [...tasks].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  const upsertTask = (detail: TaskDetail): void => {
+    const { messages: _messages, trace: _trace, ...summary } = detail;
+    const rest = taskCache?.filter(task => task.id !== summary.id) ?? [];
+    taskCache = sortByUpdated([...rest, summary]);
+    notifyTaskCache();
+  };
+
+  const resyncTaskCache = async (): Promise<void> => {
+    try {
+      taskCache = sortByUpdated(await rawTaskList());
+    } catch {
+      // server still coming back; the next reconnect or event re-converges.
+      return;
+    }
+    notifyTaskCache();
+    for (const listener of resyncedListeners) listener();
+  };
   api.onWire = (channel, listener) => {
     let set = listeners.get(channel);
     if (!set) {
@@ -131,10 +176,28 @@ export function createEvClient(options: EvClientOptions): EvClient {
       set.delete(listener);
     };
   };
-  api.onReconnect = listener => {
-    reconnectListeners.add(listener);
+  api.enableTaskSync = () => {
+    if (taskSyncEnabled) return;
+    taskSyncEnabled = true;
+    api.onWire('tasks:update', payload => upsertTask(payload as TaskDetail));
+    void resyncTaskCache();
+  };
+  api.taskList = async () => {
+    if (taskCache) return [...taskCache];
+    taskCache = sortByUpdated(await rawTaskList());
+    notifyTaskCache();
+    return [...taskCache];
+  };
+  api.subscribeTaskList = listener => {
+    taskCacheListeners.add(listener);
     return () => {
-      reconnectListeners.delete(listener);
+      taskCacheListeners.delete(listener);
+    };
+  };
+  api.onResynced = listener => {
+    resyncedListeners.add(listener);
+    return () => {
+      resyncedListeners.delete(listener);
     };
   };
   api.close = () => {

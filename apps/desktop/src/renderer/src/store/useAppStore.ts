@@ -31,8 +31,9 @@ interface AppState {
   setModel(provider: string, model: string): Promise<void>;
   setThinkingLevel(level: ThinkingLevel): Promise<void>;
   refreshProviders(): Promise<void>;
-  /** Full refetch after a WS reconnect (list + current detail) to converge missed events. */
-  resync(): Promise<void>;
+  /** Thin post-resync delegation: the client converges the task list itself; this
+   * only refreshes state the client cannot know (providers/runtimes/open detail). */
+  refreshAfterResync(): Promise<void>;
   setTaskRuntime(id: string, runtimeId: RuntimeId): Promise<void>;
   selectRuntime(id: RuntimeId): void;
   updateSettings(input: Partial<AppSettings>): Promise<void>;
@@ -63,9 +64,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   initialize: async () => {
     try {
+      window.agentDesktop.enableTaskSync();
       const [settings, tasks, providers, runtimes] = await Promise.all([
         window.agentDesktop.settings.get(),
-        window.agentDesktop.tasks.list(),
+        window.agentDesktop.taskList(),
         window.agentDesktop.providers.list(),
         window.agentDesktop.runtimes.list(),
       ]);
@@ -94,28 +96,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ error: messageOf(error), loading: false });
     }
 
-    return window.agentDesktop.tasks.onUpdate(detail => {
-      set(state => {
-        const summary = summaryOf(detail);
-        const tasks = [summary, ...state.tasks.filter(task => task.id !== detail.id)].sort(
-          (a, b) => b.updatedAt - a.updatedAt
-        );
-        return {
-          tasks,
-          detail: state.selectedId === detail.id ? detail : state.detail,
-        };
-      });
+    const offList = window.agentDesktop.subscribeTaskList(list => set({ tasks: list }));
+    const offUpdate = window.agentDesktop.tasks.onUpdate(detail => {
+      set(state => ({
+        detail: state.selectedId === detail.id ? detail : state.detail,
+      }));
     });
+    return () => {
+      offList();
+      offUpdate();
+    };
   },
 
-  resync: async () => {
+  refreshAfterResync: async () => {
     try {
-      const [tasks, providers, runtimes] = await Promise.all([
-        window.agentDesktop.tasks.list(),
+      const [providers, runtimes] = await Promise.all([
         window.agentDesktop.providers.list(),
         window.agentDesktop.runtimes.list(),
       ]);
-      set({ tasks, providers, runtimes });
+      set({ providers, runtimes });
       const selectedId = get().selectedId;
       if (selectedId) {
         const detail = await window.agentDesktop.tasks.get(selectedId);
