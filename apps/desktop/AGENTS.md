@@ -28,14 +28,14 @@ the sidebar is display-only.
 
 ## Commands
 
-- Install dependencies: `bun install`
-- Start development: `bun run dev`
-- Type-check: `bun run typecheck`
-- Run tests: `bun run test`
-- Check formatting: `bun run format:check`
-- Build: `bun run build`
-- Package a local macOS app: `bun run pack`
-- Build macOS distributions: `bun run dist`
+- Install dependencies: `pnpm install`
+- Start development: `pnpm run dev`
+- Type-check: `pnpm run typecheck`
+- Run tests: `pnpm run test`
+- Check formatting: `pnpm run format:check`
+- Build: `pnpm run build`
+- Package a local macOS app: `pnpm run pack`
+- Build macOS distributions: `pnpm run dist`
 
 Before delivery, run the smallest relevant checks. For code changes, normally run type-checking,
 tests, and a production build. Packaging is only required when packaging behavior or native assets

@@ -56,12 +56,15 @@ function serverEntry(): string {
 
 function ensureEntryBuilt(entry: string): void {
   if (existsSync(entry)) return;
-  // bun is a build tool only; the server runtime is node.
+  // pnpm is a build tool only; the server runtime is node.
   const serverDir = join(dirname(entry), '../../server');
-  const built = spawnSync('bun', ['run', '--cwd', serverDir, 'build'], { stdio: 'ignore' });
+  const built = spawnSync('pnpm', ['--dir', serverDir, 'run', 'build'], {
+    stdio: 'ignore',
+    shell: true,
+  });
   if (built.status !== 0 || !existsSync(entry)) {
     throw new CliError(
-      `server entry build failed: ${entry} (run bun run --cwd apps/server build manually)`
+      `server entry build failed: ${entry} (run pnpm --dir apps/server run build manually)`
     );
   }
 }

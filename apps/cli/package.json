@@ -18,9 +18,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && bun build src/cli.ts --target=node --format=esm --outfile=dist/ev.js && chmod +x dist/ev.js",
-    "build:standalone": "mkdir -p dist && bun scripts/build-standalone.ts",
-    "package": "bun run build && bun run build:standalone && npm pack --pack-destination dist",
+    "build": "rm -rf dist && esbuild src/cli.ts --bundle --platform=node --format=esm --banner:js='import { createRequire as __evCjsRequire } from \"node:module\"; const require = __evCjsRequire(import.meta.url);' --outfile=dist/ev.js && chmod +x dist/ev.js",
+    "build:standalone": "node --experimental-strip-types scripts/build-standalone.ts",
+    "package": "pnpm run build && pnpm run build:standalone && npm pack --pack-destination dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "format": "prettier --write --ignore-path ../../.prettierignore .",
@@ -30,6 +30,8 @@
     "@ev/browser-host": "workspace:*",
     "@ev/contracts": "workspace:*",
     "@types/node": "22.10.5",
+    "esbuild": "^0.28.2",
+    "postject": "1.0.0-alpha.6",
     "prettier": "3.4.2",
     "typescript": "5.7.3",
     "vitest": "4.1.10"

@@ -3,35 +3,26 @@
   "private": true,
   "version": "0.1.0",
   "description": "EV local-first agent workspace",
-  "packageManager": "bun@1.3.14",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "overrides": {
-    "postcss": "8.5.25",
-    "undici": "8.9.0",
-    "ws": "8.21.0"
-  },
+  "packageManager": "pnpm@10.12.2",
   "scripts": {
-    "dev": "bun run dev:desktop",
-    "dev:desktop": "bun run --cwd apps/cli build && bun run --cwd apps/desktop dev",
-    "dev:extension": "bun run --cwd apps/browser-extension dev",
-    "typecheck": "bun run --cwd packages/contracts typecheck && bun run --cwd packages/browser-host typecheck && bun run --cwd apps/cli typecheck && bun run --cwd apps/server typecheck && bun run --cwd apps/mobile typecheck && bun run --cwd apps/desktop typecheck && bun run --cwd apps/browser-extension typecheck",
-    "test": "bun run --cwd packages/contracts test && bun run --cwd packages/browser-host test && bun run --cwd apps/cli test && bun run --cwd apps/server test && bun run --cwd apps/desktop test && bun run --cwd apps/browser-extension test",
-    "format:check": "bun run --cwd packages/browser-host format:check && bun run --cwd apps/cli format:check && bun run --cwd apps/desktop format:check && bun run --cwd apps/browser-extension format:check",
-    "build": "bun run --cwd apps/cli build && bun run --cwd apps/desktop build && bun run --cwd apps/browser-extension build",
-    "pack": "bun run --cwd apps/desktop pack",
-    "dist": "bun run --cwd apps/desktop dist",
-    "package:extension": "bun run --cwd apps/browser-extension package",
-    "build:extension:firefox": "bun run --cwd apps/browser-extension build:firefox",
-    "package:extension:firefox": "bun run --cwd apps/browser-extension package:firefox",
-    "package:cli": "bun run --cwd apps/cli package",
+    "dev": "pnpm run dev:desktop",
+    "dev:desktop": "pnpm --dir apps/cli run build && pnpm --dir apps/desktop run dev",
+    "dev:extension": "pnpm --dir apps/browser-extension run dev",
+    "typecheck": "pnpm --dir packages/contracts run typecheck && pnpm --dir packages/browser-host run typecheck && pnpm --dir apps/cli run typecheck && pnpm --dir apps/server run typecheck && pnpm --dir apps/mobile run typecheck && pnpm --dir apps/desktop run typecheck && pnpm --dir apps/browser-extension run typecheck",
+    "test": "pnpm --dir packages/contracts run test && pnpm --dir packages/browser-host run test && pnpm --dir apps/cli run test && pnpm --dir apps/server run test && pnpm --dir apps/desktop run test && pnpm --dir apps/browser-extension run test",
+    "format:check": "pnpm --dir packages/browser-host run format:check && pnpm --dir apps/cli run format:check && pnpm --dir apps/desktop run format:check && pnpm --dir apps/browser-extension run format:check",
+    "build": "pnpm --dir apps/cli run build && pnpm --dir apps/desktop run build && pnpm --dir apps/browser-extension run build",
+    "pack": "pnpm --dir apps/desktop run pack",
+    "dist": "pnpm --dir apps/desktop run dist",
+    "package:extension": "pnpm --dir apps/browser-extension run package",
+    "build:extension:firefox": "pnpm --dir apps/browser-extension run build:firefox",
+    "package:extension:firefox": "pnpm --dir apps/browser-extension run package:firefox",
+    "package:cli": "pnpm --dir apps/cli run package",
     "golden": "bash scripts/golden-path.sh",
-    "verify": "bun run format:check && bun run typecheck && bun run test && bun run build",
-    "release:check": "bun scripts/check-release-version.ts",
+    "verify": "pnpm run format:check && pnpm run typecheck && pnpm run test && pnpm run build",
+    "release:check": "node --experimental-strip-types scripts/check-release-version.ts",
     "release": "bash scripts/release.sh",
-    "release:checksums": "bun scripts/create-release-checksums.ts",
+    "release:checksums": "node --experimental-strip-types scripts/create-release-checksums.ts",
     "lint": "eslint .",
     "quality": "knip --no-progress && madge --circular --extensions ts,tsx apps packages"
   },
@@ -43,5 +34,17 @@
     "knip": "^5.41.1",
     "madge": "^8.0.0",
     "@eslint/js": "^9.17.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "8.5.25",
+      "undici": "8.9.0",
+      "ws": "8.21.0"
+    },
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "electron",
+      "esbuild"
+    ]
   }
 }

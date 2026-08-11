@@ -6,10 +6,14 @@
     "@types/ws",
     "@wxt-dev/module-react",
     "electron-builder-squirrel-windows",
+    "postject",
     "tailwindcss",
     "tailwindcss-animate"
   ],
   "workspaces": {
+    "apps/cli": {
+      "entry": ["scripts/*.ts"]
+    },
     "apps/desktop": {
       "entry": ["electron.vite.config.ts", "src/main/index.ts", "src/renderer/src/main.tsx", "scripts/*.ts"]
     },

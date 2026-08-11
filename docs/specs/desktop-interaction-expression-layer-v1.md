@@ -130,4 +130,4 @@ UI 都要重新发明一遍展示方式。用户要的是一个「不管底下�
   turn 脚注、过程/结果分层的开源实证）。证据与模式清单见 wayfinder 地图 Notes。
 - 原型：`docs/wayfinder/assets/0004-transcript-variants.html?variant=C`。
 - 本规格是 wayfinder 已定案决策的交接物；未定案部分以地图「Not yet specified」为准。
-- 实现交接后，按 EV 仓自身验证命令跑 `bun run verify`。
+- 实现交接后，按 EV 仓自身验证命令跑 `pnpm run verify`。

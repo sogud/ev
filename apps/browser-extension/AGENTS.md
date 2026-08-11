@@ -14,11 +14,11 @@ commands, or expose unrestricted page evaluation. Cross-app messages belong in
 Run from the repository root:
 
 ```bash
-bun run dev:extension
-bun run --cwd apps/browser-extension typecheck
-bun run --cwd apps/browser-extension test
-bun run --cwd apps/browser-extension build
-bun run package:extension
+pnpm run dev:extension
+pnpm --dir apps/browser-extension run typecheck
+pnpm --dir apps/browser-extension run test
+pnpm --dir apps/browser-extension run build
+pnpm run package:extension
 ```
 
 ## Architecture

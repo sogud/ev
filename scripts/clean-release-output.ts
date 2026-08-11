@@ -1,7 +1,7 @@
 import { readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-const workspaceRoot = resolve(import.meta.dir, '..');
+const workspaceRoot = resolve(import.meta.dirname, '..');
 const packagePath = resolve(workspaceRoot, 'apps/desktop/package.json');
 const packageJson = JSON.parse(await readFile(packagePath, 'utf8')) as { version?: string };
 const version = packageJson.version;

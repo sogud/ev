@@ -35,19 +35,19 @@ your phone.**
 
 ## Quick start
 
-Requirements: [Bun](https://bun.sh), Node.js ≥ 20.
+Requirements: [pnpm](https://pnpm.io) ≥ 10 and Node.js ≥ 22.
 
 ```bash
 # install and build everything
-bun install
-bun run build
+pnpm install
+pnpm run build
 
 # run the desktop app (starts the local server automatically)
-bun run dev:desktop
+pnpm run dev:desktop
 
 # or package a local build
-bun run pack                  # Electron app
-bun run package:extension     # browser extension
+pnpm run pack                  # Electron app
+pnpm run package:extension     # browser extension
 ```
 
 The CLI ships with the app and self-hosts the server when the desktop is

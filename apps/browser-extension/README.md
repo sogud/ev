@@ -36,12 +36,12 @@ Desktop 负责 Pi runtime、任务和应用权限；扩展不保存模型密钥�
 从 EV 仓库根目录运行：
 
 ```bash
-bun install
-bun run dev:extension
-bun run --cwd apps/browser-extension typecheck
-bun run --cwd apps/browser-extension test
-bun run --cwd apps/browser-extension build
-bun run build:extension:firefox
+pnpm install
+pnpm run dev:extension
+pnpm --dir apps/browser-extension run typecheck
+pnpm --dir apps/browser-extension run test
+pnpm --dir apps/browser-extension run build
+pnpm run build:extension:firefox
 ```
 
-开发模式提供 Vite HMR 和自动扩展重载。Chrome MV3 生产构建位于 `apps/browser-extension/.output/chrome-mv3/`；WXT 也可以生成 Firefox 构建。`bun run package:extension` 和 `bun run package:extension:firefox` 会生成商店上传用 ZIP。
+开发模式提供 Vite HMR 和自动扩展重载。Chrome MV3 生产构建位于 `apps/browser-extension/.output/chrome-mv3/`；WXT 也可以生成 Firefox 构建。`pnpm run package:extension` 和 `pnpm run package:extension:firefox` 会生成商店上传用 ZIP。

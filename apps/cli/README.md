@@ -10,12 +10,12 @@ CLI 优先复用正在运行的 EV Desktop Browser Host；如果 Desktop 不存�
 
 ## 安装
 
-全局 npm/Bun 包：
+全局 npm 包：
 
 ```bash
 npm install --global @sogud/ev
 # 或
-bun install --global @sogud/ev
+npm install --global @sogud/ev
 ```
 
 也可从 GitHub Release 下载当前平台的单文件程序，例如 `ev-darwin-arm64`，赋予执行权限后放入 `PATH`。EV Desktop 还会自动创建 `~/.ev/bin/ev` launcher，并将其加入内置 Pi Runtime 的 `PATH`。
@@ -52,11 +52,11 @@ ev browser host stop
 ## 开发与打包
 
 ```bash
-bun run --cwd apps/cli typecheck
-bun run --cwd apps/cli test
-bun run --cwd apps/cli build
-bun run --cwd apps/cli build:standalone
-bun run package:cli
+pnpm --dir apps/cli run typecheck
+pnpm --dir apps/cli run test
+pnpm --dir apps/cli run build
+pnpm --dir apps/cli run build:standalone
+pnpm run package:cli
 ```
 
 `package:cli` 同时生成 npm tarball 和当前平台的单文件可执行程序。

@@ -6,13 +6,13 @@ to — including work produced with AI assistance.
 
 ## Development setup
 
-Requirements: [Bun](https://bun.sh) (package manager and build tooling) and
+Requirements: [pnpm](https://pnpm.io) ≥ 10 (package manager) and
 Node.js ≥ 20 (the server runtime).
 
 ```bash
-bun install
-bun run dev:desktop      # Electron app with hot reload
-bun run dev:extension    # browser extension in watch mode
+pnpm install
+pnpm run dev:desktop      # Electron app with hot reload
+pnpm run dev:extension    # browser extension in watch mode
 ```
 
 The desktop app owns a headless local server (`apps/server`); the CLI
@@ -27,9 +27,9 @@ touching runtime integration code.
 Every change must pass the three gates before review:
 
 ```bash
-bun run verify          # format check + typecheck + tests + build
-bun run lint            # ESLint (typescript-eslint recommended + quality rules)
-bun run quality         # knip (dead code/deps) + madge (circular imports)
+pnpm run verify          # format check + typecheck + tests + build
+pnpm run lint            # ESLint (typescript-eslint recommended + quality rules)
+pnpm run quality         # knip (dead code/deps) + madge (circular imports)
 bash scripts/golden-path.sh   # end-to-end regression on an isolated port
 ```
 

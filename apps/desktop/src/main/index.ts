@@ -48,7 +48,7 @@ async function healthOk(info: ServerInfo): Promise<boolean> {
 
 function serverEntry(): string {
   if (process.env.EV_SERVER_ENTRY) return process.env.EV_SERVER_ENTRY;
-  // Resolution order: packaged resources -> dev dist-server; build first when missing (bun is build tooling only).
+  // Resolution order: packaged resources -> dev dist-server; build first when missing (pnpm is build tooling only).
   if (app.isPackaged) return join(process.resourcesPath, 'server', 'server.mjs');
   return join(app.getAppPath(), 'dist-server', 'server.mjs');
 }
@@ -56,7 +56,10 @@ function serverEntry(): string {
 function ensureEntryBuilt(entry: string): void {
   if (existsSync(entry)) return;
   const serverDir = join(app.getAppPath(), '../server');
-  const built = spawnSync('bun', ['run', '--cwd', serverDir, 'build'], { stdio: 'ignore' });
+  const built = spawnSync('pnpm', ['--dir', serverDir, 'run', 'build'], {
+    stdio: 'ignore',
+    shell: true,
+  });
   if (built.status !== 0 || !existsSync(entry)) {
     throw new Error(`Failed to build server entry: ${entry}`);
   }

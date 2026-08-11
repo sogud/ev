@@ -4,7 +4,7 @@ import { getBackend } from './backend';
  * electron-store-shaped API over SQLite (~/.ev/ev.db), the M1 source of truth.
  * Service code stays untouched: get/set semantics match the JSON era; values are
  * JSON blobs in the KV table. The driver seam lives in ./backend
- * (bun:sqlite / node:sqlite implementations).
+ * (better-sqlite3 / node:sqlite implementations).
  */
 export default class Store<T extends object> {
   constructor(

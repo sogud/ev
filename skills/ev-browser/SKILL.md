@@ -5,7 +5,7 @@ description: Use whenever an EV task needs to inspect, automate, debug, capture,
 
 # EV Browser
 
-Use the `ev browser` CLI for browser work. It can come from EV Desktop, the npm/Bun global package, or the standalone executable. EV Desktop is optional:
+Use the `ev browser` CLI for browser work. It can come from EV Desktop, the npm global package, or the standalone executable. EV Desktop is optional:
 
 - If EV Desktop is running, CLI commands reuse its Browser Host.
 - Otherwise, the CLI automatically starts a background standalone Browser Host.

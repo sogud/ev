@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 
 const version = process.argv[2];
 if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
-  throw new Error('Usage: bun scripts/set-release-version.ts <semver>');
+  throw new Error('Usage: pnpm exec tsx scripts/set-release-version.ts <semver>');
 }
 
 const packageFiles = [

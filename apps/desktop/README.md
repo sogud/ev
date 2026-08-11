@@ -28,23 +28,23 @@ EV 是一个个人拥有、本地优先的桌面 Agent。它通过受控 CLI Pro
 
 ## 开发
 
-要求：Bun 1.x、Node.js 22.19+。运行 Pi/Codex 任务时，相应 CLI 需已安装并完成自身登录；也可通过 `EV_PI_CLI` 或 `EV_CODEX_CLI` 指定受信任的可执行文件。
+要求：pnpm ≥ 10、Node.js 22.19+。运行 Pi/Codex 任务时，相应 CLI 需已安装并完成自身登录；也可通过 `EV_PI_CLI` 或 `EV_CODEX_CLI` 指定受信任的可执行文件。
 
 ```bash
-bun install
-bun run dev
+pnpm install
+pnpm run dev
 ```
 
 常用命令：
 
 ```bash
-bun run typecheck
-bun run test
-bun run build
-bun run pack
+pnpm run typecheck
+pnpm run test
+pnpm run build
+pnpm run pack
 ```
 
-`bun run pack` 会在 `release/<version>/mac-arm64/EV.app` 生成本地 macOS 应用，并把 CLI 与 Browser Skill 放入 App Resources。Desktop 启动时会在 `~/.ev/bin/ev` 创建只供当前用户使用的 launcher，并把该目录加入内置 Pi Runtime 的 `PATH`。
+`pnpm run pack` 会在 `release/<version>/mac-arm64/EV.app` 生成本地 macOS 应用，并把 CLI 与 Browser Skill 放入 App Resources。Desktop 启动时会在 `~/.ev/bin/ev` 创建只供当前用户使用的 launcher，并把该目录加入内置 Pi Runtime 的 `PATH`。
 
 完成 EV Browser 配对后可以直接检查浏览器控制链路：
 

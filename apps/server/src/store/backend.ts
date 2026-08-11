@@ -16,7 +16,7 @@ export interface KvBackend {
 }
 
 // All SQL is constant text + bound parameters (no string building), so there is
-// no injection surface; bun:sqlite / node:sqlite ship no query builder and the
+// no injection surface; node:sqlite ships no query builder and the
 // mission forbids new external dependencies.
 const SQL = {
   createTable:

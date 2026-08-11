@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // 把 better-sqlite3 原生依赖链拷进 dist-server/node_modules，
-// 使打包 entry 在任意 node 运行时下可解析（bun isolated install 不 hoist）。
+// 使打包 entry 在任意 node 运行时下可解析（打包产物旁没有 workspace node_modules）。
 const req = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, '../../desktop/dist-server/node_modules');

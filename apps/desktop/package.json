@@ -8,16 +8,16 @@
   "scripts": {
     "dev": "electron-vite dev",
     "typecheck": "tsc --noEmit",
-    "build": "bun run --cwd ../server build && bun run typecheck && electron-vite build && bun scripts/check-main-bundle.ts",
+    "build": "pnpm --dir ../server run build && pnpm run typecheck && electron-vite build && node --experimental-strip-types scripts/check-main-bundle.ts",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write --ignore-path ../../.prettierignore .",
     "format:check": "prettier --check --ignore-path ../../.prettierignore .",
-    "pack": "bun run --cwd ../cli build && bun run clean:release && bun run build && electron-builder --mac dir",
-    "dist": "bun run --cwd ../cli build && bun run clean:release && bun run build && electron-builder --mac",
-    "clean:release": "bun ../../scripts/clean-release-output.ts"
+    "pack": "pnpm --dir ../cli run build && pnpm run clean:release && pnpm run build && electron-builder --mac dir",
+    "dist": "pnpm --dir ../cli run build && pnpm run clean:release && pnpm run build && electron-builder --mac",
+    "clean:release": "node --experimental-strip-types ../../scripts/clean-release-output.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

@@ -1,5 +1,5 @@
 /**
- * Reference EV client: fetch (HTTP) + WebSocket (events); works in node/bun/browser.
+ * Reference EV client: fetch (HTTP) + WebSocket (events); works in node/browser.
  * CLI, desktop renderer and web all build AgentDesktopAPI-shaped objects from it.
  */
 import type { TaskDetail, TaskSummary } from './domain';

@@ -72,7 +72,7 @@ ev server（Mac 常驻，无头）
 ## 迁移路径
 
 1. 新建 `apps/server`：agent-service、task-session-lifecycle、runtime adapters、
-   ipcRegistry handler 整体搬入；Electron 依赖清零（可独立 bun run/测试）
+   ipcRegistry handler 整体搬入；Electron 依赖清零（可独立 pnpm run/测试）
 2. contracts 扩展 HTTP+WS 映射；server 挂载；`ev server` 生命周期命令
 3. `apps/cli`：薄客户端 + 命令树 + follow + --skill
 4. desktop 改造：main 只剩窗口管理 + server 监督（bb desktop 模式）；

@@ -2,7 +2,7 @@
 
 ## Project
 
-EV is a personal, local-first Agent product organized as a lightweight Bun monorepo.
+EV is a personal, local-first Agent product organized as a lightweight pnpm monorepo.
 
 - `apps/desktop/`: Electron desktop app and Pi runtime host
 - `apps/browser-extension/`: browser extension, CDP execution host, bookmarks, and browser context
@@ -35,17 +35,17 @@ tasks, traces, runtimes, browser integration, and local access control.
 ## Commands
 
 ```bash
-bun install
-bun run dev:desktop
-bun run dev:extension
-bun run verify
-bun run typecheck
-bun run test
-bun run format:check
-bun run build
-bun run pack
-bun run package:extension
-bun run release --dry-run patch
+pnpm install
+pnpm run dev:desktop
+pnpm run dev:extension
+pnpm run verify
+pnpm run typecheck
+pnpm run test
+pnpm run format:check
+pnpm run build
+pnpm run pack
+pnpm run package:extension
+pnpm run release --dry-run patch
 ```
 
 Run the smallest relevant checks while developing. Before delivery, run type-checking, tests, and

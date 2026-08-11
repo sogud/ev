@@ -344,7 +344,7 @@ const data = {
   user1: '帮我修一下侧边栏「新任务」按钮换行的问题',
   thinking1: '侧边栏 new-task-row 里塞了主按钮、RuntimePicker、目录按钮三个控件；240px 宽下主按钮被挤到换行。先看 CSS 再决定是收敛控件还是改布局……',
   steps: [
-    ['✓', 'bash', 'bun run --cwd apps/desktop typecheck · 通过 · 1.2s'],
+    ['✓', 'bash', 'pnpm --dir apps/desktop run typecheck · 通过 · 1.2s'],
     ['✓', 'read', 'src/renderer/src/components/Sidebar.tsx · 203 行'],
     ['✓', 'edit', 'src/renderer/src/styles/index.css · +14 −3'],
   ],
@@ -413,7 +413,7 @@ function vc() {
     </div>
     <div class="vc-rail">
       <div class="chip">思<span class="pop"><b>思考过程 · 3s</b>${data.thinking1}</span></div>
-      <div class="chip">▸<span class="pop"><b>bash · 通过</b>$ bun run --cwd apps/desktop typecheck</span></div>
+      <div class="chip">▸<span class="pop"><b>bash · 通过</b>$ pnpm --dir apps/desktop run typecheck</span></div>
       <div class="chip">▸<span class="pop"><b>read · 203 行</b>Sidebar.tsx</span></div>
       <div class="chip">✎<span class="pop"><b>edit</b>styles/index.css<br>+14 −3</span></div>
     </div>

@@ -51,7 +51,6 @@ function fallbackPathEntries(home: string): string[] {
     path.dirname(process.execPath),
     path.join(home, '.npm-global', 'bin'),
     path.join(home, '.local', 'bin'),
-    path.join(home, '.bun', 'bin'),
     '/opt/homebrew/bin',
     '/usr/local/bin',
     '/usr/bin',

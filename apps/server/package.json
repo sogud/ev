@@ -6,22 +6,24 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "start": "bun src/server.ts",
-    "build": "bun build src/server.ts --target=node --format=esm --external better-sqlite3 --outfile ../../apps/desktop/dist-server/server.mjs && node scripts/ship-native.mjs && bun run --cwd ../mobile build"
+    "start": "tsx src/server.ts",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --external:better-sqlite3 --banner:js='import { createRequire as __evCjsRequire } from \"node:module\"; const require = __evCjsRequire(import.meta.url);' --outfile=../../apps/desktop/dist-server/server.mjs && node scripts/ship-native.mjs && pnpm --dir ../mobile run build"
   },
   "dependencies": {
-    "@ev/contracts": "workspace:*",
-    "@ev/browser-host": "workspace:*",
     "@earendil-works/pi-coding-agent": "0.83.0",
-    "ws": "8.21.0",
-    "better-sqlite3": "^12.4.1"
+    "@ev/browser-host": "workspace:*",
+    "@ev/contracts": "workspace:*",
+    "better-sqlite3": "^12.4.1",
+    "ws": "8.21.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
-    "vitest": "^4.1.10",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.19.0",
     "@types/ws": "^8.18.1",
-    "@types/better-sqlite3": "^7.6.13"
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.12",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
   },
   "license": "Apache-2.0"
 }

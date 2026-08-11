@@ -21,7 +21,6 @@ function knownNodeAvailable(): boolean {
     '/opt/homebrew/bin/node',
     path.join(home, '.npm-global', 'bin', 'node'),
     path.join(home, '.local', 'bin', 'node'),
-    path.join(home, '.bun', 'bin', 'node'),
   ];
   try {
     const nvmRoot = path.join(home, '.nvm', 'versions', 'node');

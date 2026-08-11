@@ -12,7 +12,7 @@ ASSUME_YES=0
 
 usage() {
   cat <<'EOF'
-Usage: bun run release [patch|minor|major|X.Y.Z] [options]
+Usage: pnpm run release [patch|minor|major|X.Y.Z] [options]
 
 Options:
   --dry-run  Print the planned release without changing files or Git state
@@ -41,7 +41,7 @@ for argument in "$@"; do
   esac
 done
 
-CURRENT_VERSION=$(bun -e "console.log(JSON.parse(await Bun.file('package.json').text()).version)")
+CURRENT_VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
 if [[ ! $CURRENT_VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Automatic bumps require a stable X.Y.Z root version; found $CURRENT_VERSION" >&2
   exit 1
@@ -67,7 +67,7 @@ if ((DRY_RUN)); then
   if [[ -n $(git status --porcelain) ]]; then
     echo "Warning: the working tree is currently dirty; a real release would stop."
   fi
-  echo "Would synchronize all workspace package versions, run bun run verify, create an annotated tag,"
+  echo "Would synchronize all workspace package versions, run pnpm run verify, create an annotated tag,"
   if ((NO_PUSH)); then
     echo "and keep the release commit and tag local."
   else
@@ -101,20 +101,20 @@ fi
 RESTORE_ON_EXIT=1
 restore_versions() {
   if ((RESTORE_ON_EXIT)); then
-    git restore --staged package.json apps/desktop/package.json apps/browser-extension/package.json apps/cli/package.json packages/browser-host/package.json packages/contracts/package.json packages/design-tokens/package.json bun.lock 2>/dev/null || true
-    git restore package.json apps/desktop/package.json apps/browser-extension/package.json apps/cli/package.json packages/browser-host/package.json packages/contracts/package.json packages/design-tokens/package.json bun.lock 2>/dev/null || true
+    git restore --staged package.json apps/desktop/package.json apps/browser-extension/package.json apps/cli/package.json packages/browser-host/package.json packages/contracts/package.json packages/design-tokens/package.json pnpm-lock.yaml 2>/dev/null || true
+    git restore package.json apps/desktop/package.json apps/browser-extension/package.json apps/cli/package.json packages/browser-host/package.json packages/contracts/package.json packages/design-tokens/package.json pnpm-lock.yaml 2>/dev/null || true
   fi
 }
 trap restore_versions EXIT INT TERM
 
-bun scripts/set-release-version.ts "$VERSION"
-bun install
-bun run release:check --tag="$TAG"
-bun run verify
+node --experimental-strip-types scripts/set-release-version.ts "$VERSION"
+pnpm install
+pnpm run release:check --tag="$TAG"
+pnpm run verify
 git diff --check
 
 printf '\nRelease changes:\n'
-git diff -- package.json apps/desktop/package.json apps/browser-extension/package.json bun.lock
+git diff -- package.json apps/desktop/package.json apps/browser-extension/package.json pnpm-lock.yaml
 
 if ((ASSUME_YES == 0)); then
   read -r -p "Create release $TAG? [y/N] " CONFIRM
@@ -124,7 +124,7 @@ if ((ASSUME_YES == 0)); then
   fi
 fi
 
-git add package.json apps/desktop/package.json apps/browser-extension/package.json apps/cli/package.json packages/browser-host/package.json packages/contracts/package.json packages/design-tokens/package.json bun.lock
+git add package.json apps/desktop/package.json apps/browser-extension/package.json apps/cli/package.json packages/browser-host/package.json packages/contracts/package.json packages/design-tokens/package.json pnpm-lock.yaml
 if git diff --cached --quiet; then
   echo "Package versions already match $VERSION; creating a tag without a release commit."
 else

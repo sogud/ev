@@ -30,7 +30,7 @@ ev() {
 contains() { case "$1" in *"$2"*) return 0 ;; *) return 1 ;; esac }
 
 run_ev() {
-	if [ -x "$HOME/.ev/bin/ev" ]; then "$HOME/.ev/bin/ev" "$@"; else bun "$(pwd)/apps/cli/dist/ev.js" "$@"; fi
+	if [ -x "$HOME/.ev/bin/ev" ]; then "$HOME/.ev/bin/ev" "$@"; else node "$(pwd)/apps/cli/dist/ev.js" "$@"; fi
 }
 
 click_item() {
@@ -79,10 +79,10 @@ jsitem() {
 }
 
 echo "== build =="
-(cd apps/desktop && bunx electron-vite build >/dev/null 2>&1) || fail "build"
+(cd apps/desktop && pnpm exec electron-vite build >/dev/null 2>&1) || fail "build"
 
 echo "== build cli =="
-(cd apps/cli && bun run build >/dev/null 2>&1) || fail "cli build"
+(cd apps/cli && pnpm run build >/dev/null 2>&1) || fail "cli build"
 
 echo "== server + CLI journey（desktop 关闭状态）=="
 run_ev server start >/dev/null || fail "server start"
@@ -283,7 +283,7 @@ ws.onmessage = (e) => {
 };
 setTimeout(() => { console.log('WS-SYNC-TIMEOUT'); process.exit(1); }, 25000);
 TS
-bun /tmp/ev-golden-ws.ts "$MPORT" "$MTOKEN" "$MID" >/tmp/ev-golden-ws.out 2>&1 &
+node --experimental-strip-types /tmp/ev-golden-ws.ts "$MPORT" "$MTOKEN" "$MID" >/tmp/ev-golden-ws.out 2>&1 &
 WSPID=$!
 A0=$(echo "$MDET" | sed 's/^"//; s/"$//' | python3 -c "import json,sys; print(json.load(sys.stdin)['assistants'])")
 ev "(() => { const i=document.querySelector('#m-input'); i.value='mobile 追问'; document.querySelector('[data-send]').click(); return 'ok'; })()" | grep -q ok || fail "mobile send"
