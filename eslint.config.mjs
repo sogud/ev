@@ -44,8 +44,13 @@ export default tseslint.config(
   },
   {
     // Node scripts in JS: globals come from the runtime, not imports.
-    files: ['**/*.mjs'],
+    files: ['**/*.mjs', '**/*.cjs'],
     rules: { 'no-undef': 'off' },
+  },
+  {
+    // electron-builder hooks are CommonJS by contract.
+    files: ['**/*.cjs'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
     // wxt codegen relies on triple-slash type references; the control-char

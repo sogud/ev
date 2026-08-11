@@ -212,13 +212,22 @@ async function main(): Promise<void> {
   const token = readOrCreateToken();
   const port = Number(process.env.EV_PORT ?? 7877);
 
-  const defaultWorkspace = join(home, '.ev', 'workspace');
+  const dataHome = evDataDir();
+  const defaultWorkspace = join(dataHome, 'workspace');
   mkdirSync(defaultWorkspace, { recursive: true, mode: 0o700 });
 
-  const cliScript = process.env.EV_CLI_SCRIPT ?? join(here, '../../cli/dist/ev.js');
+  // Packaged layout puts the CLI at resources/cli/ev.js next to resources/server/;
+  // dev keeps the repo build at apps/cli/dist/ev.js.
+  const cliScript =
+    process.env.EV_CLI_SCRIPT ??
+    [join(here, '../cli/ev.js'), join(here, '../../cli/dist/ev.js')].find(candidate =>
+      existsSync(candidate)
+    ) ??
+    join(here, '../../cli/dist/ev.js');
   try {
     const launcher = await ensureEvCliLauncher({
       homeDirectory: home,
+      binDirectory: join(dataHome, 'bin'),
       executablePath: process.execPath,
       cliScript,
     });

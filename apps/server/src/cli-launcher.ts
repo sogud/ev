@@ -3,6 +3,8 @@ import path from 'node:path';
 
 interface CliLauncherOptions {
   homeDirectory: string;
+  /** Defaults to <homeDirectory>/.ev/bin; isolated runs point it at their EV_HOME. */
+  binDirectory?: string;
   executablePath: string;
   cliScript: string;
   platform?: NodeJS.Platform;
@@ -20,7 +22,7 @@ function shellQuote(value: string): string {
 
 export async function ensureEvCliLauncher(options: CliLauncherOptions): Promise<CliLauncherResult> {
   const platform = options.platform ?? process.platform;
-  const binDirectory = path.join(options.homeDirectory, '.ev', 'bin');
+  const binDirectory = options.binDirectory ?? path.join(options.homeDirectory, '.ev', 'bin');
   await mkdir(binDirectory, { recursive: true, mode: 0o700 });
   await chmod(binDirectory, 0o700);
 

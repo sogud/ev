@@ -90,7 +90,8 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "forceCodeSigning": false
-    }
+    },
+    "afterPack": "scripts/after-pack.cjs"
   },
   "license": "Apache-2.0"
 }

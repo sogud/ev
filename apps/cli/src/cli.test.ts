@@ -18,11 +18,7 @@ async function runCli(
   const distEntry = path.join(cliDir, 'dist', 'ev.js');
   if (!existsSync(distEntry)) {
     // pnpm is a build tool only; the CLI runtime is node.
-    const built = spawnSync('pnpm', ['run', 'build'], {
-      cwd: cliDir,
-      stdio: 'ignore',
-      shell: true,
-    });
+    const built = spawnSync('pnpm', ['run', 'build'], { cwd: cliDir, stdio: 'ignore' });
     if (built.status !== 0) throw new Error('cli build failed');
   }
   const child = spawn('node', [distEntry, ...args], {

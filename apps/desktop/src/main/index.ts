@@ -15,9 +15,14 @@ let cleanupStarted = false;
 
 app.setName('EV');
 
+/** Mirrors the server's data dir (EV_HOME override) so isolated runs stay discoverable. */
+function serverDataDir(): string {
+  return process.env.EV_HOME?.trim() || join(homedir(), '.ev');
+}
+
 function readServerInfo(): ServerInfo | null {
   try {
-    const info = JSON.parse(readFileSync(join(homedir(), '.ev', 'server.json'), 'utf8'));
+    const info = JSON.parse(readFileSync(join(serverDataDir(), 'server.json'), 'utf8'));
     return typeof info?.port === 'number' && typeof info?.token === 'string'
       ? (info as ServerInfo)
       : null;
@@ -56,10 +61,7 @@ function serverEntry(): string {
 function ensureEntryBuilt(entry: string): void {
   if (existsSync(entry)) return;
   const serverDir = join(app.getAppPath(), '../server');
-  const built = spawnSync('pnpm', ['--dir', serverDir, 'run', 'build'], {
-    stdio: 'ignore',
-    shell: true,
-  });
+  const built = spawnSync('pnpm', ['--dir', serverDir, 'run', 'build'], { stdio: 'ignore' });
   if (built.status !== 0 || !existsSync(entry)) {
     throw new Error(`Failed to build server entry: ${entry}`);
   }
