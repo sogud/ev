@@ -1,23 +1,28 @@
-import { randomUUID } from 'node:crypto';
 import type { RuntimeEvent, RuntimeSessionRef } from '@ev/contracts';
 import { RuntimeEventSchema } from '@ev/contracts';
 import type { ModelRef, ThinkingLevel, TranscriptItem } from '@ev/contracts/domain';
 import { normalizeMessage, normalizeToolEvent } from '../transcript';
-import { JsonlProcess, type JsonlProcessOptions } from './jsonl-process';
+import type { JsonlProcessOptions } from './jsonl-process';
+import { JsonlRpcTransport, type RpcResponseMatch } from './jsonl-rpc-transport';
 import type { RuntimeSession, RuntimeSessionInput, RuntimeSessionState } from './runtime-adapter';
-
-const REQUEST_TIMEOUT_MS = 30_000;
 
 type UnknownRecord = Record<string, unknown>;
 
-interface PendingRequest {
-  resolve(value: unknown): void;
-  reject(error: Error): void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null;
+}
+
+/** Pi protocol seam: {type:'response'} records settle pending requests; all else passes through. */
+function piResponseMatch(value: unknown): RpcResponseMatch | null {
+  if (!isRecord(value) || value.type !== 'response' || typeof value.id !== 'string') return null;
+  if (value.success === false) {
+    return {
+      id: value.id,
+      ok: false,
+      error: new Error(typeof value.error === 'string' ? value.error : 'Pi RPC request failed'),
+    };
+  }
+  return { id: value.id, ok: true, value: value.data };
 }
 
 function runtimeMessage(item: TranscriptItem): RuntimeEvent {
@@ -34,8 +39,7 @@ function runtimeMessage(item: TranscriptItem): RuntimeEvent {
 
 export class PiRpcSession implements RuntimeSession {
   readonly runtimeId = 'pi' as const;
-  private readonly process: JsonlProcess;
-  private readonly pending = new Map<string, PendingRequest>();
+  private readonly transport: JsonlRpcTransport;
   private readonly listeners = new Set<(event: RuntimeEvent) => void>();
   private readonly events = new Map<string, RuntimeEvent>();
   private state: RuntimeSessionState;
@@ -44,7 +48,12 @@ export class PiRpcSession implements RuntimeSession {
   private disposing = false;
 
   private constructor(options: JsonlProcessOptions, initialRef: RuntimeSessionRef) {
-    this.process = new JsonlProcess(options);
+    this.transport = new JsonlRpcTransport({
+      process: options,
+      matchResponse: piResponseMatch,
+      timeoutMessage: () => 'Pi RPC request timed out',
+      exitMessage: 'Pi RPC process exited',
+    });
     this.state = { ref: initialRef, status: 'idle' };
   }
 
@@ -142,27 +151,17 @@ export class PiRpcSession implements RuntimeSession {
     }
     this.unsubscribeRecord();
     this.unsubscribeExit();
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error('Pi RPC session disposed'));
-    }
-    this.pending.clear();
-    await this.process.stop();
+    await this.transport.stop('Pi RPC session disposed');
   }
 
   private async start(input: RuntimeSessionInput): Promise<void> {
-    this.unsubscribeRecord = this.process.onRecord(record => this.handleRecord(record));
-    this.unsubscribeExit = this.process.onExit(error => {
-      for (const pending of this.pending.values()) {
-        clearTimeout(pending.timer);
-        pending.reject(error ?? new Error('Pi RPC process exited'));
-      }
-      this.pending.clear();
+    this.unsubscribeRecord = this.transport.onRecord(record => this.handleRecord(record));
+    this.unsubscribeExit = this.transport.onExit(error => {
       if (!this.disposing) {
         this.emitStatus('error', error?.message ?? 'Pi RPC process exited unexpectedly');
       }
     });
-    await this.process.start();
+    await this.transport.start();
     const state = await this.request('get_state');
     if (!isRecord(state) || typeof state.sessionId !== 'string') {
       throw new Error('Pi RPC returned invalid session state');
@@ -189,34 +188,12 @@ export class PiRpcSession implements RuntimeSession {
   }
 
   private request(type: string, payload: UnknownRecord = {}): Promise<unknown> {
-    const id = randomUUID();
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Pi RPC ${type} timed out`));
-      }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer });
-      this.process.send({ id, type, ...payload });
-    });
+    const id = this.transport.newId();
+    return this.transport.request(id, { id, type, ...payload }, type);
   }
 
   private handleRecord(value: unknown): void {
     if (!isRecord(value)) return;
-    if (value.type === 'response' && typeof value.id === 'string') {
-      const pending = this.pending.get(value.id);
-      if (!pending) return;
-      this.pending.delete(value.id);
-      clearTimeout(pending.timer);
-      if (value.success === false) {
-        pending.reject(
-          new Error(typeof value.error === 'string' ? value.error : 'Pi RPC request failed')
-        );
-      } else {
-        pending.resolve(value.data);
-      }
-      return;
-    }
-
     const type = typeof value.type === 'string' ? value.type : '';
     if (type === 'agent_start' || type === 'auto_retry_start') this.emitStatus('running');
     if (type === 'agent_settled') this.emitStatus('idle');
