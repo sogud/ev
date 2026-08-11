@@ -15,7 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write --ignore-path ../../.prettierignore .",
     "format:check": "prettier --check --ignore-path ../../.prettierignore .",
-    "pack": "pnpm --dir ../cli run build && pnpm run clean:release && pnpm run build && electron-builder --mac dir",
+    "pack": "pnpm --dir ../cli run build && pnpm run clean:release && pnpm run build && ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ electron-builder --mac dir",
     "dist": "pnpm --dir ../cli run build && pnpm run clean:release && pnpm run build && electron-builder --mac",
     "clean:release": "node --experimental-strip-types ../../scripts/clean-release-output.ts"
   },

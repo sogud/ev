@@ -78,6 +78,13 @@ export function legacyDir(): string {
 /**
  * File-per-store JSON backend (legacy layout). Values are persisted decoded so
  * the files double as the legacy migration source when sqlite becomes available.
+ *
+ * Contract: KV (both backends) is for small configuration data — settings and
+ * preferences. Every JsonKv set rewrites the whole file, and this class is the
+ * NORMAL path on packaged machines without a system node (ELECTRON_RUN_AS_NODE
+ * fallback), so bulk data (task bodies, transcripts, raw traces) must not be
+ * stored in KV. When sqlite is available again, stored files migrate back
+ * automatically via migrateLegacyJson.
  */
 export class JsonKv implements KvBackend {
   private readonly cache = new Map<string, Record<string, unknown>>();
