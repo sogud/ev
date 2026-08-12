@@ -13,6 +13,18 @@ EV is a personal, local-first Agent product organized as a lightweight pnpm mono
 Pi owns model execution, providers, sessions, Skills, and Extensions. EV owns the user experience,
 tasks, traces, runtimes, browser integration, and local access control.
 
+## AgentSpace context
+
+- This repository is a specialist execution entry: start the agent from the EV directory so these
+  product rules and the repository Git boundary apply naturally.
+- When checked out under AgentSpace, `../../harness context --json` must resolve this directory as
+  the `ev` repo-project; the root workspace remains the control plane for general and cross-project
+  work.
+- AgentSpace may start an EV agent through Herdr with this repository as its cwd. The parent agent
+  should pass only the task and necessary cross-project context; this file remains the EV authority.
+- The shared stable user profile is `../../USER.md` when that parent workspace is present. EV remains
+  usable as a standalone clone when it is absent.
+
 ## Working rules
 
 - Read the nearest nested `AGENTS.md` before changing an app.
