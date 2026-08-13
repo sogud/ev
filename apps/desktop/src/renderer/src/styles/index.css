@@ -202,21 +202,6 @@ summary:focus-visible,
   cursor: pointer;
   text-align: left;
 }
-.status-dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-  background: #595a5d;
-}
-.status-dot.running {
-  background: var(--ev-color-status-info);
-  box-shadow: 0 0 0 3px rgb(23 105 207 / 0.12);
-  animation: pulse 1.4s infinite;
-}
-.status-dot.error {
-  background: var(--ev-color-status-danger);
-}
 .task-copy {
   display: flex;
   flex-direction: column;
@@ -598,9 +583,10 @@ textarea {
 .composer {
   overflow: hidden;
   border: 1px solid var(--ev-color-border-default);
-  border-radius: var(--ev-radius-xl);
+  border-radius: 14px;
   background: var(--ev-color-bg-surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  transition: border-color 150ms;
 }
 .composer:focus-within {
   border-color: var(--ev-color-border-strong);
@@ -617,7 +603,8 @@ textarea {
   border: 0;
   outline: 0;
   background: transparent;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 18px;
 }
 .composer-actions {
   min-height: 40px;
@@ -630,16 +617,22 @@ textarea {
   font-size: var(--ev-font-size-2xs);
 }
 .send-button {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   margin-left: auto;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: var(--ev-radius-md);
+  border-radius: 8px;
   background: var(--ev-color-action-primary-bg);
   color: var(--ev-color-action-primary-text);
   cursor: pointer;
+  transition:
+    transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 150ms;
+}
+.send-button:active:not(:disabled) {
+  transform: scale(0.94);
 }
 .send-button:disabled {
   background: var(--ev-color-action-secondary-bg);
@@ -1761,13 +1754,6 @@ textarea {
 }
 
 /* Legacy panels now resolve through shared semantic tokens so both themes stay coherent. */
-.status-dot {
-  background: var(--ev-color-text-quaternary);
-}
-.status-dot.running {
-  background: var(--ev-color-status-info);
-}
-.status-dot.error,
 .model-row i.available {
   background: var(--ev-color-status-danger);
 }

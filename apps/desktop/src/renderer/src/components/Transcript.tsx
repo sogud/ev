@@ -96,7 +96,13 @@ function renderInline(text: string): React.ReactNode[] {
   return nodes;
 }
 
-function MarkdownText({ text }: { text: string }): React.JSX.Element {
+function MarkdownText({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  streaming?: boolean;
+}): React.JSX.Element {
   const nodes: React.ReactNode[] = [];
   let fence: string[] | null = null;
   const lines = text.split('\n');
@@ -152,7 +158,16 @@ function MarkdownText({ text }: { text: string }): React.JSX.Element {
       </pre>
     );
   }
-  return <div className='doc-md'>{nodes}</div>;
+  if (streaming && nodes.length > 0) {
+    const last = nodes.pop();
+    nodes.push(
+      <div className='stream-line' key='stream-line'>
+        {last}
+        <span className='stream-caret' aria-hidden='true' />
+      </div>
+    );
+  }
+  return <div className={streaming ? 'doc-md streaming' : 'doc-md'}>{nodes}</div>;
 }
 
 export function Transcript({
@@ -175,13 +190,17 @@ export function Transcript({
         {view.turns.map(turn => (
           <section className='turn' key={turn.id}>
             {turn.userText !== null && <blockquote className='user-q'>{turn.userText}</blockquote>}
-            {turn.doc.map(block =>
+            {turn.doc.map((block, index) =>
               block.tone === 'error' ? (
                 <p className='doc-error' key={block.id}>
                   {block.text}
                 </p>
               ) : (
-                <MarkdownText key={block.id} text={block.text} />
+                <MarkdownText
+                  key={block.id}
+                  text={block.text}
+                  streaming={turn.running && index === turn.doc.length - 1}
+                />
               )
             )}
             {turn.running

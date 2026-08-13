@@ -25,6 +25,56 @@ function timeAgo(timestamp: number): string {
 }
 
 /*
+ * Task-row status glyph, adapted from beautifului.dev Task Rows (MIT):
+ * running = spinning arc ring, error = red disc with x, idle = quiet dot.
+ */
+function TaskStatusIcon({ status }: { status: TaskSummary['status'] }): React.JSX.Element {
+  if (status === 'running') {
+    return (
+      <span className='task-status running' aria-hidden='true'>
+        <svg width='18' height='18' viewBox='0 0 24 24'>
+          <circle
+            cx='12'
+            cy='12'
+            r='10'
+            fill='none'
+            stroke='var(--ev-color-border-strong)'
+            strokeWidth='2'
+          />
+          <circle
+            cx='12'
+            cy='12'
+            r='10'
+            fill='none'
+            stroke='var(--ev-color-status-info)'
+            strokeWidth='2'
+            strokeLinecap='round'
+            strokeDasharray='17.6 45.2'
+          />
+        </svg>
+      </span>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <span className='task-status error' aria-hidden='true'>
+        <svg
+          width='10'
+          height='10'
+          viewBox='0 0 24 24'
+          fill='none'
+          stroke='currentColor'
+          strokeWidth='3'
+          strokeLinecap='round'>
+          <path d='M18 6L6 18M6 6l12 12' />
+        </svg>
+      </span>
+    );
+  }
+  return <span className='task-status idle' aria-hidden='true' />;
+}
+
+/*
  * The sidebar is display-only: flat task list + read-only runtime glyph.
  * Runtime switching lives under the composer, never here.
  */
@@ -69,7 +119,7 @@ export function Sidebar({
         {visible.map(task => (
           <div className={`task-row ${selectedId === task.id ? 'active' : ''}`} key={task.id}>
             <button type='button' className='task-select' onClick={() => onSelect(task.id)}>
-              <span className={`status-dot ${task.status}`} />
+              <TaskStatusIcon status={task.status} />
               <span className='task-copy'>
                 <span className='task-title'>{task.title}</span>
                 <span className='task-meta' title={task.runtime?.runtimeId ?? 'pi'}>
