@@ -250,7 +250,12 @@ async function main(): Promise<void> {
     bundledSkillPaths: [browserSkill],
   });
   const management = new ManagementService(agents, defaultWorkspace, createAppearanceStore());
-  const browserBridge = new BrowserBridgeService({ store: createBrowserBridgeStore() });
+  const browserBridge = new BrowserBridgeService({
+    store: createBrowserBridgeStore(),
+    // CLI-first: a freshly installed extension pairs without a desktop
+    // approval click; identity is pinned after the first pairing.
+    pairingMode: 'automatic',
+  });
   try {
     await browserBridge.start();
   } catch {

@@ -324,9 +324,18 @@ export class BrowserBridgeService {
 
       if (!authenticated) {
         if (message.type === 'bridge.pair.request') {
-          if (this.pairingMode === 'automatic' && !this.automaticPairingOrigins.has(origin)) {
-            socket.close(1008, 'Extension origin is not trusted for automatic pairing');
-            return;
+          if (this.pairingMode === 'automatic') {
+            // Trust-on-first-use: with no explicit allowlist, any genuine
+            // extension origin may pair (the persisted identity pins later
+            // pairings). Web/null origins can never auto-pair, so a page
+            // cannot hijack the bridge over loopback.
+            const trusted =
+              isExtensionOrigin(origin) &&
+              (this.automaticPairingOrigins.size === 0 || this.automaticPairingOrigins.has(origin));
+            if (!trusted) {
+              socket.close(1008, 'Extension origin is not trusted for automatic pairing');
+              return;
+            }
           }
           if (this.activeSocket) {
             socket.close(1008, 'EV Browser is already paired and connected');

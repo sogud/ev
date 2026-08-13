@@ -34,7 +34,7 @@ type BridgeStatus = 'disabled' | 'connecting' | 'pairing' | 'connected' | 'disco
 const BRIDGE_STATUS_LABELS: Record<BridgeStatus, string> = {
   disabled: 'Disabled',
   connecting: 'Connecting',
-  pairing: 'Waiting for desktop approval',
+  pairing: 'Waiting for local approval',
   connected: 'Connected',
   disconnected: 'Disconnected',
 };
@@ -317,8 +317,8 @@ const OptionsPage = () => {
                 <Cable size={15} /> Desktop Bridge
               </CardTitle>
               <CardDescription>
-                Discovers the local EV Desktop automatically; the first connection only needs
-                approval on the desktop.
+                Discovers the local EV server automatically; the first connection from this
+                extension is approved on this machine.
               </CardDescription>
             </CardHeader>
             <CardContent className='space-y-3'>

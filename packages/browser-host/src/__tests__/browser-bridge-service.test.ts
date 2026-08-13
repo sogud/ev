@@ -149,6 +149,27 @@ describe('BrowserBridgeService', () => {
     });
   });
 
+  test('automatic mode without an allowlist trusts the first extension origin only', async () => {
+    await service.stop();
+    service = new BrowserBridgeService({ port: 0, store: memoryStore(), pairingMode: 'automatic' });
+    await service.start();
+
+    // a web page origin is rejected at the upgrade gate, even on loopback
+    await expect(
+      connect(service.getSnapshot().endpoint, 'https://evil.example')
+    ).rejects.toBeDefined();
+
+    // the genuine extension pairs without any approval click
+    const socket = await connect(service.getSnapshot().endpoint);
+    const approvedMessage = nextMessage(socket);
+    socket.send(JSON.stringify(pairingRequest()));
+    expect(await approvedMessage).toMatchObject({ type: 'bridge.pair.approved' });
+    expect(service.getSnapshot()).toMatchObject({
+      status: 'connected',
+      pairedOrigin: EXTENSION_ORIGIN,
+    });
+  });
+
   test('rejects an untrusted extension origin in automatic mode', async () => {
     await service.stop();
     service = new BrowserBridgeService({
