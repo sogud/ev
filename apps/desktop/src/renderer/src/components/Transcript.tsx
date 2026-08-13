@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptItem } from '../../../shared/types';
 import { buildTranscriptView, type ChangedFileView, type TurnView } from '../transcript-view-model';
+import { PixelLoader, ThinkingBlock } from './ui/AgentState';
 
 function formatClock(timestamp: number): string {
   const date = new Date(timestamp);
@@ -183,9 +184,21 @@ export function Transcript({
                 <MarkdownText key={block.id} text={block.text} />
               )
             )}
-            {turn.changedFiles.length > 0 && (
-              <ChangedFilesCard files={turn.changedFiles} onViewDiff={onViewDiff} />
-            )}
+            {turn.running
+              ? turn.changedFiles.length > 0 && (
+                  <ThinkingBlock
+                    activeLabel={t('transcript.thinkingActive')}
+                    doneLabel={t('transcript.thinkingDone', { count: turn.changedFiles.length })}
+                    running={true}
+                    rows={turn.changedFiles.map(file => ({
+                      primary: file.tool,
+                      secondary: file.path.split('/').pop() ?? file.path,
+                    }))}
+                  />
+                )
+              : turn.changedFiles.length > 0 && (
+                  <ChangedFilesCard files={turn.changedFiles} onViewDiff={onViewDiff} />
+                )}
             <footer className='turn-footer'>
               {formatClock(turn.endedAt)} · {formatDuration(turn)}
               {turn.running ? ` · ${t('transcript.running')}` : ''}
@@ -193,11 +206,10 @@ export function Transcript({
           </section>
         ))}
         {running && (
-          <div className='working-indicator'>
-            <span />
-            <span />
-            <span /> {t('transcript.processing')}
-          </div>
+          <PixelLoader
+            label={t('transcript.processing')}
+            startedAt={view.turns.find(turn => turn.running)?.startedAt}
+          />
         )}
         <div ref={endRef} />
       </div>

@@ -57,7 +57,9 @@
   },
   "transcript": {
     "running": "进行中",
-    "processing": "正在处理"
+    "processing": "正在处理",
+    "thinkingActive": "思考中",
+    "thinkingDone": "运行了 {{count}} 个工具"
   },
   "app": {
     "loadError": "无法读取 EV 设置",

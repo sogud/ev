@@ -57,7 +57,9 @@
   },
   "transcript": {
     "running": "running",
-    "processing": "Working"
+    "processing": "Working",
+    "thinkingActive": "Thinking",
+    "thinkingDone": "Ran {{count}} tools"
   },
   "app": {
     "loadError": "Couldn't read EV settings",
