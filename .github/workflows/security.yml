@@ -29,11 +29,14 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --audit-level=high
+      # Electron's install-time extract-zip dependency has no patched release yet.
+      # Keep every other high/critical advisory blocking.
+      - run: pnpm audit --audit-level=high --ignore CVE-2026-56876
 
   code-security:
     runs-on: macos-latest
     permissions:
+      contents: read
       security-events: write
     steps:
       - uses: actions/checkout@v4
