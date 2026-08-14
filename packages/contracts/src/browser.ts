@@ -3,17 +3,51 @@ import { z } from 'zod';
 import { EV_PROTOCOL_VERSION } from './protocol';
 
 const TabIdSchema = z.number().int().nonnegative();
+const WindowIdSchema = z.number().int().nonnegative();
+const BrowserSessionIdSchema = z.string().uuid();
 const WebUrlSchema = z
   .string()
   .url()
   .max(4096)
-  .refine(value => ['http:', 'https:'].includes(new URL(value).protocol), {
-    message: 'Only HTTP(S) URLs are supported',
-  });
+  .refine(
+    value => {
+      try {
+        return ['http:', 'https:'].includes(new URL(value).protocol);
+      } catch {
+        return false;
+      }
+    },
+    {
+      message: 'Only HTTP(S) URLs are supported',
+    }
+  );
 
 const SelectorSchema = z.string().trim().min(1).max(2048);
 const MediaRefSchema = z.string().regex(/^@m[1-9]\d*$/);
 const BoundedLimitSchema = z.number().int().min(1).max(1_000);
+const BookmarkIdSchema = z.string().trim().min(1).max(128);
+const BookmarkTitleSchema = z.string().trim().min(1).max(1024);
+const BookmarkUrlSchema = z.string().min(1).max(100_000);
+const BookmarkLimitSchema = z.number().int().min(1).max(50_000);
+
+/** Backup/restore tree node: ids are omitted, structure is title/url/children. */
+export interface BookmarkBackupNode {
+  title: string;
+  url?: string;
+  children?: BookmarkBackupNode[];
+}
+
+const BookmarkBackupNodeSchema: z.ZodType<BookmarkBackupNode> = z.lazy(() =>
+  z
+    .object({
+      title: z.string().max(1024),
+      url: BookmarkUrlSchema.optional(),
+      children: z.array(BookmarkBackupNodeSchema).max(10_000).optional(),
+    })
+    .refine(node => !(node.url && node.children?.length), {
+      message: 'A bookmark backup node cannot be both a URL and a folder',
+    })
+);
 const KeySchema = z.enum([
   'Enter',
   'Tab',
@@ -31,12 +65,18 @@ const KeySchema = z.enum([
   'Space',
 ]);
 
-export const BrowserCommandSchema = z.discriminatedUnion('action', [
+const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('browser.capabilities') }),
   z.object({ action: z.literal('tabs.list') }),
   z.object({
+    action: z.literal('windows.open'),
+    url: WebUrlSchema,
+    focused: z.boolean().optional(),
+  }),
+  z.object({
     action: z.literal('tabs.open'),
     url: WebUrlSchema,
+    windowId: WindowIdSchema.optional(),
     active: z.boolean().optional(),
   }),
   z.object({ action: z.literal('tabs.close'), tabId: TabIdSchema }),
@@ -49,6 +89,7 @@ export const BrowserCommandSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('page.context'),
     tabId: TabIdSchema.optional(),
+    scope: z.enum(['body', 'main']).optional(),
     maxChars: z.number().int().min(1).max(100_000).optional(),
   }),
   z.object({
@@ -148,6 +189,525 @@ export const BrowserCommandSchema = z.discriminatedUnion('action', [
     touch: z.boolean().optional(),
   }),
   z.object({ action: z.literal('page.release'), tabId: TabIdSchema.optional() }),
+  z.object({
+    action: z.literal('bookmarks.list'),
+    maxNodes: BookmarkLimitSchema.optional(),
+  }),
+  z.object({
+    action: z.literal('bookmarks.search'),
+    query: z.string().trim().min(1).max(512),
+    maxNodes: BookmarkLimitSchema.optional(),
+  }),
+  z.object({
+    action: z.literal('bookmarks.create'),
+    title: BookmarkTitleSchema,
+    url: WebUrlSchema.optional(),
+    parentId: BookmarkIdSchema.optional(),
+  }),
+  z.object({
+    action: z.literal('bookmarks.update'),
+    id: BookmarkIdSchema,
+    title: BookmarkTitleSchema.optional(),
+    url: WebUrlSchema.optional(),
+  }),
+  z.object({
+    action: z.literal('bookmarks.move'),
+    id: BookmarkIdSchema,
+    parentId: BookmarkIdSchema.optional(),
+    index: z.number().int().nonnegative().optional(),
+  }),
+  z.object({ action: z.literal('bookmarks.remove'), id: BookmarkIdSchema }),
+  z.object({
+    action: z.literal('bookmarks.removeTree'),
+    id: BookmarkIdSchema,
+    confirm: z.literal('REMOVE_BOOKMARK_TREE'),
+  }),
+  z.object({ action: z.literal('bookmarks.export') }),
+  z.object({
+    action: z.literal('bookmarks.restore'),
+    tree: z.array(BookmarkBackupNodeSchema).min(1),
+    parentId: BookmarkIdSchema.optional(),
+    title: BookmarkTitleSchema.optional(),
+  }),
+]);
+
+export const BrowserAtomicCommandSchema = BrowserCommandUnionSchema.superRefine(
+  (command, context) => {
+    if (
+      command.action === 'bookmarks.update' &&
+      command.title === undefined &&
+      command.url === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Bookmark update requires a title or URL',
+      });
+    }
+    if (
+      command.action === 'bookmarks.move' &&
+      command.parentId === undefined &&
+      command.index === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Bookmark move requires a parentId or index',
+      });
+    }
+  }
+);
+
+export type BrowserAtomicCommand = z.infer<typeof BrowserAtomicCommandSchema>;
+
+export const BrowserPageContextResultSchema = z.object({
+  url: WebUrlSchema,
+  title: z.string().max(1_000),
+  selection: z.string().max(100_000).optional(),
+  text: z.string().max(100_000),
+  capturedAt: z.string().datetime(),
+});
+
+export type BrowserPageContextResult = z.infer<typeof BrowserPageContextResultSchema>;
+
+export const BrowserSemanticTargetSchema = z
+  .object({
+    role: z.string().trim().min(1).max(64),
+    name: z.string().trim().min(1).max(1024),
+    exact: z.boolean().optional(),
+    index: z.number().int().min(0).max(99).optional(),
+  })
+  .strict();
+
+export const BrowserRunTargetSchema = z.union([
+  z.object({ selector: SelectorSchema }).strict(),
+  BrowserSemanticTargetSchema,
+]);
+
+const BrowserRunTextSchema = z.union([
+  z.string().max(100_000),
+  z.object({ from: z.literal('item') }),
+]);
+
+export const BrowserRunRetrySchema = z
+  .object({
+    attempts: z.number().int().min(1).max(10).optional(),
+    delayMs: z.number().int().min(0).max(10_000).optional(),
+  })
+  .strict();
+
+const BrowserRunAtomicStepCommandSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('page.navigate'), url: WebUrlSchema }),
+  z.object({ action: z.literal('page.click'), target: BrowserRunTargetSchema }),
+  z.object({
+    action: z.literal('page.type'),
+    target: BrowserRunTargetSchema,
+    text: BrowserRunTextSchema,
+    clearFirst: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal('page.press'),
+    key: KeySchema,
+    modifiers: z
+      .array(z.enum(['Alt', 'Control', 'Meta', 'Shift']))
+      .max(4)
+      .optional(),
+  }),
+]);
+
+export const BrowserRunCommandStepSchema = z.object({
+  kind: z.literal('command'),
+  id: z.string().trim().min(1).max(64).optional(),
+  command: BrowserRunAtomicStepCommandSchema,
+  retry: BrowserRunRetrySchema.optional(),
+});
+
+export const BrowserRunWaitStepSchema = z.object({
+  kind: z.literal('wait'),
+  id: z.string().trim().min(1).max(64).optional(),
+  timeMs: z.number().int().min(0).max(10_000),
+});
+
+const BrowserRunLeafStepSchema = z.discriminatedUnion('kind', [
+  BrowserRunCommandStepSchema,
+  BrowserRunWaitStepSchema,
+]);
+
+export const BrowserRunForEachStepSchema = z.object({
+  kind: z.literal('forEach'),
+  id: z.string().trim().min(1).max(64).optional(),
+  items: z.array(z.string().max(10_000)).min(1).max(100),
+  onError: z.enum(['stop', 'continue']).optional(),
+  steps: z.array(BrowserRunLeafStepSchema).min(1).max(20),
+});
+
+const BrowserRunStepSchema = z.union([
+  BrowserRunCommandStepSchema,
+  BrowserRunWaitStepSchema,
+  BrowserRunForEachStepSchema,
+]);
+
+export const BrowserRunCommandSchema = z
+  .object({
+    action: z.literal('browser.run'),
+    tabId: TabIdSchema.optional(),
+    timeoutMs: z.number().int().min(100).max(300_000).optional(),
+    steps: z.array(BrowserRunStepSchema).min(1).max(50),
+  })
+  .superRefine((run, context) => {
+    let atomicCommands = 0;
+    run.steps.forEach((step, stepIndex) => {
+      if (step.kind === 'command') {
+        atomicCommands += 1;
+        if (step.command.action === 'page.type' && typeof step.command.text !== 'string') {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['steps', stepIndex, 'command', 'text'],
+            message: 'Top-level page.type cannot reference a forEach item',
+          });
+        }
+        return;
+      }
+      if (step.kind === 'forEach') {
+        const childCommands = step.steps.filter(child => child.kind === 'command').length;
+        atomicCommands += step.items.length * childCommands;
+      }
+    });
+    if (atomicCommands > 2_000) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['steps'],
+        message: 'BrowserRun cannot exceed 2,000 atomic commands',
+      });
+    }
+  });
+
+export type BrowserRunCommand = z.infer<typeof BrowserRunCommandSchema>;
+export type BrowserRunCommandStep = z.infer<typeof BrowserRunCommandStepSchema>;
+export type BrowserRunWaitStep = z.infer<typeof BrowserRunWaitStepSchema>;
+export type BrowserRunForEachStep = z.infer<typeof BrowserRunForEachStepSchema>;
+export type BrowserRunTarget = z.infer<typeof BrowserRunTargetSchema>;
+
+export const BrowserRunResultSchema = z.object({
+  runId: z.string().uuid(),
+  status: z.enum(['completed', 'partial', 'failed']),
+  summary: z.object({
+    commands: z.number().int().nonnegative(),
+    iterations: z.number().int().nonnegative(),
+    retries: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+  }),
+  failures: z
+    .array(
+      z.object({
+        stepId: z.string().max(64).optional(),
+        itemIndex: z.number().int().nonnegative().optional(),
+        item: z.string().max(10_000).optional(),
+        message: z.string().max(10_000),
+      })
+    )
+    .max(2_000),
+});
+
+export type BrowserRunResult = z.infer<typeof BrowserRunResultSchema>;
+
+export type BrowserPageCommand = Extract<BrowserAtomicCommand, { action: `page.${string}` }>;
+
+const BrowserSessionScopedAtomicCommandSchema = BrowserAtomicCommandSchema.refine(
+  command => command.action.startsWith('page.'),
+  { message: 'BrowserSession only accepts page commands or browser.run' }
+).transform(command => command as BrowserPageCommand);
+
+export const BrowserSessionScopedCommandSchema = z.union([
+  BrowserSessionScopedAtomicCommandSchema,
+  BrowserRunCommandSchema,
+]);
+
+export const BrowserSessionCommandSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('browser.session.create'), url: WebUrlSchema }),
+  z.object({ action: z.literal('browser.session.list') }),
+  z.object({ action: z.literal('browser.session.get'), sessionId: BrowserSessionIdSchema }),
+  z.object({
+    action: z.literal('browser.session.open'),
+    sessionId: BrowserSessionIdSchema,
+    url: WebUrlSchema,
+    active: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal('browser.session.adoptTab'),
+    sessionId: BrowserSessionIdSchema,
+    tabId: TabIdSchema,
+  }),
+  z.object({
+    action: z.literal('browser.session.command'),
+    sessionId: BrowserSessionIdSchema,
+    command: BrowserSessionScopedCommandSchema,
+  }),
+  z.object({ action: z.literal('browser.session.release'), sessionId: BrowserSessionIdSchema }),
+]);
+
+export type BrowserSessionCommand = z.infer<typeof BrowserSessionCommandSchema>;
+export type BrowserSessionScopedCommand = z.infer<typeof BrowserSessionScopedCommandSchema>;
+
+export const BrowserSessionSnapshotSchema = z
+  .object({
+    sessionId: BrowserSessionIdSchema,
+    windowId: WindowIdSchema,
+    ownedTabIds: z.array(TabIdSchema).max(32),
+    borrowedTabIds: z.array(TabIdSchema).max(32),
+    activeTabId: TabIdSchema.optional(),
+  })
+  .superRefine((session, context) => {
+    const allTabIds = [...session.ownedTabIds, ...session.borrowedTabIds];
+    if (allTabIds.length > 32) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['ownedTabIds'],
+        message: 'BrowserSession cannot exceed 32 tabs',
+      });
+    }
+    if (new Set(allTabIds).size !== allTabIds.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['borrowedTabIds'],
+        message: 'BrowserSession tab ownership must be unique',
+      });
+    }
+    if (session.activeTabId !== undefined && !allTabIds.includes(session.activeTabId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['activeTabId'],
+        message: 'BrowserSession active tab must belong to the session',
+      });
+    }
+  });
+
+export type BrowserSessionSnapshot = z.infer<typeof BrowserSessionSnapshotSchema>;
+
+export const BrowserSessionListResultSchema = z.object({
+  sessions: z.array(BrowserSessionSnapshotSchema).max(32),
+});
+
+export const BrowserSessionCommandResultSchema = z.object({
+  sessionId: BrowserSessionIdSchema,
+  tabId: TabIdSchema,
+  result: z.unknown(),
+});
+
+export const BrowserSessionReleaseResultSchema = z.object({
+  sessionId: BrowserSessionIdSchema,
+  released: z.literal(true),
+  closedOwnedTabIds: z.array(TabIdSchema).max(32),
+  preservedBorrowedTabIds: z.array(TabIdSchema).max(32),
+});
+
+export const BrowserTabSchema = z.object({
+  id: TabIdSchema,
+  windowId: WindowIdSchema,
+  active: z.boolean(),
+  title: z.string().max(100_000),
+  url: z.string().max(100_000),
+  cdpAttached: z.boolean(),
+});
+
+export type BrowserTab = z.infer<typeof BrowserTabSchema>;
+
+export const BrowserTabsResultSchema = z.array(BrowserTabSchema).max(10_000);
+export const BrowserWindowOpenResultSchema = z.object({
+  windowId: WindowIdSchema,
+  tabId: TabIdSchema,
+  url: WebUrlSchema,
+});
+export const BrowserTabOpenResultSchema = z.object({
+  id: TabIdSchema,
+  windowId: WindowIdSchema,
+  url: WebUrlSchema,
+});
+
+const SiteRecipeIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/);
+const SiteRecipeReviewTokenSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const SiteRecipeDomainSchema = z.enum(['x.com', 'twitter.com']);
+const SiteRecipePathPrefixSchema = z.string().startsWith('/').max(2048);
+const SiteRecipeCommonShape = {
+  id: SiteRecipeIdSchema,
+  version: z.number().int().min(1).max(1_000_000),
+  title: z.string().trim().min(1).max(200),
+  description: z.string().trim().min(1).max(2_000),
+  domains: z.array(SiteRecipeDomainSchema).min(1).max(8),
+  pathPrefixes: z.array(SiteRecipePathPrefixSchema).min(1).max(16),
+};
+
+export const SiteRecipeMuteWordsDefinitionSchema = z
+  .object({
+    ...SiteRecipeCommonShape,
+    kind: z.literal('x.mute-words'),
+    targets: z
+      .object({
+        add: BrowserSemanticTargetSchema,
+        input: BrowserSemanticTargetSchema,
+        save: BrowserSemanticTargetSchema,
+      })
+      .strict(),
+    retry: BrowserRunRetrySchema,
+    waitAfterItemMs: z.number().int().min(0).max(10_000),
+  })
+  .strict();
+
+export const SiteRecipeReadGrokDefinitionSchema = z
+  .object({
+    ...SiteRecipeCommonShape,
+    kind: z.literal('x.read-grok-conversation'),
+    scope: z.enum(['body', 'main']),
+    defaultMaxChars: z.number().int().min(1).max(100_000),
+  })
+  .strict();
+
+export const SiteRecipeDefinitionSchema = z.discriminatedUnion('kind', [
+  SiteRecipeMuteWordsDefinitionSchema,
+  SiteRecipeReadGrokDefinitionSchema,
+]);
+
+export type SiteRecipeDefinition = z.infer<typeof SiteRecipeDefinitionSchema>;
+
+const SiteRecipeLifecycleShape = {
+  source: z.enum(['builtin', 'user']),
+  status: z.enum(['draft', 'approved']),
+  reviewToken: SiteRecipeReviewTokenSchema,
+};
+
+export const SiteRecipeSchema = z
+  .discriminatedUnion('kind', [
+    SiteRecipeMuteWordsDefinitionSchema.extend(SiteRecipeLifecycleShape),
+    SiteRecipeReadGrokDefinitionSchema.extend(SiteRecipeLifecycleShape),
+  ])
+  .superRefine((recipe, context) => {
+    if (recipe.source === 'builtin' && recipe.status !== 'approved') {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['status'],
+        message: 'Built-in SiteRecipes must be approved',
+      });
+    }
+  });
+
+export type SiteRecipe = z.infer<typeof SiteRecipeSchema>;
+
+export const SiteRecipeListResultSchema = z.object({
+  recipes: z.array(SiteRecipeSchema).max(102),
+});
+
+const SiteRecipeMuteWordsInputSchema = z
+  .object({
+    kind: z.literal('x.mute-words'),
+    words: z
+      .array(z.string().trim().min(1).max(100))
+      .min(1)
+      .max(100)
+      .refine(words => new Set(words).size === words.length, {
+        message: 'Muted words must be unique',
+      }),
+  })
+  .strict();
+
+const SiteRecipeReadGrokInputSchema = z
+  .object({
+    kind: z.literal('x.read-grok-conversation'),
+    maxChars: z.number().int().min(1).max(100_000).optional(),
+  })
+  .strict();
+
+export const SiteRecipeRunInputSchema = z.discriminatedUnion('kind', [
+  SiteRecipeMuteWordsInputSchema,
+  SiteRecipeReadGrokInputSchema,
+]);
+
+export type SiteRecipeRunInput = z.infer<typeof SiteRecipeRunInputSchema>;
+
+export const BrowserRecipeCommandSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('browser.recipe.list') }),
+  z.object({ action: z.literal('browser.recipe.get'), recipeId: SiteRecipeIdSchema }),
+  z.object({
+    action: z.literal('browser.recipe.draft.save'),
+    recipe: SiteRecipeDefinitionSchema,
+  }),
+  z.object({
+    action: z.literal('browser.recipe.approve'),
+    recipeId: SiteRecipeIdSchema,
+    reviewToken: SiteRecipeReviewTokenSchema,
+    confirm: z.literal('APPROVE_SITE_RECIPE'),
+  }),
+  z.object({
+    action: z.literal('browser.recipe.run'),
+    recipeId: SiteRecipeIdSchema,
+    sessionId: BrowserSessionIdSchema,
+    input: SiteRecipeRunInputSchema,
+  }),
+]);
+
+export type BrowserRecipeCommand = z.infer<typeof BrowserRecipeCommandSchema>;
+
+const SiteRecipeResultBaseShape = {
+  recipeId: SiteRecipeIdSchema,
+  version: z.number().int().positive(),
+  status: z.enum(['completed', 'partial', 'failed']),
+};
+
+export const SiteRecipeRunResultSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...SiteRecipeResultBaseShape,
+      kind: z.literal('x.mute-words'),
+      output: z
+        .object({
+          added: z.array(z.string().max(100)).max(100),
+          skipped: z.array(z.string().max(100)).max(100),
+          failed: z
+            .array(
+              z.object({
+                item: z.string().max(100),
+                message: z.string().max(10_000),
+              })
+            )
+            .max(100),
+        })
+        .strict(),
+      summary: z
+        .object({
+          requested: z.number().int().min(1).max(100),
+          attempted: z.number().int().min(0).max(100),
+          retries: z.number().int().nonnegative(),
+          durationMs: z.number().int().nonnegative(),
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...SiteRecipeResultBaseShape,
+      kind: z.literal('x.read-grok-conversation'),
+      output: z
+        .object({
+          url: WebUrlSchema,
+          title: z.string().max(1_000),
+          text: z.string().max(100_000),
+          capturedAt: z.string().datetime(),
+          truncated: z.boolean(),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
+export type SiteRecipeRunResult = z.infer<typeof SiteRecipeRunResultSchema>;
+
+export const BrowserCommandSchema = z.union([
+  BrowserAtomicCommandSchema,
+  BrowserRunCommandSchema,
+  BrowserSessionCommandSchema,
+  BrowserRecipeCommandSchema,
 ]);
 
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>;
@@ -251,7 +811,7 @@ export const DesktopToExtensionMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('browser.command'),
     id: z.string().uuid(),
-    command: BrowserCommandSchema,
+    command: BrowserAtomicCommandSchema,
   }),
 ]);
 

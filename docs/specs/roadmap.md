@@ -63,6 +63,10 @@
 
 ## 已完成（2026-08 盘点退役，细节见 Git 与 spec）
 
+- [x] SiteRecipe P2：review-token 审批、精确域名/路径、typed adapter、本地 0600 存储、`x.mute-words` 与 `x.read-grok-conversation`（spec: site-recipe-p2）
+- [x] BrowserSession P1：Agent-owned 非聚焦 Chrome window、owned/borrowed tab、显式 adopt、安全 release、Host 内存 ownership（spec: browser-session-p1）
+- [x] BrowserRun P0：Host 本地顺序/循环/重试、语义目标重新定位、最终汇总输出；不开放 eval（spec: browser-run-p0）
+- [x] CLI-first EV Browser：Desktop 可选、extension TOFU 配对、全局 `ev-browser` Skill、typed 书签查询/整理、写操作前自动 JSON 备份、非破坏式恢复
 - [x] P3 远程接入+移动端（2026-08-09）：R1 localhost+私网多绑（禁 0.0.0.0）+ token 强制、R2 ev token 分级（observer 只读）、R3 /m 独立移动端（React，选任务/对话/切模型）、R4 双 URL+手机实测步骤
 
 - [x] 架构深化：Task 生命周期深模块 / IPC registry / RuntimeLaunch / Codex 状态机分离

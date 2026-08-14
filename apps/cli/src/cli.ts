@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { randomUUID } from 'node:crypto';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import cliPackage from '../package.json' with { type: 'json' };
 import {
   ensureStandaloneHost,
+  evHomeDirectory,
   runStandaloneHost,
   standaloneDiscoveryPath,
   stopStandaloneHost,
@@ -21,6 +22,14 @@ import { CliError, isServerCliCommand, runServerCli } from './server-cli';
 
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
+const MUTATING_BOOKMARK_ACTIONS = new Set<BrowserCommand['action']>([
+  'bookmarks.create',
+  'bookmarks.update',
+  'bookmarks.move',
+  'bookmarks.remove',
+  'bookmarks.removeTree',
+  'bookmarks.restore',
+]);
 
 interface DiscoveryFile {
   protocolVersion: number;
@@ -44,6 +53,9 @@ function usage(): string {
     '  ev browser <action> [--payload <json> | --payload-file <path>]',
     '                    [--timeout <seconds>] [--output <path>] [--compact]',
     '  ev browser check',
+    '  ev browser run --payload-file <plan.json>',
+    '  ev browser session.create --payload \'{"url":"https://example.com"}\'',
+    '  ev browser recipe.list',
     '  ev status                     LAN/Tailscale URLs + masked-token hint',
     '  ev remote on|off|status',
     '  ev token create --tier observer|operator | list | revoke <id>',
@@ -57,7 +69,21 @@ function usage(): string {
     '  ev browser page.download --payload \'{"tabId":123,"ref":"@m1"}\'',
     '  ev browser downloads.status --payload \'{"downloadId":"chrome:42"}\'',
     '  ev browser page.screenshot --output ./page.png',
+    '  ev browser bookmarks.search --payload \'{"query":"EV"}\'',
+    '  ev browser bookmarks.export --output ./bookmarks.json',
+    '  ev browser run --payload \'{"steps":[{"kind":"wait","timeMs":100}]}\'',
+    '  ev browser session.list',
+    '  ev browser recipe.run --payload-file <request.json>',
   ].join('\n');
+}
+
+function normalizeBrowserAction(action: string): string {
+  if (action === 'check') return 'browser.capabilities';
+  if (action === 'run') return 'browser.run';
+  if (action.startsWith('session.') || action.startsWith('recipe.')) {
+    return `browser.${action}`;
+  }
+  return action;
 }
 
 async function parseArguments(argv: string[]): Promise<ParsedArguments> {
@@ -127,7 +153,7 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
   }
 
   return {
-    action: action === 'check' ? 'browser.capabilities' : action,
+    action: normalizeBrowserAction(action),
     payload,
     timeoutMs,
     compact,
@@ -230,18 +256,55 @@ async function invoke(command: BrowserCommand, timeoutMs: number): Promise<unkno
   return parsed.data;
 }
 
+function bookmarkBackup(data: unknown): { exportedAt?: string; tree: unknown[] } {
+  if (!data || typeof data !== 'object' || !('tree' in data) || !Array.isArray(data.tree)) {
+    throw new Error('Bookmark export response does not contain a tree');
+  }
+  const exportedAt =
+    'exportedAt' in data && typeof data.exportedAt === 'string' ? data.exportedAt : undefined;
+  return { exportedAt, tree: data.tree };
+}
+
+async function writeBookmarkBackup(data: unknown, outputPath: string): Promise<string> {
+  const backup = bookmarkBackup(data);
+  const resolved = path.resolve(outputPath);
+  await mkdir(path.dirname(resolved), { recursive: true, mode: 0o700 });
+  await writeFile(resolved, `${JSON.stringify(backup, null, 2)}\n`, { mode: 0o600 });
+  await chmod(resolved, 0o600);
+  return resolved;
+}
+
+async function createAutomaticBookmarkBackup(timeoutMs: number): Promise<string> {
+  const backup = await invoke({ action: 'bookmarks.export' }, timeoutMs);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `${timestamp}-${randomUUID()}.json`;
+  return writeBookmarkBackup(
+    backup,
+    path.join(evHomeDirectory(), 'backups', 'bookmarks', filename)
+  );
+}
+
 async function saveOutput(
   command: BrowserCommand,
   data: unknown,
   outputPath: string
 ): Promise<unknown> {
+  if (command.action === 'bookmarks.export') {
+    const backup = bookmarkBackup(data);
+    return {
+      exportedAt: backup.exportedAt,
+      topLevels: backup.tree.length,
+      outputPath: await writeBookmarkBackup(data, outputPath),
+    };
+  }
   if (command.action !== 'page.screenshot') {
-    throw new UsageError('--output currently supports page.screenshot only');
+    throw new UsageError('--output supports page.screenshot and bookmarks.export only');
   }
   if (!data || typeof data !== 'object' || !('data' in data) || typeof data.data !== 'string') {
     throw new Error('Screenshot response does not contain image data');
   }
-  await writeFile(outputPath, Buffer.from(data.data, 'base64'));
+  await mkdir(path.dirname(path.resolve(outputPath)), { recursive: true, mode: 0o700 });
+  await writeFile(outputPath, Buffer.from(data.data, 'base64'), { mode: 0o600 });
   const { data: _encoded, ...metadata } = data;
   return { ...metadata, outputPath: path.resolve(outputPath) };
 }
@@ -278,7 +341,24 @@ export async function run(argv: string[]): Promise<number> {
     }
     await validateLocalFiles(commandResult.data);
     if (!process.env.EV_BROWSER_CONTROL_FILE?.trim()) await ensureStandaloneHost();
-    let data = await invoke(commandResult.data, parsed.timeoutMs);
+    const backupPath = MUTATING_BOOKMARK_ACTIONS.has(commandResult.data.action)
+      ? await createAutomaticBookmarkBackup(parsed.timeoutMs)
+      : undefined;
+    let data: unknown;
+    try {
+      data = await invoke(commandResult.data, parsed.timeoutMs);
+    } catch (error) {
+      if (backupPath && error instanceof Error) {
+        error.message = `${error.message} (bookmark backup: ${backupPath})`;
+      }
+      throw error;
+    }
+    if (backupPath) {
+      data =
+        data && typeof data === 'object' && !Array.isArray(data)
+          ? { ...data, backupPath }
+          : { data, backupPath };
+    }
     if (parsed.outputPath) data = await saveOutput(commandResult.data, data, parsed.outputPath);
     process.stdout.write(
       `${parsed.compact ? JSON.stringify(data) : JSON.stringify(data, null, 2)}\n`

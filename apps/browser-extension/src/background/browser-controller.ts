@@ -2,7 +2,8 @@ import {
   BrowserDownloadDispatchSchema,
   BrowserDownloadStatusSchema,
   BrowserMediaResultSchema,
-  type BrowserCommand,
+  type BrowserAtomicCommand,
+  type BookmarkBackupNode,
   type BrowserMediaItem,
 } from '@ev/contracts';
 
@@ -25,6 +26,7 @@ const SENSITIVE_EVENT_KEYS = new Set([
 ]);
 const CDP_ACTIONS = [
   'tabs.list',
+  'windows.open',
   'tabs.open',
   'tabs.close',
   'tabs.activate',
@@ -47,6 +49,17 @@ const CDP_ACTIONS = [
   'page.network',
   'page.emulate',
   'page.release',
+] as const;
+const BOOKMARK_ACTIONS = [
+  'bookmarks.list',
+  'bookmarks.search',
+  'bookmarks.create',
+  'bookmarks.update',
+  'bookmarks.move',
+  'bookmarks.remove',
+  'bookmarks.removeTree',
+  'bookmarks.export',
+  'bookmarks.restore',
 ] as const;
 const INTERACTIVE_ROLES = new Set([
   'button',
@@ -117,10 +130,13 @@ interface CachedMediaItem {
 }
 
 function assertWebUrl(value: string): void {
-  const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol)) {
-    throw new Error('Only HTTP(S) pages can be controlled');
+  try {
+    const url = new URL(value);
+    if (['http:', 'https:'].includes(url.protocol)) return;
+  } catch {
+    // Fall through to the stable boundary error below.
   }
+  throw new Error('Only HTTP(S) pages can be controlled');
 }
 
 async function activeTabId(): Promise<number> {
@@ -269,7 +285,7 @@ function flattenFrameTree(frameTree: unknown): Array<Record<string, unknown>> {
 }
 
 const KEY_DEFINITIONS: Record<
-  Extract<BrowserCommand, { action: 'page.press' }>['key'],
+  Extract<BrowserAtomicCommand, { action: 'page.press' }>['key'],
   { key: string; code: string; keyCode: number; text?: string }
 > = {
   Enter: { key: 'Enter', code: 'Enter', keyCode: 13, text: '\r' },
@@ -289,6 +305,8 @@ const KEY_DEFINITIONS: Record<
 };
 
 class CdpBrowserController {
+  private readonly debuggerApi = (chrome as unknown as { debugger?: typeof chrome.debugger })
+    .debugger;
   private readonly attachedTabs = new Set<number>();
   private readonly refsByTab = new Map<number, Map<string, number>>();
   private readonly mediaByTab = new Map<number, Map<string, CachedMediaItem>>();
@@ -334,39 +352,61 @@ class CdpBrowserController {
   };
 
   constructor() {
-    chrome.debugger.onEvent.addListener(this.handleEvent);
-    chrome.debugger.onDetach.addListener(this.handleDetach);
+    this.debuggerApi?.onEvent.addListener(this.handleEvent);
+    this.debuggerApi?.onDetach.addListener(this.handleDetach);
   }
 
   dispose(): void {
-    chrome.debugger.onEvent.removeListener(this.handleEvent);
-    chrome.debugger.onDetach.removeListener(this.handleDetach);
+    this.debuggerApi?.onEvent.removeListener(this.handleEvent);
+    this.debuggerApi?.onDetach.removeListener(this.handleDetach);
   }
 
-  async execute(command: BrowserCommand): Promise<unknown> {
+  async execute(command: BrowserAtomicCommand): Promise<unknown> {
     switch (command.action) {
       case 'browser.capabilities':
         return {
-          transport: 'cdp',
-          cdp: true,
+          transport: this.debuggerApi ? 'cdp' : 'unavailable',
+          cdp: Boolean(this.debuggerApi),
           arbitraryEval: false,
-          actions: CDP_ACTIONS,
+          actions: this.debuggerApi ? [...CDP_ACTIONS, ...BOOKMARK_ACTIONS] : [...BOOKMARK_ACTIONS],
         };
       case 'tabs.list': {
         const tabs = await chrome.tabs.query({});
-        return tabs.map(tab => ({
-          id: tab.id,
-          windowId: tab.windowId,
-          active: tab.active,
-          title: tab.title ?? '',
-          url: tab.url ?? '',
-          cdpAttached: tab.id !== undefined && this.attachedTabs.has(tab.id),
-        }));
+        return tabs.flatMap(tab =>
+          tab.id === undefined
+            ? []
+            : [
+                {
+                  id: tab.id,
+                  windowId: tab.windowId,
+                  active: tab.active,
+                  title: tab.title ?? '',
+                  url: tab.url ?? '',
+                  cdpAttached: this.attachedTabs.has(tab.id),
+                },
+              ]
+        );
+      }
+      case 'windows.open': {
+        assertWebUrl(command.url);
+        const window = await chrome.windows.create({
+          url: command.url,
+          focused: command.focused ?? false,
+        });
+        if (window.id === undefined) throw new Error('Chrome did not return the created window');
+        const tab = window.tabs?.[0] ?? (await chrome.tabs.query({ windowId: window.id }))[0];
+        if (tab?.id === undefined) throw new Error('Chrome did not return the created tab');
+        return { windowId: window.id, tabId: tab.id, url: tab.url || command.url };
       }
       case 'tabs.open': {
         assertWebUrl(command.url);
-        const tab = await chrome.tabs.create({ url: command.url, active: command.active ?? true });
-        return { id: tab.id, windowId: tab.windowId, url: tab.url ?? command.url };
+        const tab = await chrome.tabs.create({
+          url: command.url,
+          ...(command.windowId !== undefined ? { windowId: command.windowId } : {}),
+          active: command.active ?? true,
+        });
+        if (tab.id === undefined) throw new Error('Chrome did not return the created tab');
+        return { id: tab.id, windowId: tab.windowId, url: tab.url || command.url };
       }
       case 'tabs.close':
         await this.release(command.tabId);
@@ -383,21 +423,143 @@ class CdpBrowserController {
       }
       case 'downloads.status':
         return this.downloadStatus(command.downloadId);
+      case 'bookmarks.list':
+        return this.bookmarksList(command.maxNodes ?? 2_000);
+      case 'bookmarks.search':
+        return this.bookmarksList(command.maxNodes ?? 2_000, command.query);
+      case 'bookmarks.create': {
+        const node = await chrome.bookmarks.create({
+          parentId: command.parentId,
+          title: command.title,
+          url: command.url,
+        });
+        return { id: node.id, title: node.title, ...(node.url ? { url: node.url } : {}) };
+      }
+      case 'bookmarks.update': {
+        const node = await chrome.bookmarks.update(command.id, {
+          ...(command.title !== undefined ? { title: command.title } : {}),
+          ...(command.url !== undefined ? { url: command.url } : {}),
+        });
+        return { id: node.id, title: node.title };
+      }
+      case 'bookmarks.move': {
+        const node = await chrome.bookmarks.move(command.id, {
+          parentId: command.parentId,
+          index: command.index,
+        });
+        return { id: node.id, parentId: node.parentId };
+      }
+      case 'bookmarks.remove':
+        await chrome.bookmarks.remove(command.id);
+        return { removed: command.id };
+      case 'bookmarks.removeTree':
+        await chrome.bookmarks.removeTree(command.id);
+        return { removedTree: command.id };
+      case 'bookmarks.export':
+        return this.bookmarksExport();
+      case 'bookmarks.restore':
+        return this.bookmarksRestore(command.tree, command.parentId, command.title);
       default:
         return this.executePageCommand(command);
     }
   }
 
+  private async bookmarksList(
+    maxNodes: number,
+    query?: string
+  ): Promise<{ nodes: unknown[]; truncated: boolean }> {
+    const [root] = await chrome.bookmarks.getTree();
+    const needle = query?.toLowerCase();
+    const nodes: Array<Record<string, unknown>> = [];
+    const collectionLimit = maxNodes + 1;
+    const walk = (node: chrome.bookmarks.BookmarkTreeNode, path: string[]): void => {
+      const selfPath = node.title ? [...path, node.title] : path;
+      if (node.id && node.title) {
+        const matches =
+          !needle ||
+          node.title.toLowerCase().includes(needle) ||
+          (node.url ?? '').toLowerCase().includes(needle);
+        if (matches) {
+          nodes.push({
+            id: node.id,
+            title: node.title,
+            ...(node.url ? { url: node.url } : {}),
+            ...(node.parentId ? { parentId: node.parentId } : {}),
+            path: selfPath.slice(0, -1).join(' / '),
+          });
+        }
+      }
+      if (nodes.length >= collectionLimit) return;
+      for (const child of node.children ?? []) {
+        walk(child, selfPath);
+        if (nodes.length >= collectionLimit) return;
+      }
+    };
+    walk(root, []);
+    const truncated = nodes.length > maxNodes;
+    return { nodes: truncated ? nodes.slice(0, maxNodes) : nodes, truncated };
+  }
+
+  private async bookmarksExport(): Promise<{ exportedAt: string; tree: BookmarkBackupNode[] }> {
+    const [root] = await chrome.bookmarks.getTree();
+    const strip = (node: chrome.bookmarks.BookmarkTreeNode): BookmarkBackupNode => ({
+      title: node.title,
+      ...(node.url ? { url: node.url } : {}),
+      ...(node.children?.length ? { children: node.children.map(strip) } : {}),
+    });
+    return {
+      exportedAt: new Date().toISOString(),
+      tree: (root.children ?? []).map(strip),
+    };
+  }
+
+  private async bookmarksRestore(
+    tree: BookmarkBackupNode[],
+    parentId?: string,
+    title?: string
+  ): Promise<{ restored: boolean; folderId: string; topLevels: number }> {
+    const folder = await chrome.bookmarks.create({
+      parentId,
+      title: title ?? `EV restore ${new Date().toISOString()}`,
+    });
+    await this.createBookmarkChildren(folder.id, tree);
+    return { restored: true, folderId: folder.id, topLevels: tree.length };
+  }
+
+  private async createBookmarkChildren(
+    parentId: string,
+    nodes: BookmarkBackupNode[]
+  ): Promise<void> {
+    for (const node of nodes) {
+      const created = await chrome.bookmarks.create({
+        parentId,
+        title: node.title,
+        url: node.url,
+      });
+      if (node.children?.length) await this.createBookmarkChildren(created.id, node.children);
+    }
+  }
+
   private async executePageCommand(
     command: Exclude<
-      BrowserCommand,
+      BrowserAtomicCommand,
       | { action: 'browser.capabilities' }
       | { action: 'tabs.list' }
+      | { action: 'windows.open' }
       | { action: 'tabs.open' }
       | { action: 'tabs.close' }
       | { action: 'tabs.activate' }
       | { action: 'page.release' }
       | { action: 'downloads.status' }
+      | { action: 'bookmarks.list' }
+      | { action: 'bookmarks.search' }
+      | { action: 'bookmarks.create' }
+      | { action: 'bookmarks.update' }
+      | { action: 'bookmarks.move' }
+      | { action: 'bookmarks.remove' }
+      | { action: 'bookmarks.removeTree' }
+      | { action: 'bookmarks.export' }
+      | { action: 'bookmarks.restore' }
     >
   ): Promise<unknown> {
     const tab = await resolveTab(command.tabId);
@@ -411,11 +573,11 @@ class CdpBrowserController {
       }
       case 'page.context': {
         const maxChars = command.maxChars ?? 20_000;
-        const value = await this.evaluate<Record<string, unknown>>(
+        const scope = command.scope === 'main' ? `document.querySelector('main')` : 'document.body';
+        return this.evaluate<Record<string, unknown>>(
           tabId,
-          `(() => ({url: location.href, title: document.title, selection: getSelection()?.toString().slice(0, ${maxChars}) || undefined, text: (document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, ${maxChars}), capturedAt: new Date().toISOString()}))()`
+          `(() => { const root = ${scope}; return {url: location.href, title: document.title, selection: getSelection()?.toString().slice(0, ${maxChars}) || undefined, text: (root?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, ${maxChars}), capturedAt: new Date().toISOString()}; })()`
         );
-        return value;
       }
       case 'page.snapshot':
         return this.snapshot(tabId, command.mode ?? 'full', command.maxNodes, command.maxChars);
@@ -887,7 +1049,7 @@ class CdpBrowserController {
 
   private async emulate(
     tabId: number,
-    command: Extract<BrowserCommand, { action: 'page.emulate' }>
+    command: Extract<BrowserAtomicCommand, { action: 'page.emulate' }>
   ): Promise<unknown> {
     if (!command.enabled) {
       await this.send(tabId, 'Emulation.clearDeviceMetricsOverride');
@@ -934,12 +1096,10 @@ function getController(): CdpBrowserController {
   return controller;
 }
 
-export async function executeBrowserCommand(command: BrowserCommand): Promise<unknown> {
+export async function executeBrowserCommand(command: BrowserAtomicCommand): Promise<unknown> {
   const debuggerApi = (chrome as unknown as { debugger?: typeof chrome.debugger }).debugger;
-  if (!debuggerApi) {
-    if (command.action === 'browser.capabilities') {
-      return { transport: 'unavailable', cdp: false, arbitraryEval: false, actions: [] };
-    }
+  const usesBookmarks = command.action.startsWith('bookmarks.');
+  if (!debuggerApi && command.action !== 'browser.capabilities' && !usesBookmarks) {
     throw new Error('Chrome CDP control is unavailable in this browser');
   }
   return getController().execute(command);

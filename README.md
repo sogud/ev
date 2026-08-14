@@ -28,7 +28,7 @@ your phone.**
   footnotes; workspace diff inspector (diff-first by design).
 - Runtime health drawer: native auth status (read-only), config paths,
   model catalog — EV displays, never writes, native configs.
-- Browser bridge: paired extension over `127.0.0.1` with explicit approval.
+- Browser bridge: paired extension over `127.0.0.1`; Agent-owned BrowserSessions, Host-local BrowserRun batches, reviewed domain-bound SiteRecipes, and safe CLI bookmark management.
 - Mobile web entry at `/m`: task list, chat, model switch — nothing else.
 - i18n: English (default) and 中文, following your system locale with a
   per-user override in Settings → General → Language.
@@ -58,6 +58,13 @@ ev status                     # local/remote URLs + token guidance
 ev task create --runtime pi
 ev task prompt <id> "say hi"
 ev task follow <id> --until-idle
+
+ev browser check
+ev browser session.create --payload '{"url":"https://example.com"}' --compact
+ev browser recipe.list --compact
+ev browser run --payload-file ./browser-plan.json --compact
+# bookmark mutations auto-back up to ~/.ev/backups/bookmarks/
+ev browser bookmarks.export --output ~/Documents/ev-bookmarks.json
 ```
 
 ### Phone access (optional)
@@ -74,7 +81,7 @@ use it on networks you trust; use Tailscale elsewhere. Revoke with
 
 ## Architecture
 
-```
+```text
 apps/desktop        Electron shell + renderer (thin client)
 apps/server         headless local server (tasks, runtimes, WS events)
 apps/cli            ev … command-line client

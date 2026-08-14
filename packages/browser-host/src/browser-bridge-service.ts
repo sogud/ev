@@ -2,11 +2,11 @@ import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
-  BrowserCommandSchema,
+  BrowserAtomicCommandSchema,
   DesktopToExtensionMessageSchema,
   EV_PROTOCOL_VERSION,
   ExtensionToDesktopMessageSchema,
-  type BrowserCommand,
+  type BrowserAtomicCommand,
   type ExtensionToDesktopMessage,
 } from '@ev/contracts';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -262,8 +262,8 @@ export class BrowserBridgeService {
     return () => this.listeners.delete(listener);
   }
 
-  async sendCommand(command: BrowserCommand): Promise<unknown> {
-    const payload = BrowserCommandSchema.parse(command);
+  async sendCommand(command: BrowserAtomicCommand): Promise<unknown> {
+    const payload = BrowserAtomicCommandSchema.parse(command);
     const socket = this.activeSocket;
     if (!socket || socket.readyState !== WebSocket.OPEN) {
       throw new Error('EV Browser is not connected');

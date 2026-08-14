@@ -6,6 +6,9 @@ import {
   BrowserControlResponseSchema,
   BrowserDownloadDispatchSchema,
   BrowserDownloadStatusSchema,
+  BrowserSessionCommandResultSchema,
+  BrowserSessionReleaseResultSchema,
+  BrowserSessionSnapshotSchema,
   CreateTaskRequestSchema,
   DesktopToExtensionMessageSchema,
   EV_PROTOCOL_VERSION,
@@ -14,6 +17,9 @@ import {
   RuntimeDescriptorSchema,
   RuntimeEventSchema,
   RuntimeSessionRefSchema,
+  SiteRecipeDefinitionSchema,
+  SiteRecipeRunResultSchema,
+  SiteRecipeSchema,
 } from './index';
 
 describe('EV contracts', () => {
@@ -70,6 +76,25 @@ describe('EV contracts', () => {
         touch: true,
       },
       { action: 'page.release', tabId: 12 },
+      { action: 'bookmarks.list', maxNodes: 5_000 },
+      { action: 'bookmarks.search', query: 'EV', maxNodes: 5_000 },
+      {
+        action: 'bookmarks.create',
+        title: 'EV docs',
+        url: 'https://example.com',
+        parentId: '1',
+      },
+      { action: 'bookmarks.update', id: '42', title: 'Renamed' },
+      { action: 'bookmarks.move', id: '42', parentId: '2', index: 0 },
+      { action: 'bookmarks.remove', id: '42' },
+      { action: 'bookmarks.removeTree', id: '43', confirm: 'REMOVE_BOOKMARK_TREE' },
+      { action: 'bookmarks.export' },
+      {
+        action: 'bookmarks.restore',
+        tree: [{ title: 'Bookmarks bar', children: [{ title: 'EV', url: 'https://ev.dev' }] }],
+        parentId: '2',
+        title: 'Recovered',
+      },
     ];
     for (const command of commands) {
       expect(BrowserCommandSchema.safeParse(command).success).toBe(true);
@@ -78,9 +103,304 @@ describe('EV contracts', () => {
       BrowserCommandSchema.safeParse({ action: 'page.eval', expression: 'document.cookie' }).success
     ).toBe(false);
     expect(
+      BrowserCommandSchema.safeParse({ action: 'bookmarks.removeTree', id: '43' }).success
+    ).toBe(false);
+    expect(BrowserCommandSchema.safeParse({ action: 'bookmarks.update', id: '42' }).success).toBe(
+      false
+    );
+    expect(BrowserCommandSchema.safeParse({ action: 'bookmarks.move', id: '42' }).success).toBe(
+      false
+    );
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'bookmarks.restore',
+        tree: [{ title: 'Mixed', url: 'https://ev.dev', children: [{ title: 'Child' }] }],
+      }).success
+    ).toBe(false);
+    expect(
       BrowserCommandSchema.safeParse({ action: 'page.upload', selector: '#file', filePaths: [] })
         .success
     ).toBe(false);
+  });
+
+  test('validates bounded BrowserRun plans', () => {
+    const semanticClick = {
+      kind: 'command',
+      command: {
+        action: 'page.click',
+        target: { role: 'link', name: '添加隐藏的字词或短语' },
+      },
+      retry: { attempts: 8, delayMs: 400 },
+    };
+    const typeItem = {
+      kind: 'command',
+      command: {
+        action: 'page.type',
+        target: { role: 'textbox', name: '输入字词或短语' },
+        text: { from: 'item' },
+        clearFirst: true,
+      },
+    };
+    const run = {
+      action: 'browser.run',
+      tabId: 12,
+      steps: [
+        {
+          kind: 'forEach',
+          id: 'add-words',
+          items: ['福不黑', '寻固炮'],
+          onError: 'continue',
+          steps: [semanticClick, typeItem, { kind: 'wait', timeMs: 300 }],
+        },
+      ],
+    };
+    expect(BrowserCommandSchema.safeParse(run).success).toBe(true);
+
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.run',
+        steps: [
+          {
+            kind: 'forEach',
+            items: ['outer'],
+            steps: [{ kind: 'forEach', items: ['inner'], steps: [semanticClick] }],
+          },
+        ],
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.run',
+        steps: [typeItem],
+      }).success
+    ).toBe(false);
+
+    const oversizedLoop = {
+      kind: 'forEach',
+      items: Array.from({ length: 100 }, (_, index) => String(index)),
+      steps: Array.from({ length: 11 }, () => semanticClick),
+    };
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.run',
+        steps: [oversizedLoop, oversizedLoop],
+      }).success
+    ).toBe(false);
+  });
+
+  test('validates BrowserSession ownership commands and results', () => {
+    const sessionId = '3f88e635-1ba1-4e8c-91fd-83d682959f8a';
+    const commands = [
+      { action: 'windows.open', url: 'https://example.com', focused: false },
+      { action: 'tabs.open', url: 'https://example.com/docs', windowId: 9, active: false },
+      { action: 'browser.session.create', url: 'https://example.com' },
+      { action: 'browser.session.list' },
+      { action: 'browser.session.get', sessionId },
+      {
+        action: 'browser.session.open',
+        sessionId,
+        url: 'https://example.com/docs',
+        active: true,
+      },
+      { action: 'browser.session.adoptTab', sessionId, tabId: 42 },
+      {
+        action: 'browser.session.command',
+        sessionId,
+        command: { action: 'page.snapshot', mode: 'interactive' },
+      },
+      {
+        action: 'browser.session.command',
+        sessionId,
+        command: {
+          action: 'browser.run',
+          steps: [{ kind: 'wait', timeMs: 1 }],
+        },
+      },
+      { action: 'browser.session.release', sessionId },
+    ];
+    for (const command of commands) {
+      expect(BrowserCommandSchema.safeParse(command).success).toBe(true);
+    }
+
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.session.command',
+        sessionId,
+        command: { action: 'tabs.close', tabId: 42 },
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.session.command',
+        sessionId,
+        command: { action: 'bookmarks.list' },
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.session.command',
+        sessionId,
+        command: { action: 'browser.session.list' },
+      }).success
+    ).toBe(false);
+
+    const session = {
+      sessionId,
+      windowId: 9,
+      ownedTabIds: [11, 12],
+      borrowedTabIds: [42],
+      activeTabId: 42,
+    };
+    expect(BrowserSessionSnapshotSchema.safeParse(session).success).toBe(true);
+    expect(
+      BrowserSessionSnapshotSchema.safeParse({
+        ...session,
+        ownedTabIds: Array.from({ length: 33 }, (_, index) => index),
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserSessionCommandResultSchema.safeParse({ sessionId, tabId: 42, result: { nodes: [] } })
+        .success
+    ).toBe(true);
+    expect(
+      BrowserSessionReleaseResultSchema.safeParse({
+        sessionId,
+        released: true,
+        closedOwnedTabIds: [11, 12],
+        preservedBorrowedTabIds: [42],
+      }).success
+    ).toBe(true);
+  });
+
+  test('validates strict SiteRecipe definitions, lifecycle commands, and results', () => {
+    const sessionId = '3f88e635-1ba1-4e8c-91fd-83d682959f8a';
+    const muteRecipe = {
+      id: 'x.mute-words-english',
+      version: 1,
+      title: 'Mute words in X',
+      description: 'Use reviewed English UI labels.',
+      kind: 'x.mute-words',
+      domains: ['x.com'],
+      pathPrefixes: ['/settings/muted_keywords'],
+      targets: {
+        add: { role: 'button', name: 'Add' },
+        input: { role: 'textbox', name: 'Enter word or phrase' },
+        save: { role: 'button', name: 'Save' },
+      },
+      retry: { attempts: 8, delayMs: 400 },
+      waitAfterItemMs: 300,
+    };
+    const grokRecipe = {
+      id: 'x.read-grok-main',
+      version: 1,
+      title: 'Read Grok conversation',
+      description: 'Read bounded main text.',
+      kind: 'x.read-grok-conversation',
+      domains: ['x.com'],
+      pathPrefixes: ['/i/grok/', '/i/grok/share/'],
+      scope: 'main',
+      defaultMaxChars: 100_000,
+    };
+    expect(SiteRecipeDefinitionSchema.safeParse(muteRecipe).success).toBe(true);
+    expect(SiteRecipeDefinitionSchema.safeParse(grokRecipe).success).toBe(true);
+    expect(
+      SiteRecipeDefinitionSchema.safeParse({ ...muteRecipe, domains: ['evilx.com'] }).success
+    ).toBe(false);
+    expect(
+      SiteRecipeDefinitionSchema.safeParse({ ...muteRecipe, script: 'document.cookie' }).success
+    ).toBe(false);
+    expect(
+      SiteRecipeDefinitionSchema.safeParse({
+        ...muteRecipe,
+        targets: { ...muteRecipe.targets, save: { selector: '[data-testid="save"]' } },
+      }).success
+    ).toBe(false);
+    expect(
+      SiteRecipeDefinitionSchema.safeParse({ ...muteRecipe, steps: [{ action: 'page.eval' }] })
+        .success
+    ).toBe(false);
+
+    const approved = {
+      ...muteRecipe,
+      source: 'user',
+      status: 'approved',
+      reviewToken: 'a'.repeat(64),
+    };
+    expect(SiteRecipeSchema.safeParse(approved).success).toBe(true);
+    expect(
+      SiteRecipeSchema.safeParse({ ...approved, source: 'builtin', status: 'draft' }).success
+    ).toBe(false);
+
+    const commands = [
+      { action: 'browser.recipe.list' },
+      { action: 'browser.recipe.get', recipeId: 'x.mute-words' },
+      { action: 'browser.recipe.draft.save', recipe: muteRecipe },
+      {
+        action: 'browser.recipe.approve',
+        recipeId: muteRecipe.id,
+        reviewToken: 'a'.repeat(64),
+        confirm: 'APPROVE_SITE_RECIPE',
+      },
+      {
+        action: 'browser.recipe.run',
+        recipeId: 'x.mute-words',
+        sessionId,
+        input: { kind: 'x.mute-words', words: ['福不黑', '寻固炮'] },
+      },
+      {
+        action: 'browser.recipe.run',
+        recipeId: 'x.read-grok-conversation',
+        sessionId,
+        input: { kind: 'x.read-grok-conversation', maxChars: 50_000 },
+      },
+    ];
+    commands.forEach(command => expect(BrowserCommandSchema.safeParse(command).success).toBe(true));
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.recipe.approve',
+        recipeId: muteRecipe.id,
+        reviewToken: 'a'.repeat(64),
+        confirm: 'YES',
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.recipe.run',
+        recipeId: 'x.mute-words',
+        sessionId,
+        input: { kind: 'x.mute-words', words: ['same', 'same'] },
+      }).success
+    ).toBe(false);
+
+    expect(
+      SiteRecipeRunResultSchema.safeParse({
+        recipeId: 'x.mute-words',
+        version: 1,
+        kind: 'x.mute-words',
+        status: 'partial',
+        output: {
+          added: ['福不黑'],
+          skipped: ['寻固炮'],
+          failed: [{ item: '单身弟弟', message: 'target not found' }],
+        },
+        summary: { requested: 3, attempted: 2, retries: 1, durationMs: 1000 },
+      }).success
+    ).toBe(true);
+    expect(
+      SiteRecipeRunResultSchema.safeParse({
+        recipeId: 'x.read-grok-conversation',
+        version: 1,
+        kind: 'x.read-grok-conversation',
+        status: 'completed',
+        output: {
+          url: 'https://x.com/i/grok/share/abc',
+          title: 'Grok',
+          text: 'conversation',
+          capturedAt: '2026-08-11T00:00:00.000Z',
+          truncated: false,
+        },
+      }).success
+    ).toBe(true);
   });
 
   test('validates bounded media download handoffs and status', () => {
@@ -145,14 +465,25 @@ describe('EV contracts', () => {
     ).toBe(true);
   });
 
-  test('validates Desktop command envelopes', () => {
+  test('allows only atomic commands in Desktop-to-Extension envelopes', () => {
+    const envelope = {
+      type: 'browser.command',
+      id: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+      command: { action: 'tabs.list' },
+    };
+    expect(DesktopToExtensionMessageSchema.safeParse(envelope).success).toBe(true);
     expect(
       DesktopToExtensionMessageSchema.safeParse({
-        type: 'browser.command',
-        id: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
-        command: { action: 'tabs.list' },
+        ...envelope,
+        command: { action: 'browser.run', steps: [{ kind: 'wait', timeMs: 1 }] },
       }).success
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      DesktopToExtensionMessageSchema.safeParse({
+        ...envelope,
+        command: { action: 'browser.session.list' },
+      }).success
+    ).toBe(false);
   });
 
   test('validates automatic pairing request and approval messages', () => {

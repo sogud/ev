@@ -18,6 +18,9 @@
   不与 **RuntimeSession**（原生会话引用）混用；旧 `TaskRuntime` interface 退化为它的内部状态。
 - **Transcript** — Task 的消息流（user/assistant/thinking/tool/error），由 Runtime 事件投影而来。
 - **Trace** — Task 的过程事件流（tool/model/retry/error），检查器（Inspector）消费。
+- **BrowserRun** — 一次有界浏览器计划的本地执行：Browser Host 持有顺序、循环、重试、语义定位和失败汇总，只向 Agent 返回最终结果；Extension 仍只执行 typed 原子 action，不执行任意页面 JavaScript。
+- **BrowserSession** — Browser Host 内存中的 Agent 浏览器所有权：创建专属非聚焦 Chrome window、持有 owned tabs，并只在显式 adopt 后借用用户 tab；release 只关闭 owned tabs，绝不关闭 borrowed 或未知 tab。
+- **SiteRecipe** — 经过显式审批、限定精确域名/路径的站点经验数据；只配置已编译的 typed adapter，draft 永不自动启用，也不能携带脚本、任意 BrowserRun plan 或 Chrome 调用。
 - **IPC 契约** — main 与 renderer 之间的通道声明（call/event），唯一处 `shared/ipc-registry.ts`；
   main 按它注册 handler、preload 按它生成 API、emit 按它取通道串。承载模块：TaskSessionLifecycle 等经它暴露。
 
