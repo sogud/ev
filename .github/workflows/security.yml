@@ -40,6 +40,8 @@ jobs:
       - run: pnpm audit --audit-level=high --ignore CVE-2026-56876
 
   code-security:
+    # Private repositories must enable GitHub Code Scanning before SARIF uploads work.
+    if: github.event.repository.private == false || vars.CODEQL_ENABLED == 'true'
     runs-on: macos-latest
     permissions:
       actions: read
