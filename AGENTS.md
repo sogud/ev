@@ -65,6 +65,7 @@ builds for every affected workspace.
 
 ## UI verification operations
 
+- 通用页面打开/截图优先用 EV 自己的浏览器能力（`ev browser oneShot` / `session.command`），顺带 dogfood 浏览器链路；agent-browser 只在 EV 不可用时兜底。
 - Electron CDP + `agent-browser` on port 9333; 9222 is the user's Chrome, never touch it.
 - Assert UI with `agent-browser eval` text assertions; do not read full-size screenshots
   (root `AGENTS.md` red line).
