@@ -31,6 +31,7 @@
 - [ ] 并行任务板 / worktree-per-task 编排
 - [ ] 移动端 observer 审批 UX（最小集已砍掉审批；桌面侧也未做）
 - [ ] 移动端 Capacitor 壳（2026-08-09 定案：先只做 H5）
+- [ ] 移动端原生应用（2026-08-16 占位：方向暂定 React Native/Expo，暂缓；移动端形态先由 web 响应式承接；原生启动时可复用 @ev/contracts/store/view-model 逻辑层，视图重写）
 - [ ] 桌面 app 分发整条线（2026-08-09 定案：桌面未打磨完、不发、先不考虑；
       含 electron-builder 真 pack、better-sqlite3 按 Electron ABI 重编两条债，
       到要分发时再启）
