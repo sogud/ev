@@ -1,6 +1,7 @@
 import { Menu } from '@base-ui/react/menu';
 import { Check, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export interface MenuPickerOption<Value extends string> {
   value: Value;
@@ -18,13 +19,14 @@ export function MenuPicker<Value extends string>({
   ariaLabel: string;
   onValueChange(value: Value): void;
 }): React.JSX.Element {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const selected = options.find(option => option.value === value);
 
   return (
     <Menu.Root open={open} onOpenChange={setOpen}>
       <Menu.Trigger className='ev-menu-trigger' aria-label={ariaLabel}>
-        <span>{selected?.label ?? 'Select'}</span>
+        <span>{selected?.label ?? t('browser.common.select')}</span>
         <ChevronDown size={12} aria-hidden='true' />
       </Menu.Trigger>
       <Menu.Portal>

@@ -4,18 +4,18 @@ Status: implemented
 
 ## Goal
 
-Give each Agent an ephemeral BrowserSession over the user's existing Chrome. Browser Host owns session state and tab ownership. A session creates its own unfocused Chrome window, may open owned tabs inside that window, and may use an existing user tab only after explicit adoption.
+Every EV page and browser-workspace operation runs inside an ephemeral BrowserSession over the user's existing Chrome. Each session creates a new unfocused Chrome window and one EV tab group. All EV-created tabs in that session remain in the same group. EV never adopts, targets, moves, focuses, or closes an existing user tab/window.
 
-P1 does not create a standalone browser or Chrome profile.
+P1 does not create a standalone browser or separate Chrome profile. Bookmarks, history, downloads, and recently closed sessions remain profile-global and therefore require explicit top-level commands.
 
 ## Ownership
 
-- `packages/contracts`: validates all session commands and snapshots at the control socket seam.
-- `packages/browser-host`: owns BrowserSession state, ownership checks, per-session command serialization, BrowserRun scoping, and release behavior.
+- `packages/contracts`: validates session, one-shot, scoped workspace, and group commands at the control socket seam.
+- `packages/browser-host`: owns session state, tab/window/group checks, per-session serialization, BrowserRun scoping, re-grouping, and release behavior.
 - Browser extension: executes typed Chrome operations only. It does not know BrowserSession IDs or persist ownership.
-- CLI: submits `session.*` commands and prints their final result.
+- CLI and Skill: require `session.command` or `oneShot` for page/workspace actions.
 
-BrowserSession state is memory-only. Restarting Browser Host invalidates every session. P1 never reconstructs ownership from Chrome state because that could misidentify user tabs.
+BrowserSession state is memory-only. Restarting Browser Host invalidates every session. Ownership is never reconstructed from Chrome state because that could misidentify user tabs.
 
 ## Commands
 
@@ -24,28 +24,31 @@ BrowserSession state is memory-only. Restarting Browser Host invalidates every s
 ```json
 {
   "action": "browser.session.create",
-  "url": "https://x.com/settings/mute_and_block"
+  "url": "https://example.com"
 }
 ```
 
-Creates one `focused: false` Chrome window with one owned tab and returns a BrowserSession snapshot.
-
-### List and get
-
-```json
-{ "action": "browser.session.list" }
-{ "action": "browser.session.get", "sessionId": "uuid" }
-```
-
-Snapshots contain:
+Creates one `focused: false` Chrome window, groups the initial tab, and returns:
 
 - `sessionId`
 - dedicated `windowId`
+- dedicated `groupId`
 - `ownedTabIds`
-- `borrowedTabIds`
-- optional `activeTabId`
+- `activeTabId`
 
-Before returning a snapshot, Browser Host removes tabs that no longer exist.
+No borrowed/adopted tab concept exists.
+
+### One-shot
+
+```json
+{
+  "action": "browser.oneShot",
+  "url": "https://example.com",
+  "command": { "action": "page.context", "maxChars": 20000 }
+}
+```
+
+Creates a temporary BrowserSession, executes one scoped command, releases EV-owned tabs, and returns the normal `BrowserSessionCommandResult`. It is for operations that do not need later refs or page state.
 
 ### Open an owned tab
 
@@ -53,24 +56,12 @@ Before returning a snapshot, Browser Host removes tabs that no longer exist.
 {
   "action": "browser.session.open",
   "sessionId": "uuid",
-  "url": "https://x.com/settings/notifications",
+  "url": "https://example.com/docs",
   "active": true
 }
 ```
 
-The tab is created inside the session's dedicated window and becomes owned by the session.
-
-### Adopt an existing user tab
-
-```json
-{
-  "action": "browser.session.adoptTab",
-  "sessionId": "uuid",
-  "tabId": 123
-}
-```
-
-Adoption is explicit, does not move or focus the tab, and records it as borrowed. One tab may belong to only one BrowserSession. Adopting a tab already owned or borrowed by another session fails.
+The tab is created inside the dedicated window and immediately added to the session's existing group. If grouping fails, Host closes only that newly created tab and returns an error.
 
 ### Execute a scoped command
 
@@ -85,17 +76,25 @@ Adoption is explicit, does not move or focus the tab, and records it as borrowed
 }
 ```
 
-`command` accepts typed `page.*` atomic commands or one `browser.run` plan. Commands without `tabId` use the session's active tab. An explicit `tabId` must be owned or borrowed by that session. BrowserRun receives the same ownership check for every atomic command it emits.
+Allowed command families:
 
-The result is:
+- typed `page.*`
+- `browser.run`
+- `zoom.get/set`
+- owned tab operations: list/get/update/move/duplicate/discard/close/activate
+- the session window: list/update
+- the session group: list/update
 
-```json
-{
-  "sessionId": "uuid",
-  "tabId": 123,
-  "result": {}
-}
-```
+Commands without `tabId` use the session's active tab. Explicit tab/window/group IDs must belong to that session. BrowserRun applies the same ownership check to every emitted atomic command. Ordinary page commands use fixed content-script/tabs APIs; advanced commands attach bounded CDP only when required, with concurrent same-tab attaches coalesced.
+
+The following are rejected because they break isolation or the one-group invariant:
+
+- adopting or targeting an existing user tab
+- direct top-level page/window/tab/group/zoom/run actions
+- pinned session tabs
+- creating a second group or ungrouping session tabs
+- closing the final tab instead of releasing the session
+- `sessions.restore`, because its restored target is not scoped to EV ownership
 
 ### Release
 
@@ -103,68 +102,54 @@ The result is:
 { "action": "browser.session.release", "sessionId": "uuid" }
 ```
 
-Release:
+Release refreshes live tab state, closes only EV-owned tabs, and removes Host ownership. It never closes the window directly. If the user manually moved an unrelated tab into the dedicated window, that unknown tab survives.
 
-1. refreshes live tab state;
-2. closes only tabs created by the session;
-3. never closes borrowed tabs;
-4. never closes the window directly;
-5. removes the in-memory ownership record.
+## Group invariant
 
-Not closing the window directly matters: if the user manually moved an unrelated tab into the dedicated window, that unknown tab must survive release. Chrome closes the window naturally only when its final owned tab closes.
+- Session creation makes one group titled `EV`.
+- Every later owned tab is added to that group before ownership is recorded.
+- Before commands and snapshots, Host refreshes live tabs.
+- If an EV-owned tab was moved or ungrouped, Host adds it back to the original group, which also restores it to the dedicated window.
+- Unknown tabs are never added, adopted, closed, or reported as session-owned.
 
-## Chrome atomic change
+The Extension action `tabGroups.add` exists only as a typed Host primitive. It is not a public top-level workspace action.
 
-P1 adds one typed Extension action:
+## Profile-global actions
 
-```json
-{
-  "action": "windows.open",
-  "url": "https://example.com",
-  "focused": false
-}
-```
+These cannot be isolated by a Chrome window and remain top-level only when explicitly requested:
 
-It returns `windowId` and the initial `tabId`. Existing `tabs.open` gains an optional `windowId` so Browser Host can open owned tabs in the dedicated window.
+- bookmarks
+- downloads and download records
+- history
+- `sessions.recent` read access
 
-No arbitrary Chrome API proxy, eval, script, or page JavaScript is added.
+Destructive bookmark/history/download operations retain backup and confirmation requirements. `sessions.restore` is unavailable under isolated operation.
 
-## Concurrency
+## Concurrency and limits
 
 - Commands within one BrowserSession are serialized.
-- Different BrowserSessions may execute concurrently.
-- Ownership mutations are atomic across sessions.
-- A release waits for earlier commands in the same session and prevents later commands.
-
-## Limits and errors
-
-- Session IDs are UUIDs generated by Browser Host.
-- A Host process may hold at most 32 live BrowserSessions.
-- A BrowserSession may own or borrow at most 32 live tabs.
-- Unknown, released, or stale sessions fail explicitly.
-- Missing or manually closed tabs are pruned before use.
-- If session creation succeeds in Chrome but Host cannot record the session, Host closes only the newly created tab.
-- BrowserRun P0 limits remain unchanged inside a session.
+- Different BrowserSessions execute concurrently.
+- Ownership creation is serialized across sessions.
+- At most 32 sessions per Host and 32 owned tabs per session.
+- A release waits for earlier commands in the same session.
+- Unknown, released, stale, or empty sessions fail explicitly.
 
 ## Acceptance
 
-1. Creating a session opens an unfocused Chrome window and records its initial tab as owned.
-2. Opening a tab places it in the dedicated window and records ownership.
-3. A scoped command cannot target a tab outside the session.
-4. Explicit adoption allows a scoped command to use one existing user tab without moving it.
-5. Two sessions cannot adopt or own the same tab.
-6. Session BrowserRun keeps all emitted atomic page commands inside session ownership.
-7. Release closes owned tabs, preserves borrowed and unknown tabs, and clears Host state.
-8. Commands in one session are serialized while separate sessions can progress independently.
-9. Host restart leaves no persisted BrowserSession state.
-10. Tests use a fake Chrome bridge and never touch the user's real Chrome.
+1. Session creation opens a new unfocused Chrome window and creates one EV group.
+2. Every session-created or duplicated tab is in the same window and group.
+3. A scoped command cannot target any user tab, window, or group.
+4. There is no adopt/borrowed-tab API.
+5. A moved or ungrouped EV tab is restored to the session group before use.
+6. Direct public workspace actions are rejected; `oneShot` creates and releases a temporary session.
+7. BrowserRun and SiteRecipe remain inside session ownership.
+8. Release closes only EV-owned tabs and preserves unknown user tabs.
+9. Tests use fake Chrome bridges and never touch real Chrome.
 
 ## Out of scope
 
 - Persistent sessions or restart recovery.
-- Separate Chrome profiles, incognito sessions, cookies, or credential isolation.
-- Moving adopted tabs into the dedicated window.
-- Automatically adopting the active user tab.
-- Tab transfer between sessions.
+- Separate Chrome profiles, incognito sessions, cookie isolation, or credential isolation.
+- Controlling Chrome privileged pages or native OS windows.
+- Restoring recently closed user sessions.
 - BrowserSession UI in Desktop.
-- SiteRecipe storage and learning capture.

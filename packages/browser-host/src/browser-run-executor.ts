@@ -75,7 +75,8 @@ export class BrowserRunExecutor {
       }
 
       for (let itemIndex = 0; itemIndex < step.items.length; itemIndex += 1) {
-        const item = step.items[itemIndex]!;
+        const item = step.items[itemIndex];
+        if (item === undefined) throw new Error(`BrowserRun item ${itemIndex} is unavailable`);
         summary.iterations += 1;
         let failedStepId = step.id;
         try {
@@ -147,7 +148,14 @@ export class BrowserRunExecutor {
     const withTabId = tabId === undefined ? {} : { tabId };
     switch (command.action) {
       case 'page.navigate':
-        return { action: 'page.navigate', ...withTabId, url: command.url };
+        return {
+          action: 'page.navigate',
+          ...withTabId,
+          frameId: command.frameId,
+          url: command.url,
+        };
+      case 'page.history':
+        return { action: 'page.history', ...withTabId, operation: command.operation };
       case 'page.press':
         return {
           action: 'page.press',
@@ -155,11 +163,33 @@ export class BrowserRunExecutor {
           key: command.key,
           modifiers: command.modifiers,
         };
+      case 'page.pointer':
+        return {
+          action: 'page.pointer',
+          ...withTabId,
+          type: command.type,
+          x: command.x,
+          y: command.y,
+          button: command.button,
+          clickCount: command.clickCount,
+        };
+      case 'page.dialog.respond':
+        return {
+          action: 'page.dialog.respond',
+          ...withTabId,
+          accept: command.accept,
+          promptText: command.promptText,
+        };
       case 'page.click':
         return {
           action: 'page.click',
           ...withTabId,
-          selector: await this.resolveTarget(command.target, tabId),
+          frameId: command.frameId,
+          selector: await this.resolveTarget(command.target, tabId, command.frameId),
+          button: command.button,
+          clickCount: command.clickCount,
+          waitFor: command.waitFor,
+          timeoutMs: command.timeoutMs,
         };
       case 'page.type': {
         const text = typeof command.text === 'string' ? command.text : item;
@@ -167,31 +197,136 @@ export class BrowserRunExecutor {
         return {
           action: 'page.type',
           ...withTabId,
-          selector: await this.resolveTarget(command.target, tabId),
+          frameId: command.frameId,
+          selector: await this.resolveTarget(command.target, tabId, command.frameId),
           text,
           clearFirst: command.clearFirst,
         };
       }
+      case 'page.setChecked':
+        return {
+          action: 'page.setChecked',
+          ...withTabId,
+          frameId: command.frameId,
+          selector: await this.resolveTarget(command.target, tabId, command.frameId),
+          checked: command.checked,
+        };
+      case 'page.select':
+        return {
+          action: 'page.select',
+          ...withTabId,
+          frameId: command.frameId,
+          selector: await this.resolveTarget(command.target, tabId, command.frameId),
+          values: command.values,
+        };
+      case 'page.drag': {
+        const [sourceSelector, targetSelector] = await this.resolveTargets(
+          [command.source, command.target],
+          tabId,
+          command.frameId
+        );
+        if (sourceSelector === undefined || targetSelector === undefined) {
+          throw new Error('BrowserRun drag target resolution returned no result');
+        }
+        return {
+          action: 'page.drag',
+          ...withTabId,
+          frameId: command.frameId,
+          sourceSelector,
+          targetSelector,
+        };
+      }
+      case 'page.focus':
+        return {
+          action: 'page.focus',
+          ...withTabId,
+          frameId: command.frameId,
+          selector: await this.resolveTarget(command.target, tabId, command.frameId),
+        };
+      case 'page.inspect':
+        return {
+          action: 'page.inspect',
+          ...withTabId,
+          frameId: command.frameId,
+          selector: await this.resolveTarget(command.target, tabId, command.frameId),
+          maxChars: command.maxChars,
+        };
+      case 'page.hover':
+        return {
+          action: 'page.hover',
+          ...withTabId,
+          frameId: command.frameId,
+          selector: await this.resolveTarget(command.target, tabId, command.frameId),
+        };
+      case 'page.scroll':
+        return {
+          action: 'page.scroll',
+          ...withTabId,
+          frameId: command.frameId,
+          selector: command.target
+            ? await this.resolveTarget(command.target, tabId, command.frameId)
+            : undefined,
+          direction: command.direction,
+          distance: command.distance,
+          deltaX: command.deltaX,
+          deltaY: command.deltaY,
+        };
+      case 'page.wait':
+        return {
+          action: 'page.wait',
+          ...withTabId,
+          frameId: command.frameId,
+          condition: command.condition,
+          selector: command.target
+            ? await this.resolveTarget(command.target, tabId, command.frameId)
+            : undefined,
+          timeMs: command.timeMs,
+          timeoutMs: command.timeoutMs,
+          idleMs: command.idleMs,
+        };
+      default:
+        throw new Error(`Unsupported BrowserRun action: ${(command as { action: string }).action}`);
     }
   }
 
-  private async resolveTarget(target: BrowserRunTarget, tabId?: number): Promise<string> {
-    if ('selector' in target) return target.selector;
+  private async resolveTarget(
+    target: BrowserRunTarget,
+    tabId?: number,
+    frameId?: string
+  ): Promise<string> {
+    const [resolved] = await this.resolveTargets([target], tabId, frameId);
+    if (resolved === undefined) throw new Error('BrowserRun target resolution returned no result');
+    return resolved;
+  }
+
+  private async resolveTargets(
+    targets: BrowserRunTarget[],
+    tabId?: number,
+    frameId?: string
+  ): Promise<string[]> {
+    if (targets.every(target => 'selector' in target)) {
+      return targets.map(target => ('selector' in target ? target.selector : ''));
+    }
     const result = await this.sendAtomicCommand({
       action: 'page.snapshot',
       ...(tabId === undefined ? {} : { tabId }),
+      ...(frameId === undefined ? {} : { frameId }),
       mode: 'interactive',
       maxNodes: 1_000,
     });
-    const exact = target.exact ?? true;
-    const matches = snapshotNodes(result).filter(
-      node =>
-        node.role === target.role &&
-        (exact ? node.name === target.name : node.name.includes(target.name))
-    );
-    const match = matches[target.index ?? 0];
-    if (!match) throw new Error(`Semantic target not found: ${target.role} ${target.name}`);
-    return match.ref;
+    const nodes = snapshotNodes(result);
+    return targets.map(target => {
+      if ('selector' in target) return target.selector;
+      const exact = target.exact ?? true;
+      const matches = nodes.filter(
+        node =>
+          node.role === target.role &&
+          (exact ? node.name === target.name : node.name.includes(target.name))
+      );
+      const match = matches[target.index ?? 0];
+      if (!match) throw new Error(`Semantic target not found: ${target.role} ${target.name}`);
+      return match.ref;
+    });
   }
 
   private assertWithinDeadline(deadline: number): void {

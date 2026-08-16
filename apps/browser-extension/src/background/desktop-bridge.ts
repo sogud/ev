@@ -1,5 +1,4 @@
 import {
-  BridgeConfigSchema,
   DesktopToExtensionMessageSchema,
   EV_PROTOCOL_VERSION,
   type BridgeConfig,
@@ -100,12 +99,8 @@ export class DesktopBridge {
       chrome.storage.local.get(PAIRING_TOKEN_KEY),
     ]);
     const rawConfig = storedConfig[DESKTOP_BRIDGE_CONFIG_KEY];
-    const result = BridgeConfigSchema.safeParse(rawConfig ?? { enabled: true });
-    if (!result.success || !result.data.enabled) {
-      this.config = null;
-      return;
-    }
-    this.config = result.data;
+    const enabledConfig: BridgeConfig = { enabled: true };
+    this.config = enabledConfig;
 
     const legacyToken =
       rawConfig && typeof rawConfig === 'object' && 'pairingToken' in rawConfig
@@ -118,13 +113,14 @@ export class DesktopBridge {
         ? legacyToken
         : undefined;
     const configNeedsMigration =
-      rawConfig === undefined ||
-      (typeof rawConfig === 'object' &&
-        rawConfig !== null &&
-        Object.keys(rawConfig).some(key => key !== 'enabled'));
+      typeof rawConfig !== 'object' ||
+      rawConfig === null ||
+      !('enabled' in rawConfig) ||
+      rawConfig.enabled !== true ||
+      Object.keys(rawConfig).some(key => key !== 'enabled');
     if (configNeedsMigration || migratedToken) {
       await chrome.storage.local.set({
-        ...(configNeedsMigration ? { [DESKTOP_BRIDGE_CONFIG_KEY]: result.data } : {}),
+        ...(configNeedsMigration ? { [DESKTOP_BRIDGE_CONFIG_KEY]: enabledConfig } : {}),
         ...(migratedToken ? { [PAIRING_TOKEN_KEY]: migratedToken } : {}),
       });
     }

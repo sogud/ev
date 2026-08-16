@@ -15,7 +15,7 @@ export function resolveLanguage(stored: string | null | undefined): EvLanguage {
 }
 
 /**
- * Shared i18next bootstrap for every EV UI (desktop renderer, mobile).
+ * Shared i18next bootstrap for every EV UI (desktop renderer, mobile, browser extension).
  * Resources live in en.json/zh.json — the single source of truth.
  */
 export function initEvI18n(language?: string | null): I18n {

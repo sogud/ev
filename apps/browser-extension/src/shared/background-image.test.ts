@@ -39,6 +39,15 @@ describe('background image storage', () => {
     expect(await readSavedBackgroundImage()).toBeNull();
   });
 
+  it('lets the translated UI provide a fallback when an old image has no name', async () => {
+    storage[BACKGROUND_IMAGE_STORAGE_KEY] = 'data:image/png;base64,fixture';
+
+    expect(await readSavedBackgroundImage()).toEqual({
+      dataUrl: 'data:image/png;base64,fixture',
+      name: '',
+    });
+  });
+
   it('rejects non-image files before reading them', async () => {
     const file = { type: 'text/plain', size: 12 } as File;
     await expect(readBackgroundImageFile(file)).rejects.toThrow('Please choose an image file');

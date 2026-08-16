@@ -1,5 +1,6 @@
-import React from 'react';
+import type React from 'react';
 import { Trash2, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from './button';
 
 interface DeleteConfirmationProps {
@@ -19,11 +20,14 @@ const DeleteConfirmation: React.FC<DeleteConfirmationProps> = ({
   type = 'bookmark',
   className = '',
 }) => {
+  const { t } = useTranslation();
   return (
     <div className={`flex items-center gap-2 ${className}`}>
       <div className='flex-1 min-w-0 text-center'>
         <p className='text-sm text-destructive font-medium'>
-          Delete the {type === 'bookmark' ? 'bookmark' : 'folder'}?
+          {type === 'bookmark'
+            ? t('browser.newTab.deleteBookmark')
+            : t('browser.newTab.deleteFolder')}
         </p>
         <p className='text-xs text-muted-foreground truncate'>"{itemName}"</p>
       </div>

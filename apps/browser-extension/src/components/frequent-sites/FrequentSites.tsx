@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import type React from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
 
 interface ChromeHistoryItem {
@@ -33,9 +35,10 @@ function siteDomain(url: string): string {
 }
 
 const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) => {
+  const { t } = useTranslation();
   const [sites, setSites] = useState<FrequentSite[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<'historyUnavailable' | 'frequentSitesError' | null>(null);
 
   const getFavicon = useCallback((url: string): string => {
     try {
@@ -51,7 +54,7 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
       setLoading(true);
       setError(null);
       if (!chrome.history) {
-        setError('The browser did not expose history');
+        setError('historyUnavailable');
         return;
       }
 
@@ -89,7 +92,7 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
       setSites(processedSites);
     } catch (loadError) {
       console.error('Failed to load frequent sites:', loadError);
-      setError('Could not load frequent sites');
+      setError('frequentSitesError');
     } finally {
       setLoading(false);
     }
@@ -102,9 +105,9 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
   const formatLastVisit = (timestamp: number): string => {
     const hours = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60));
     const days = Math.floor(hours / 24);
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return 'recent';
+    if (days > 0) return t('browser.newTab.daysAgo', { count: days });
+    if (hours > 0) return t('browser.newTab.hoursAgo', { count: hours });
+    return t('browser.newTab.recent');
   };
 
   return (
@@ -112,8 +115,8 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
       <div className='ev-section-heading'>
         <div className='ev-section-heading-main'>
           <div>
-            <h2 id='frequent-sites-title'>Frequent sites</h2>
-            <p>Last 30 days</p>
+            <h2 id='frequent-sites-title'>{t('browser.newTab.frequentSites')}</h2>
+            <p>{t('browser.newTab.lastThirtyDays')}</p>
           </div>
         </div>
         {onClose && (
@@ -121,29 +124,32 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
             variant='ghost'
             size='icon'
             onClick={onClose}
-            aria-label='Hide frequent sites'
-            title='Hide frequent sites'>
+            aria-label={t('browser.newTab.hideFrequentSites')}
+            title={t('browser.newTab.hideFrequentSites')}>
             <X size={14} />
           </Button>
         )}
       </div>
 
       {loading ? (
-        <div className='ev-frequent-grid' aria-busy='true' aria-label='Loading frequent sites'>
+        <div
+          className='ev-frequent-grid'
+          aria-busy='true'
+          aria-label={t('browser.newTab.loadingFrequentSites')}>
           {Array.from({ length: maxSites }).map((_, index) => (
             <div key={index} className='loading-skeleton ev-frequent-skeleton' />
           ))}
         </div>
       ) : error ? (
         <div className='ev-inline-empty' role='status'>
-          <span>{error}</span>
+          <span>{t(`browser.newTab.${error}`)}</span>
           <button type='button' onClick={() => void loadFrequentSites()}>
-            Retry
+            {t('browser.common.retry')}
           </button>
         </div>
       ) : sites.length === 0 ? (
         <div className='ev-inline-empty' role='status'>
-          Browse for a while and frequent sites will show up here.
+          {t('browser.newTab.frequentSitesEmpty')}
         </div>
       ) : (
         <div className='ev-frequent-grid'>
@@ -153,7 +159,11 @@ const FrequentSites: React.FC<FrequentSitesProps> = ({ maxSites = 8, onClose }) 
               type='button'
               onClick={() => window.open(site.url, '_blank')}
               className='ev-frequent-site'
-              title={`${site.title} · ${site.visitCount} visits · ${formatLastVisit(site.lastVisitTime)}`}>
+              title={t('browser.newTab.siteVisits', {
+                title: site.title,
+                count: site.visitCount,
+                lastVisit: formatLastVisit(site.lastVisitTime),
+              })}>
               <span
                 className='ev-frequent-site-icon'
                 data-letter={site.title[0]?.toUpperCase() ?? '·'}

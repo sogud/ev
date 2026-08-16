@@ -24,21 +24,22 @@ npm install --global @sogud/ev
 
 ```bash
 ev browser check
-ev browser tabs.list --compact
-ev browser page.snapshot --payload '{"tabId":123,"mode":"interactive"}' --compact
-ev browser page.click --payload '{"tabId":123,"selector":"@e1"}' --compact
-ev browser page.media --payload '{"tabId":123}' --compact
-ev browser page.download --payload '{"tabId":123,"ref":"@m1"}' --compact
-ev browser downloads.status --payload '{"downloadId":"local:UUID"}' --compact
-ev browser page.screenshot --payload '{"tabId":123,"fullPage":true}' --output /tmp/page.png
-ev browser run --payload-file ./browser-plan.json --timeout 120 --compact
 
+# 单次操作：自动创建专属 window + group，执行后释放
+ev browser oneShot --payload '{"url":"https://example.com","command":{"action":"page.context"}}' --compact
+
+# 多步操作：所有 page/workspace action 都放进 session.command
 ev browser session.create --payload '{"url":"https://example.com"}' --compact
-ev browser session.list --compact
-ev browser recipe.list --compact
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.snapshot","mode":"interactive"}}' --compact
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.click","selector":"@e1"}}' --compact
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"tabs.list"}}' --compact
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.screenshot","fullPage":true}}' --output /tmp/page.png
+ev browser session.release --payload '{"sessionId":"UUID"}' --compact
 
+# Chrome profile 全局 action 仅在用户明确要求时直接调用
+ev browser history.search --payload '{"text":"EV","maxResults":20}' --compact
+ev browser downloads.status --payload '{"downloadId":"local:UUID"}' --compact
 ev browser bookmarks.list --compact
-ev browser bookmarks.search --payload '{"query":"EV"}' --compact
 ev browser bookmarks.export --output ~/Documents/ev-bookmarks-backup.json --compact
 ```
 
@@ -55,6 +56,27 @@ ev browser host stop
 - `--timeout <seconds>`：命令超时，最大 300 秒。
 - `--compact`：输出单行 JSON。
 - `--output <path>`：保存 `page.screenshot` 图片或 `bookmarks.export` JSON。
+
+## P0/P1 浏览器控制
+
+P0 页面 action 包含导航历史、点击/双击/右键、输入、checkbox/radio、原生 select、拖拽、focus、元素状态读取、键盘、坐标 pointer、滚动、iframe、JavaScript dialog，以及 navigation/network-idle/popup/download 等待。普通 navigate/context/snapshot/左键 click/type/check/select/focus/inspect/scroll/target wait/viewport screenshot 使用固定 content script 或 tabs API，不调用 `chrome.debugger.attach`；仅高级底层输入、iframe、Network/Console、emulation、上传、媒体和 full-page screenshot 调用 CDP attach。`page.click.waitFor` 会在点击前注册事件监听，避免错过新页面、popup 或下载事件。
+
+P1 浏览器工作区能力包含 window、tab、tab group、download、history、recent sessions 和 zoom。对外规则是：
+
+- page/window/tab/tab group/zoom/BrowserRun 必须放进 `browser.session.command`，或使用带 URL 的 `browser.oneShot`。
+- 每个 Session 自动新建不抢焦点的 window，并把所有 EV-owned tabs 保持在同一个 group。
+- 不存在 adopt/borrowed tab；Host 拒绝任何用户 tab/window/group ID。
+- 创建第二个 group、ungroup、pin session tab、关闭最后一个 tab 和 `sessions.restore` 均被拒绝。
+- bookmarks、downloads、history、`sessions.recent` 是 profile 全局 action，只在用户明确调用时执行。
+
+删除下载或历史必须传入固定确认串：
+
+```bash
+ev browser downloads.remove --payload '{"downloadId":"chrome:42","mode":"both","confirm":"REMOVE_DOWNLOAD"}' --compact
+ev browser history.remove --payload '{"target":{"type":"url","url":"https://example.com"},"confirm":"REMOVE_BROWSER_HISTORY"}' --compact
+```
+
+EV Browser 安装时启用页面、站点和下载能力，Options 只显示“已开启”，不提供权限勾选开关。同一 tab 的并发 CDP attach 合并为一次。EV 不暴露 Cookie、密码、Token、Passkey、调用方 JavaScript、任意 CDP 或任意 Chrome API。
 
 ## SiteRecipe 站点经验
 
@@ -87,10 +109,10 @@ ev browser recipe.approve --payload '{"recipeId":"x.mute-words-english","reviewT
 
 ## BrowserSession 所有权
 
-多步 Agent 自动化优先创建 BrowserSession。Host 会在用户现有 Chrome 中创建一个不抢焦点的专属 window，只有 session 创建的 tab 才是 owned tab：
+多步 Agent 自动化必须创建 BrowserSession。Host 会新建一个不抢焦点的专属 window 和一个 EV tab group，所有 session tabs 都保持在该 group：
 
 ```bash
-# 创建 session；记下返回的 sessionId
+# 创建 session；记下返回的 sessionId、windowId、groupId
 ev browser session.create --payload '{"url":"https://example.com"}' --compact
 
 # 在专属 window 新建 owned tab
@@ -99,52 +121,49 @@ ev browser session.open --payload '{"sessionId":"UUID","url":"https://example.co
 # 缺省操作 activeTabId；也可显式传 session 内的 tabId
 ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.snapshot","mode":"interactive"}}' --compact
 
-# 结束时释放：只关闭 owned tabs
+# 结束时释放：只关闭 EV-owned tabs
 ev browser session.release --payload '{"sessionId":"UUID"}' --compact
 ```
 
-只有任务明确需要用户现有 tab 时才显式 adopt。adopt 不移动、不聚焦、不关闭用户 tab；一个 tab 不能同时属于两个 BrowserSession：
-
-```bash
-ev browser session.adoptTab --payload '{"sessionId":"UUID","tabId":123}' --compact
-```
-
-`session.list` / `session.get` 可检查当前 Host 内存中的 ownership。Host 重启后所有 session 失效，不从 Chrome 猜测恢复。每个 Host 最多 32 个 session，每个 session 最多 32 个 owned/borrowed tabs。
+EV 不采用用户已有 tab。`session.list` / `session.get` 可检查当前 Host 内存中的 ownership。Host 重启后所有 session 失效，不从 Chrome 猜测恢复。每个 Host 最多 32 个 session，每个 session 最多 32 个 owned tabs。若用户手动把其它 tab 移入 EV window，release 会保留这些未知 tab。
 
 ## BrowserRun 批处理
 
-`ev browser run` 把顺序步骤、语义定位、循环和重试留在 Browser Host 本地，只输出最终汇总，不把中间 snapshot 塞进 Agent 上下文。P0 支持 `command`、`wait`、非嵌套 `forEach`，以及 `page.navigate/click/type/press`。语义目标每次执行或重试前都会重新定位，因此不会复用过期的 `@eN`。
+把 `browser.run` 作为 `session.command.command` 运行，可将顺序步骤、语义定位、循环和重试留在 Browser Host 本地，只输出最终汇总，不把中间 snapshot 塞进 Agent 上下文。它支持 `command`、`wait`、非嵌套 `forEach`，以及 P0 的导航、表单、拖拽、focus、inspect、pointer、滚动、条件等待和 dialog actions。语义目标每次执行或重试前都会重新定位，因此不会复用过期的 `@eN`；拖拽的起点和终点在同一份新 snapshot 中解析。
 
 ```json
 {
-  "tabId": 123,
-  "steps": [
-    {
-      "kind": "forEach",
-      "id": "fill-items",
-      "items": ["first", "second"],
-      "onError": "continue",
-      "steps": [
-        {
-          "kind": "command",
-          "command": {
-            "action": "page.type",
-            "target": { "role": "textbox", "name": "输入内容" },
-            "text": { "from": "item" }
-          },
-          "retry": { "attempts": 5, "delayMs": 400 }
-        }
-      ]
-    }
-  ]
+  "sessionId": "UUID",
+  "command": {
+    "action": "browser.run",
+    "steps": [
+      {
+        "kind": "forEach",
+        "id": "fill-items",
+        "items": ["first", "second"],
+        "onError": "continue",
+        "steps": [
+          {
+            "kind": "command",
+            "command": {
+              "action": "page.type",
+              "target": { "role": "textbox", "name": "输入内容" },
+              "text": { "from": "item" }
+            },
+            "retry": { "attempts": 5, "delayMs": 400 }
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
 ```bash
-ev browser run --payload-file ./browser-plan.json --timeout 120 --compact
+ev browser session.command --payload-file ./browser-session-run.json --timeout 120 --compact
 ```
 
-BrowserRun 也可作为 `session.command.command` 运行；Host 会给 plan 注入 session tab，并检查每个原子 command 都没有越过 ownership。
+Host 会给 plan 注入 session tab，并检查每个原子 command 都没有越过 ownership；顶层 `ev browser run` 会被拒绝。
 
 限制：最多 50 个顶层步骤、100 个循环项、2,000 次原子 command；不支持嵌套循环、任意表达式、shell、DOM JavaScript 或 `page.eval`。
 
@@ -177,7 +196,7 @@ ev browser bookmarks.removeTree --payload '{"id":"43","confirm":"REMOVE_BOOKMARK
 ev browser bookmarks.restore --payload-file ~/Documents/ev-bookmarks-before-cleanup.json --compact
 ```
 
-所有 action 都由 `@ev/contracts` 校验。`page.eval` 不可用；`page.upload` 只接受存在的绝对文件路径。下载需要先在 EV Browser Options 显式授权。直链资源使用 Chrome Downloads；非 DRM HLS/DASH 由 Browser Host 使用本地 `yt-dlp` 与 FFmpeg 处理；默认统一保存到 `~/Downloads/EV`。Native helper 的初始 URL、重定向和 playlist 子请求统一经过安全代理，拒绝访问 loopback、private、link-local 和 reserved 网络。
+所有 action 都由 `@ev/contracts` 校验。`page.eval` 不可用；`page.upload` 只接受存在的绝对文件路径。扩展安装后下载能力默认开启。直链资源使用 Chrome Downloads；非 DRM HLS/DASH 由 Browser Host 使用本地 `yt-dlp` 与 FFmpeg 处理；默认统一保存到 `~/Downloads/EV`。Native helper 的初始 URL、重定向和 playlist 子请求统一经过安全代理，拒绝访问 loopback、private、link-local 和 reserved 网络。
 
 ## 开发与打包
 

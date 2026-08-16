@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { Bookmark, BookmarkHandler, BookmarkItemProps } from '../../types';
 import { getFaviconUrl } from '../../utils/favicon';
 import { cn } from '../../lib/utils';
@@ -66,6 +67,7 @@ function BookmarkVisual({
 
 const Link: React.FC<LinkProps> = React.memo(
   ({ data, onUpdateBookmark, onDeleteBookmark, onContextMenu, isSelected = false }) => {
+    const { t } = useTranslation();
     const [mode, setMode] = useState<LinkMode>('normal');
     const [faviconUrl, setFaviconUrl] = useState('');
     const [isLoadingFavicon, setIsLoadingFavicon] = useState(true);
@@ -129,7 +131,7 @@ const Link: React.FC<LinkProps> = React.memo(
               initialValue={data.title}
               onSave={handleEditSave}
               onCancel={() => setMode('normal')}
-              placeholder='Enter bookmark name...'
+              placeholder={t('browser.newTab.bookmarkNamePlaceholder')}
             />
           </div>
         </div>
@@ -175,7 +177,7 @@ const Link: React.FC<LinkProps> = React.memo(
           setMode('editing');
         }}
         onContextMenu={event => onContextMenu?.(event, data)}
-        aria-label={`Open bookmark: ${data.title}`}
+        aria-label={t('browser.newTab.openBookmark', { title: data.title })}
         onKeyDown={event => {
           if (event.key === ' ') {
             event.preventDefault();

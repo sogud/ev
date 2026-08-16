@@ -23,7 +23,11 @@ class FakeWebSocket extends EventTarget {
   }
 
   send(value: string): void {
-    this.sent.push(JSON.parse(value));
+    try {
+      this.sent.push(JSON.parse(value));
+    } catch (error) {
+      throw new Error('DesktopBridge sent invalid JSON', { cause: error });
+    }
   }
 
   close(code = 1000, reason = ''): void {
@@ -103,6 +107,16 @@ describe('DesktopBridge automatic pairing', () => {
     bridge.reconnect();
     expect(sockets).toHaveLength(2);
     expect(sockets[1].url).toBe(DEFAULT_DESKTOP_BRIDGE_ENDPOINT);
+    bridge.stop();
+  });
+
+  test('re-enables a previously disabled bridge because browser capabilities are always on', async () => {
+    localStorage.ev_desktop_bridge = { enabled: false };
+    const bridge = new DesktopBridge();
+
+    await bridge.start();
+    expect(localStorage.ev_desktop_bridge).toEqual({ enabled: true });
+    expect(sockets[0]?.url).toBe(DEFAULT_DESKTOP_BRIDGE_ENDPOINT);
     bridge.stop();
   });
 

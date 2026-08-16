@@ -1,36 +1,22 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import type React from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { applyLanguagePreference } from '../i18n';
 import {
   BACKGROUND_IMAGE_NAME_STORAGE_KEY,
   BACKGROUND_IMAGE_STORAGE_KEY,
 } from '../shared/background-image';
-import type { Options } from '../types';
+import { DEFAULT_OPTIONS, type Options } from '../types';
 
 interface SettingsContextType {
   settings: Options;
+  isLoaded: boolean;
   updateSettings: (updates: Partial<Options>) => void;
   resetSettings: () => void;
 }
 
-const defaultSettings: Options = {
-  theme: 'auto',
-  sortBy: 'name',
-  iconColor: {
-    bookmark: '#737373',
-    folder: '#737373',
-  },
-  background: {
-    type: 'color',
-    value: 'transparent',
-    opacity: 100,
-  },
-  uiCustomization: {
-    cardStyle: 'minimal',
-    animationEnabled: true,
-    compactMode: true,
-  },
-};
-
 const SETTINGS_KEYS: Array<keyof Options> = [
+  'language',
+  'showNewTabBookmarks',
   'theme',
   'sortBy',
   'iconColor',
@@ -82,15 +68,21 @@ export const useSettings = () => {
 };
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<Options>(defaultSettings);
+  const [settings, setSettings] = useState<Options>(DEFAULT_OPTIONS);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
     // Load settings from Chrome storage.
-    chrome.storage.sync.get(defaultSettings, items => {
+    chrome.storage.sync.get(DEFAULT_OPTIONS, items => {
       setSettings(items as Options);
+      setIsLoaded(true);
     });
     return subscribeToSettingsStorage(setSettings);
   }, []);
+
+  useEffect(() => {
+    if (isLoaded) void applyLanguagePreference(settings.language);
+  }, [isLoaded, settings.language]);
 
   const updateSettings = (updates: Partial<Options>) => {
     const newSettings = { ...settings, ...updates };
@@ -99,12 +91,12 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const resetSettings = () => {
-    setSettings(defaultSettings);
-    chrome.storage.sync.set(defaultSettings);
+    setSettings(DEFAULT_OPTIONS);
+    chrome.storage.sync.set(DEFAULT_OPTIONS);
   };
 
   return (
-    <SettingsContext.Provider value={{ settings, updateSettings, resetSettings }}>
+    <SettingsContext.Provider value={{ settings, isLoaded, updateSettings, resetSettings }}>
       {children}
     </SettingsContext.Provider>
   );

@@ -9,31 +9,7 @@ export function applyThemePreference(theme: Options['theme']): void {
 
 /** Apply persisted appearance settings to the current extension page. */
 export const applyCustomSettings = (settings: Options) => {
-  const root = document.documentElement;
   applyThemePreference(settings.theme);
-
-  // Apply background
-  if (settings.background) {
-    let backgroundValue = 'none';
-
-    switch (settings.background.type) {
-      case 'gradient':
-        backgroundValue = settings.background.value;
-        break;
-      case 'color':
-        backgroundValue = settings.background.value;
-        break;
-      case 'image':
-        backgroundValue = 'none';
-        break;
-    }
-
-    root.style.setProperty('--custom-background', backgroundValue);
-    root.style.setProperty(
-      '--custom-background-opacity',
-      (settings.background.opacity / 100).toString()
-    );
-  }
 
   // Apply UI customization
   if (settings.uiCustomization) {
@@ -60,14 +36,20 @@ export const applyCustomSettings = (settings: Options) => {
 export async function applySavedBackground(settings: Options): Promise<void> {
   const root = document.documentElement;
   const savedImage = settings.background.type === 'image' ? await readSavedBackgroundImage() : null;
+  const isTransparent =
+    settings.background.type === 'color' && settings.background.value === 'transparent';
+  let background = 'none';
+  if (savedImage) {
+    background = `url(${JSON.stringify(savedImage.dataUrl)})`;
+  } else if (settings.background.type !== 'image' && !isTransparent) {
+    background = settings.background.value;
+  }
+  const hasCustomBackground = background !== 'none';
 
-  root.classList.toggle('ev-has-custom-background', Boolean(savedImage));
-  root.style.setProperty(
-    '--custom-background',
-    savedImage ? `url(${JSON.stringify(savedImage.dataUrl)})` : 'none'
-  );
+  root.classList.toggle('ev-has-custom-background', hasCustomBackground);
+  root.style.setProperty('--custom-background', background);
   root.style.setProperty(
     '--custom-background-opacity',
-    savedImage ? (settings.background.opacity / 100).toString() : '0'
+    hasCustomBackground ? (settings.background.opacity / 100).toString() : '0'
   );
 }

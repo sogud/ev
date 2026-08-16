@@ -19,6 +19,8 @@ export interface BookmarkFolder {
 }
 
 export interface Options {
+  language: 'system' | 'en' | 'zh';
+  showNewTabBookmarks: boolean;
   theme: 'light' | 'dark' | 'auto';
   sortBy: 'date' | 'name' | 'url';
   // Icon color settings.
@@ -39,6 +41,27 @@ export interface Options {
     compactMode: boolean;
   };
 }
+
+export const DEFAULT_OPTIONS: Options = {
+  language: 'system',
+  showNewTabBookmarks: true,
+  theme: 'auto',
+  sortBy: 'name',
+  iconColor: {
+    bookmark: '#737373',
+    folder: '#737373',
+  },
+  background: {
+    type: 'color',
+    value: 'transparent',
+    opacity: 100,
+  },
+  uiCustomization: {
+    cardStyle: 'minimal',
+    animationEnabled: true,
+    compactMode: true,
+  },
+};
 
 // Drag-and-drop types.
 export interface DragState {

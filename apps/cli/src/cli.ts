@@ -53,7 +53,7 @@ function usage(): string {
     '  ev browser <action> [--payload <json> | --payload-file <path>]',
     '                    [--timeout <seconds>] [--output <path>] [--compact]',
     '  ev browser check',
-    '  ev browser run --payload-file <plan.json>',
+    '  ev browser oneShot --payload \'{"url":"https://example.com","command":{"action":"page.snapshot"}}\'',
     '  ev browser session.create --payload \'{"url":"https://example.com"}\'',
     '  ev browser recipe.list',
     '  ev status                     LAN/Tailscale URLs + masked-token hint',
@@ -62,16 +62,13 @@ function usage(): string {
     '  ev server start|stop|status / ev task … / ev runtime …',
     '',
     'examples:',
-    '  ev browser tabs.list',
-    '  ev browser page.snapshot --payload \'{"mode":"interactive"}\'',
-    '  ev browser page.click --payload \'{"selector":"@e1"}\'',
-    '  ev browser page.media --payload \'{"tabId":123}\'',
-    '  ev browser page.download --payload \'{"tabId":123,"ref":"@m1"}\'',
+    '  ev browser oneShot --payload \'{"url":"https://example.com","command":{"action":"page.snapshot","mode":"interactive"}}\'',
+    '  ev browser session.create --payload \'{"url":"https://example.com"}\'',
+    '  ev browser session.command --payload \'{"sessionId":"UUID","command":{"action":"page.snapshot"}}\'',
+    '  ev browser history.search --payload \'{"text":"EV","maxResults":20}\'',
     '  ev browser downloads.status --payload \'{"downloadId":"chrome:42"}\'',
-    '  ev browser page.screenshot --output ./page.png',
     '  ev browser bookmarks.search --payload \'{"query":"EV"}\'',
     '  ev browser bookmarks.export --output ./bookmarks.json',
-    '  ev browser run --payload \'{"steps":[{"kind":"wait","timeMs":100}]}\'',
     '  ev browser session.list',
     '  ev browser recipe.run --payload-file <request.json>',
   ].join('\n');
@@ -80,6 +77,7 @@ function usage(): string {
 function normalizeBrowserAction(action: string): string {
   if (action === 'check') return 'browser.capabilities';
   if (action === 'run') return 'browser.run';
+  if (action === 'oneShot' || action === 'oneshot') return 'browser.oneShot';
   if (action.startsWith('session.') || action.startsWith('recipe.')) {
     return `browser.${action}`;
   }
@@ -161,9 +159,25 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
   };
 }
 
+function requiresBrowserSession(action: BrowserCommand['action']): boolean {
+  return (
+    action === 'browser.run' ||
+    action === 'sessions.restore' ||
+    action.startsWith('page.') ||
+    action.startsWith('tabs.') ||
+    action.startsWith('windows.') ||
+    action.startsWith('tabGroups.') ||
+    action.startsWith('zoom.')
+  );
+}
+
 async function validateLocalFiles(command: BrowserCommand): Promise<void> {
-  if (command.action !== 'page.upload') return;
-  for (const filePath of command.filePaths) {
+  const scopedCommand =
+    command.action === 'browser.oneShot' || command.action === 'browser.session.command'
+      ? command.command
+      : command;
+  if (scopedCommand.action !== 'page.upload') return;
+  for (const filePath of scopedCommand.filePaths) {
     if (!path.isAbsolute(filePath))
       throw new UsageError(`upload paths must be absolute: ${filePath}`);
     const info = await stat(filePath).catch(() => null);
@@ -297,15 +311,28 @@ async function saveOutput(
       outputPath: await writeBookmarkBackup(data, outputPath),
     };
   }
-  if (command.action !== 'page.screenshot') {
-    throw new UsageError('--output supports page.screenshot and bookmarks.export only');
+  const scopedCommand =
+    command.action === 'browser.oneShot' || command.action === 'browser.session.command'
+      ? command.command
+      : command;
+  if (scopedCommand.action !== 'page.screenshot') {
+    throw new UsageError('--output supports scoped page.screenshot and bookmarks.export only');
   }
-  if (!data || typeof data !== 'object' || !('data' in data) || typeof data.data !== 'string') {
+  let screenshot = data;
+  if (command.action === 'browser.oneShot' || command.action === 'browser.session.command') {
+    screenshot = data && typeof data === 'object' && 'result' in data ? data.result : undefined;
+  }
+  if (
+    !screenshot ||
+    typeof screenshot !== 'object' ||
+    !('data' in screenshot) ||
+    typeof screenshot.data !== 'string'
+  ) {
     throw new Error('Screenshot response does not contain image data');
   }
   await mkdir(path.dirname(path.resolve(outputPath)), { recursive: true, mode: 0o700 });
-  await writeFile(outputPath, Buffer.from(data.data, 'base64'), { mode: 0o600 });
-  const { data: _encoded, ...metadata } = data;
+  await writeFile(outputPath, Buffer.from(screenshot.data, 'base64'), { mode: 0o600 });
+  const { data: _encoded, ...metadata } = screenshot;
   return { ...metadata, outputPath: path.resolve(outputPath) };
 }
 
@@ -338,6 +365,11 @@ export async function run(argv: string[]): Promise<number> {
     });
     if (!commandResult.success) {
       throw new UsageError('unsupported browser action or invalid parameters');
+    }
+    if (requiresBrowserSession(commandResult.data.action)) {
+      throw new UsageError(
+        'browser workspace actions require session.command or oneShot; direct user tabs are never used'
+      );
     }
     await validateLocalFiles(commandResult.data);
     if (!process.env.EV_BROWSER_CONTROL_FILE?.trim()) await ensureStandaloneHost();

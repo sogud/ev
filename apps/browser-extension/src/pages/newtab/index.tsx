@@ -1,5 +1,7 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import type React from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom/client';
+import { I18nextProvider, useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   ChevronRight,
@@ -20,10 +22,11 @@ import { Button } from '../../components/ui/button';
 import ContextMenu from '../../components/context-menu/ContextMenu';
 import FrequentSites from '../../components/frequent-sites/FrequentSites';
 import { SettingsProvider, useSettings } from '../../contexts/SettingsContext';
+import { i18n } from '../../i18n';
 import { applyCustomSettings, applySavedBackground } from '../../utils/apply-settings';
 
 import type { Bookmark, BookmarkFolder, ChromeBookmarkTreeNode } from '../../types';
-import { convertToBookmark } from '../../types';
+import { convertToBookmark, DEFAULT_OPTIONS } from '../../types';
 import { preloadFavicons } from '../../utils/favicon';
 
 // Single state shape for the page.
@@ -58,6 +61,7 @@ const EditModal: React.FC<{
   onSave: (title: string) => void;
   title: string;
 }> = ({ isOpen, onClose, onSave, title }) => {
+  const { t } = useTranslation();
   const [inputTitle, setInputTitle] = useState(title);
 
   // Re-sync the title whenever the dialog opens or the target changes, so stale text never leaks in.
@@ -72,7 +76,7 @@ const EditModal: React.FC<{
   return (
     <div className='ev-modal-backdrop'>
       <div className='ev-modal-content'>
-        <h2>Edit bookmark</h2>
+        <h2>{t('browser.newTab.editBookmark')}</h2>
         <input
           type='text'
           value={inputTitle}
@@ -81,9 +85,9 @@ const EditModal: React.FC<{
         />
         <div className='flex gap-2 justify-end'>
           <Button variant='outline' onClick={onClose}>
-            Cancel
+            {t('browser.common.cancel')}
           </Button>
-          <Button onClick={() => onSave(inputTitle)}>Save</Button>
+          <Button onClick={() => onSave(inputTitle)}>{t('browser.common.save')}</Button>
         </div>
       </div>
     </div>
@@ -97,6 +101,7 @@ const CreateModal: React.FC<{
   onClose: () => void;
   onCreate: (title: string, url?: string) => void;
 }> = ({ isOpen, type, onClose, onCreate }) => {
+  const { t } = useTranslation();
   const [inputTitle, setInputTitle] = useState('');
   const [inputUrl, setInputUrl] = useState('');
 
@@ -120,13 +125,19 @@ const CreateModal: React.FC<{
   return (
     <div className='ev-modal-backdrop'>
       <div className='ev-modal-content'>
-        <h2>{type === 'bookmark' ? 'New bookmark' : 'New folder'}</h2>
+        <h2>
+          {type === 'bookmark' ? t('browser.newTab.newBookmark') : t('browser.newTab.newFolder')}
+        </h2>
         <input
           type='text'
           value={inputTitle}
           onChange={e => setInputTitle(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          placeholder={type === 'bookmark' ? 'Enter bookmark name...' : 'Enter folder name...'}
+          placeholder={
+            type === 'bookmark'
+              ? t('browser.newTab.bookmarkNamePlaceholder')
+              : t('browser.newTab.folderNamePlaceholder')
+          }
           autoFocus
           className='ev-input mb-2'
         />
@@ -136,16 +147,16 @@ const CreateModal: React.FC<{
             value={inputUrl}
             onChange={e => setInputUrl(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-            placeholder='Enter a URL, e.g. example.com'
+            placeholder={t('browser.newTab.urlPlaceholder')}
             className='ev-input mb-3'
           />
         )}
         <div className='flex gap-2 justify-end'>
           <Button variant='outline' onClick={onClose}>
-            Cancel
+            {t('browser.common.cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={!canSave}>
-            Create
+            {t('browser.common.create')}
           </Button>
         </div>
       </div>
@@ -159,6 +170,7 @@ const UndoToast: React.FC<{
   onUndo: () => void;
   onDismiss: () => void;
 }> = ({ message, onUndo, onDismiss }) => {
+  const { t } = useTranslation();
   return (
     <div className='ev-toast'>
       <span className='text-sm'>{message}</span>
@@ -166,12 +178,12 @@ const UndoToast: React.FC<{
         onClick={onUndo}
         className='flex items-center gap-1 text-xs font-medium text-[var(--ev-color-text-link)]'>
         <Undo2 className='h-4 w-4' />
-        Undo
+        {t('browser.newTab.undo')}
       </button>
       <button
         onClick={onDismiss}
         className='text-[var(--ev-color-icon-tertiary)] hover:text-[var(--ev-color-icon-primary)]'
-        aria-label='Dismiss notice'>
+        aria-label={t('browser.newTab.dismissNotice')}>
         ✕
       </button>
     </div>
@@ -202,27 +214,37 @@ const restoreFolderNode = (node: BookmarkFolder, parentId: string) => {
   });
 };
 
-function NewtabContent() {
-  const { settings } = useSettings();
-
-  // Apply custom settings when they change
-  useEffect(() => {
-    applyCustomSettings(settings);
-    void applySavedBackground(settings);
-  }, [settings]);
+export function NewTabSurface({ showBookmarks }: { showBookmarks: boolean }) {
+  if (!showBookmarks) {
+    return <main className='ev-blank-newtab' aria-hidden='true' />;
+  }
 
   return (
     <>
-      {/* Custom background container */}
       <div className='custom-background-container' />
-
-      {/* Main content */}
       <NewtabApp />
     </>
   );
 }
 
+function NewtabContent() {
+  const { settings, isLoaded } = useSettings();
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    applyCustomSettings(settings);
+    void applySavedBackground(
+      settings.showNewTabBookmarks
+        ? settings
+        : { ...settings, background: DEFAULT_OPTIONS.background }
+    );
+  }, [isLoaded, settings]);
+
+  return <NewTabSurface showBookmarks={isLoaded && settings.showNewTabBookmarks} />;
+}
+
 function NewtabApp() {
+  const { t } = useTranslation();
   // Single state management.
   const [state, setState] = useState<AppState>({
     currentFolder: {
@@ -356,7 +378,7 @@ function NewtabApp() {
         }
         // Offer undo.
         if (deletedItem) {
-          showUndo(`Deleted bookmark “${deletedItem.title}”`, () => {
+          showUndo(t('browser.newTab.deletedBookmark', { title: deletedItem.title }), () => {
             chrome.bookmarks.create(
               {
                 parentId: currentFolderId,
@@ -381,7 +403,7 @@ function NewtabApp() {
         });
       });
     },
-    [state.currentFolder, showUndo]
+    [state.currentFolder, showUndo, t]
   );
 
   const handleDeleteFolder = useCallback(
@@ -407,13 +429,13 @@ function NewtabApp() {
         }));
         // Offer undo: recursively rebuild the folder and its contents.
         if (deletedFolder) {
-          showUndo(`Deleted folder “${deletedFolder.title}”`, () => {
+          showUndo(t('browser.newTab.deletedFolder', { title: deletedFolder.title }), () => {
             restoreFolderNode(deletedFolder, currentFolderId);
           });
         }
       });
     },
-    [state.currentFolder, showUndo]
+    [state.currentFolder, showUndo, t]
   );
 
   // Create bookmark/folder.
@@ -621,92 +643,98 @@ function NewtabApp() {
   }, [handleKeyDown]);
 
   // Load bookmarks.
-  const loadBookmarks = useCallback((isInitialLoad = false) => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+  const loadBookmarks = useCallback(
+    (isInitialLoad = false) => {
+      setState(prev => ({ ...prev, isLoading: true, error: null }));
 
-    chrome.bookmarks.getTree(bookmarkArray => {
-      if (chrome.runtime.lastError) {
-        console.error('Failed to load bookmarks:', chrome.runtime.lastError);
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: 'Failed to load bookmarks; refresh the page and try again',
-        }));
-        return;
-      }
-
-      try {
-        const rootNode = bookmarkArray[0]?.children?.[0] as ChromeBookmarkTreeNode;
-        if (rootNode && bookmarkArray[0].children && bookmarkArray[0].children.length > 0) {
-          const convertedFolder = convertToBookmark(rootNode) as BookmarkFolder;
-
-          // Keep the full tree in sync for global search.
-          setState(prev => ({ ...prev, rootFolder: convertedFolder }));
-
-          if (isInitialLoad) {
-            setState(prev => ({ ...prev, currentFolder: convertedFolder, isLoading: false }));
-            setTimeout(() => {
-              const visibleBookmarks = convertedFolder.children
-                .filter(item => 'url' in item)
-                .slice(0, 20);
-              const bookmarkUrls = visibleBookmarks.map(bookmark => (bookmark as Bookmark).url);
-              if (bookmarkUrls.length > 0) {
-                preloadFavicons(bookmarkUrls).catch(error => {
-                  console.warn('Failed to preload some favicons:', error);
-                });
-              }
-            }, 100);
-          } else {
-            setState(prev => {
-              const currentFolderId = prev.currentFolder.id;
-              if (currentFolderId !== convertedFolder.id) {
-                const findFolder = (folder: BookmarkFolder, id: string): BookmarkFolder | null => {
-                  if (folder.id === id) return folder;
-                  for (const child of folder.children) {
-                    if (!('url' in child) && child.children) {
-                      const found = findFolder(child as BookmarkFolder, id);
-                      if (found) return found;
-                    }
-                  }
-                  return null;
-                };
-
-                const updatedCurrentFolder = findFolder(convertedFolder, currentFolderId);
-                if (updatedCurrentFolder) {
-                  return { ...prev, currentFolder: updatedCurrentFolder, isLoading: false };
-                } else if (prev.folderHistory.length > 0) {
-                  const previousFolder = prev.folderHistory[prev.folderHistory.length - 1];
-                  return {
-                    ...prev,
-                    currentFolder: previousFolder,
-                    folderHistory: prev.folderHistory.slice(0, -1),
-                    isLoading: false,
-                  };
-                } else {
-                  return { ...prev, currentFolder: convertedFolder, isLoading: false };
-                }
-              } else {
-                return { ...prev, currentFolder: convertedFolder, isLoading: false };
-              }
-            });
-          }
-        } else {
+      chrome.bookmarks.getTree(bookmarkArray => {
+        if (chrome.runtime.lastError) {
+          console.error('Failed to load bookmarks:', chrome.runtime.lastError);
           setState(prev => ({
             ...prev,
             isLoading: false,
-            error: 'Bookmark data not found; check your browser bookmark settings',
+            error: t('browser.newTab.loadError'),
+          }));
+          return;
+        }
+
+        try {
+          const rootNode = bookmarkArray[0]?.children?.[0] as ChromeBookmarkTreeNode;
+          if (rootNode && bookmarkArray[0].children && bookmarkArray[0].children.length > 0) {
+            const convertedFolder = convertToBookmark(rootNode) as BookmarkFolder;
+
+            // Keep the full tree in sync for global search.
+            setState(prev => ({ ...prev, rootFolder: convertedFolder }));
+
+            if (isInitialLoad) {
+              setState(prev => ({ ...prev, currentFolder: convertedFolder, isLoading: false }));
+              setTimeout(() => {
+                const visibleBookmarks = convertedFolder.children
+                  .filter(item => 'url' in item)
+                  .slice(0, 20);
+                const bookmarkUrls = visibleBookmarks.map(bookmark => (bookmark as Bookmark).url);
+                if (bookmarkUrls.length > 0) {
+                  preloadFavicons(bookmarkUrls).catch(error => {
+                    console.warn('Failed to preload some favicons:', error);
+                  });
+                }
+              }, 100);
+            } else {
+              setState(prev => {
+                const currentFolderId = prev.currentFolder.id;
+                if (currentFolderId !== convertedFolder.id) {
+                  const findFolder = (
+                    folder: BookmarkFolder,
+                    id: string
+                  ): BookmarkFolder | null => {
+                    if (folder.id === id) return folder;
+                    for (const child of folder.children) {
+                      if (!('url' in child) && child.children) {
+                        const found = findFolder(child as BookmarkFolder, id);
+                        if (found) return found;
+                      }
+                    }
+                    return null;
+                  };
+
+                  const updatedCurrentFolder = findFolder(convertedFolder, currentFolderId);
+                  if (updatedCurrentFolder) {
+                    return { ...prev, currentFolder: updatedCurrentFolder, isLoading: false };
+                  } else if (prev.folderHistory.length > 0) {
+                    const previousFolder = prev.folderHistory[prev.folderHistory.length - 1];
+                    return {
+                      ...prev,
+                      currentFolder: previousFolder,
+                      folderHistory: prev.folderHistory.slice(0, -1),
+                      isLoading: false,
+                    };
+                  } else {
+                    return { ...prev, currentFolder: convertedFolder, isLoading: false };
+                  }
+                } else {
+                  return { ...prev, currentFolder: convertedFolder, isLoading: false };
+                }
+              });
+            }
+          } else {
+            setState(prev => ({
+              ...prev,
+              isLoading: false,
+              error: t('browser.newTab.missingData'),
+            }));
+          }
+        } catch (error) {
+          console.error('Error processing bookmarks:', error);
+          setState(prev => ({
+            ...prev,
+            isLoading: false,
+            error: t('browser.newTab.processError'),
           }));
         }
-      } catch (error) {
-        console.error('Error processing bookmarks:', error);
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: 'Error processing bookmark data; refresh the page and try again',
-        }));
-      }
-    });
-  }, []);
+      });
+    },
+    [t]
+  );
 
   // Keep loadBookmarks in a ref so event listeners never capture a stale closure.
   const loadBookmarksRef = useRef(loadBookmarks);
@@ -820,7 +848,7 @@ function NewtabApp() {
 
   const isSearching = state.searchTerm.trim().length > 0;
   const visibleItems = isSearching ? state.searchResults : state.currentFolder.children;
-  const folderTitle = state.currentFolder.title || 'Bookmarks';
+  const folderTitle = state.currentFolder.title || t('browser.newTab.bookmarks');
 
   return (
     <div className='ev-newtab-page'>
@@ -835,12 +863,12 @@ function NewtabApp() {
                     <button
                       onClick={handleBack}
                       className='ev-button ev-button-ghost ev-button-icon focus-ring-modern'
-                      title='Go up one level'
-                      aria-label='Go up one level'>
+                      title={t('browser.newTab.goUp')}
+                      aria-label={t('browser.newTab.goUp')}>
                       <ArrowLeft size={16} />
                     </button>
                   )}
-                  <nav aria-label='Folder path navigation'>
+                  <nav aria-label={t('browser.newTab.folderPath')}>
                     <ol className='ev-breadcrumb-list'>
                       {state.folderHistory.map((folder, index) => (
                         <li key={folder.id}>
@@ -856,7 +884,9 @@ function NewtabApp() {
                               searchBarRef.current?.clearSearch();
                             }}
                             className='ev-breadcrumb-button'
-                            aria-label={`Navigate to folder: ${folder.title}`}>
+                            aria-label={t('browser.newTab.navigateFolder', {
+                              title: folder.title,
+                            })}>
                             {folder.title}
                           </button>
                           <ChevronRight size={13} aria-hidden='true' />
@@ -874,15 +904,15 @@ function NewtabApp() {
               <Button
                 variant='outline'
                 onClick={() => setCreateModal({ open: true, type: 'folder' })}
-                title='New folder in the current folder'>
+                title={t('browser.newTab.newFolderHere')}>
                 <FolderPlus size={15} />
-                <span>Folder</span>
+                <span>{t('browser.newTab.folder')}</span>
               </Button>
               <Button
                 onClick={() => setCreateModal({ open: true, type: 'bookmark' })}
-                title='New bookmark in the current folder'>
+                title={t('browser.newTab.newBookmarkHere')}>
                 <Plus size={15} />
-                <span>Bookmark</span>
+                <span>{t('browser.newTab.bookmark')}</span>
               </Button>
             </div>
           </div>
@@ -904,21 +934,30 @@ function NewtabApp() {
             <div className='ev-section-heading'>
               <div className='ev-section-heading-main'>
                 <div>
-                  <h2 id='library-title'>{isSearching ? 'Search results' : 'Bookmarks'}</h2>
+                  <h2 id='library-title'>
+                    {isSearching
+                      ? t('browser.newTab.searchResults')
+                      : t('browser.newTab.bookmarks')}
+                  </h2>
                   <p>
                     {isSearching
-                      ? `Items matching “${state.searchTerm}” across all bookmarks`
+                      ? t('browser.newTab.itemsMatching', { term: state.searchTerm })
                       : folderTitle}
                   </p>
                 </div>
               </div>
               <span className='ev-section-count' aria-live='polite'>
-                {state.isLoading ? 'Loading' : `${visibleItems.length} items`}
+                {state.isLoading
+                  ? t('browser.newTab.loading')
+                  : t('browser.newTab.itemCount', { count: visibleItems.length })}
               </span>
             </div>
 
             {state.isLoading ? (
-              <div className='ev-bookmark-grid' aria-busy='true' aria-label='Loading bookmarks'>
+              <div
+                className='ev-bookmark-grid'
+                aria-busy='true'
+                aria-label={t('browser.newTab.loadingBookmarks')}>
                 {Array.from({ length: 8 }).map((_, index) => (
                   <div className='skeleton-card ev-bookmark-skeleton' key={index} />
                 ))}
@@ -927,7 +966,11 @@ function NewtabApp() {
               <div
                 className='ev-bookmark-grid'
                 role='grid'
-                aria-label={isSearching ? 'Search results' : 'Bookmarks and folders'}>
+                aria-label={
+                  isSearching
+                    ? t('browser.newTab.searchResults')
+                    : t('browser.newTab.bookmarksAndFolders')
+                }>
                 {visibleItems.map(item =>
                   'url' in item ? (
                     <Link
@@ -959,22 +1002,24 @@ function NewtabApp() {
                   <FolderIcon className='empty-state-icon' />
                 )}
                 <h3 className='empty-state-title'>
-                  {isSearching ? 'No matching bookmarks' : 'This folder is still empty'}
+                  {isSearching
+                    ? t('browser.newTab.noMatchingBookmarks')
+                    : t('browser.newTab.emptyFolder')}
                 </h3>
                 <p className='empty-state-description'>
                   {isSearching
-                    ? 'Try a shorter keyword, or press Esc to clear the search.'
-                    : 'Add a bookmark, or create a folder to start organizing.'}
+                    ? t('browser.newTab.searchHint')
+                    : t('browser.newTab.emptyFolderHint')}
                 </p>
                 {!isSearching && (
                   <div className='ev-empty-actions'>
                     <Button
                       variant='outline'
                       onClick={() => setCreateModal({ open: true, type: 'folder' })}>
-                      <FolderPlus size={15} /> New folder
+                      <FolderPlus size={15} /> {t('browser.newTab.newFolder')}
                     </Button>
                     <Button onClick={() => setCreateModal({ open: true, type: 'bookmark' })}>
-                      <Plus size={15} /> New bookmark
+                      <Plus size={15} /> {t('browser.newTab.newBookmark')}
                     </Button>
                   </div>
                 )}
@@ -1044,9 +1089,13 @@ function NewtabApp() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
-root.render(
-  <SettingsProvider>
-    <NewtabContent />
-  </SettingsProvider>
-);
+const rootElement = typeof document === 'undefined' ? null : document.getElementById('root');
+if (rootElement) {
+  ReactDOM.createRoot(rootElement).render(
+    <I18nextProvider i18n={i18n}>
+      <SettingsProvider>
+        <NewtabContent />
+      </SettingsProvider>
+    </I18nextProvider>
+  );
+}

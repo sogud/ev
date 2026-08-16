@@ -123,6 +123,117 @@ describe('EV contracts', () => {
     ).toBe(false);
   });
 
+  test('validates complete P0 page interaction commands', () => {
+    const commands = [
+      { action: 'page.history', operation: 'back', tabId: 12 },
+      { action: 'page.setChecked', selector: '@e1', checked: true, frameId: 'frame-1' },
+      { action: 'page.select', selector: '@e2', values: ['us', 'ca'] },
+      { action: 'page.drag', sourceSelector: '@e3', targetSelector: '@e4' },
+      { action: 'page.focus', selector: '@e5' },
+      { action: 'page.inspect', selector: '@e6', maxChars: 2_000 },
+      { action: 'page.dialog.respond', accept: true, promptText: 'approved' },
+      { action: 'page.pointer', type: 'click', x: 100, y: 200, button: 'left' },
+      { action: 'page.click', selector: '@e7', button: 'right', clickCount: 2 },
+      { action: 'page.press', key: 'a', modifiers: ['Meta'] },
+      { action: 'page.press', key: 'F12' },
+      { action: 'page.scroll', selector: '@e8' },
+      { action: 'page.scroll', deltaX: 100, deltaY: -400 },
+      { action: 'page.wait', condition: 'navigation', timeoutMs: 5_000 },
+      { action: 'page.wait', condition: 'networkIdle', idleMs: 750, timeoutMs: 5_000 },
+      { action: 'page.wait', condition: 'popup', timeoutMs: 5_000 },
+      { action: 'page.wait', condition: 'download', timeoutMs: 5_000 },
+      {
+        action: 'page.snapshot',
+        tabId: 12,
+        frameId: 'frame-1',
+        mode: 'interactive',
+      },
+    ];
+
+    commands.forEach(command => expect(BrowserCommandSchema.safeParse(command).success).toBe(true));
+    expect(
+      BrowserCommandSchema.safeParse({ action: 'page.select', selector: '@e2', values: [] }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({ action: 'page.wait', condition: 'target' }).success
+    ).toBe(false);
+    expect(BrowserCommandSchema.safeParse({ action: 'page.scroll' }).success).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({ action: 'page.pointer', type: 'move', x: -1, y: 0 }).success
+    ).toBe(false);
+  });
+
+  test('validates P1 browser workspace commands and destructive confirmations', () => {
+    const commands = [
+      { action: 'windows.list' },
+      { action: 'windows.update', windowId: 3, focused: true, state: 'maximized' },
+      { action: 'windows.close', windowId: 3 },
+      { action: 'tabs.get', tabId: 12 },
+      { action: 'tabs.update', tabId: 12, pinned: true, muted: true },
+      { action: 'tabs.move', tabId: 12, windowId: 3, index: 0 },
+      { action: 'tabs.duplicate', tabId: 12 },
+      { action: 'tabs.discard', tabId: 12 },
+      { action: 'tabGroups.list', windowId: 3 },
+      { action: 'tabGroups.add', groupId: 4, tabIds: [11, 12] },
+      {
+        action: 'tabGroups.create',
+        tabIds: [11, 12],
+        title: 'Research',
+        color: 'blue',
+        collapsed: false,
+      },
+      { action: 'tabGroups.update', groupId: 4, title: 'Reading', collapsed: true },
+      { action: 'tabGroups.ungroup', tabIds: [11, 12] },
+      { action: 'downloads.list', query: 'report', state: 'complete', limit: 100 },
+      { action: 'downloads.pause', downloadId: 'chrome:5' },
+      { action: 'downloads.resume', downloadId: 'chrome:5' },
+      { action: 'downloads.cancel', downloadId: 'chrome:5' },
+      { action: 'downloads.open', downloadId: 'chrome:5' },
+      { action: 'downloads.show', downloadId: 'chrome:5' },
+      {
+        action: 'downloads.remove',
+        downloadId: 'chrome:5',
+        mode: 'both',
+        confirm: 'REMOVE_DOWNLOAD',
+      },
+      { action: 'history.search', text: 'EV', maxResults: 100 },
+      { action: 'history.getVisits', url: 'https://example.com' },
+      {
+        action: 'history.remove',
+        target: { type: 'range', startTime: 1_000, endTime: 2_000 },
+        confirm: 'REMOVE_BROWSER_HISTORY',
+      },
+      { action: 'sessions.recent', maxResults: 10 },
+      { action: 'sessions.restore', sessionId: 'recent-session-id' },
+      { action: 'zoom.get', tabId: 12 },
+      { action: 'zoom.set', tabId: 12, factor: 1.25 },
+    ];
+
+    commands.forEach(command => expect(BrowserCommandSchema.safeParse(command).success).toBe(true));
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'downloads.remove',
+        downloadId: 'chrome:5',
+        mode: 'file',
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'history.remove',
+        target: { type: 'all' },
+      }).success
+    ).toBe(false);
+    expect(BrowserCommandSchema.safeParse({ action: 'tabs.update', tabId: 12 }).success).toBe(
+      false
+    );
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'history.getVisits',
+        url: 'chrome://history',
+      }).success
+    ).toBe(false);
+  });
+
   test('validates bounded BrowserRun plans', () => {
     const semanticClick = {
       kind: 'command',
@@ -155,6 +266,84 @@ describe('EV contracts', () => {
       ],
     };
     expect(BrowserCommandSchema.safeParse(run).success).toBe(true);
+
+    const p0Run = {
+      action: 'browser.run',
+      tabId: 12,
+      steps: [
+        { kind: 'command', command: { action: 'page.history', operation: 'reload' } },
+        {
+          kind: 'command',
+          command: {
+            action: 'page.click',
+            target: { role: 'button', name: 'Open' },
+            button: 'left',
+            clickCount: 2,
+          },
+        },
+        {
+          kind: 'command',
+          command: {
+            action: 'page.setChecked',
+            target: { role: 'checkbox', name: 'Remember me' },
+            checked: true,
+          },
+        },
+        {
+          kind: 'command',
+          command: {
+            action: 'page.select',
+            target: { role: 'combobox', name: 'Country' },
+            values: ['ca'],
+          },
+        },
+        {
+          kind: 'command',
+          command: {
+            action: 'page.drag',
+            source: { role: 'listitem', name: 'First' },
+            target: { role: 'listitem', name: 'Second' },
+          },
+        },
+        {
+          kind: 'command',
+          command: { action: 'page.focus', target: { role: 'textbox', name: 'Title' } },
+        },
+        {
+          kind: 'command',
+          command: { action: 'page.inspect', target: { role: 'textbox', name: 'Title' } },
+        },
+        {
+          kind: 'command',
+          command: { action: 'page.pointer', type: 'click', x: 10, y: 20 },
+        },
+        {
+          kind: 'command',
+          command: { action: 'page.scroll', deltaY: 500 },
+        },
+        {
+          kind: 'command',
+          command: { action: 'page.wait', condition: 'navigation', timeoutMs: 5_000 },
+        },
+        {
+          kind: 'command',
+          command: { action: 'page.dialog.respond', accept: true },
+        },
+      ],
+    };
+    expect(BrowserCommandSchema.safeParse(p0Run).success).toBe(true);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.run',
+        steps: [{ kind: 'command', command: { action: 'page.scroll' } }],
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'browser.run',
+        steps: [{ kind: 'command', command: { action: 'page.wait', condition: 'target' } }],
+      }).success
+    ).toBe(false);
 
     expect(
       BrowserCommandSchema.safeParse({
@@ -202,7 +391,6 @@ describe('EV contracts', () => {
         url: 'https://example.com/docs',
         active: true,
       },
-      { action: 'browser.session.adoptTab', sessionId, tabId: 42 },
       {
         action: 'browser.session.command',
         sessionId,
@@ -211,10 +399,25 @@ describe('EV contracts', () => {
       {
         action: 'browser.session.command',
         sessionId,
+        command: { action: 'tabs.close', tabId: 42 },
+      },
+      {
+        action: 'browser.session.command',
+        sessionId,
+        command: { action: 'zoom.set', factor: 1.25 },
+      },
+      {
+        action: 'browser.session.command',
+        sessionId,
         command: {
           action: 'browser.run',
           steps: [{ kind: 'wait', timeMs: 1 }],
         },
+      },
+      {
+        action: 'browser.oneShot',
+        url: 'https://example.com',
+        command: { action: 'page.snapshot', mode: 'interactive' },
       },
       { action: 'browser.session.release', sessionId },
     ];
@@ -226,7 +429,7 @@ describe('EV contracts', () => {
       BrowserCommandSchema.safeParse({
         action: 'browser.session.command',
         sessionId,
-        command: { action: 'tabs.close', tabId: 42 },
+        command: { action: 'tabGroups.ungroup', tabIds: [42] },
       }).success
     ).toBe(false);
     expect(
@@ -247,9 +450,9 @@ describe('EV contracts', () => {
     const session = {
       sessionId,
       windowId: 9,
+      groupId: 7,
       ownedTabIds: [11, 12],
-      borrowedTabIds: [42],
-      activeTabId: 42,
+      activeTabId: 12,
     };
     expect(BrowserSessionSnapshotSchema.safeParse(session).success).toBe(true);
     expect(
@@ -267,7 +470,6 @@ describe('EV contracts', () => {
         sessionId,
         released: true,
         closedOwnedTabIds: [11, 12],
-        preservedBorrowedTabIds: [42],
       }).success
     ).toBe(true);
   });
@@ -533,11 +735,27 @@ describe('EV contracts', () => {
       }).success
     ).toBe(true);
     expect(
+      RuntimeSessionRefSchema.safeParse({
+        runtimeId: 'dsh',
+        nativeId: 'session-019f8cfe-b436-7c21-80b7-005def641e78',
+      }).success
+    ).toBe(true);
+    expect(
       RuntimeEventSchema.safeParse({
         type: 'message',
         id: 'message-1',
         role: 'assistant',
         content: 'done',
+        timestamp: Date.now(),
+      }).success
+    ).toBe(true);
+    expect(
+      RuntimeEventSchema.safeParse({
+        type: 'trace',
+        id: 'subagent-child-1',
+        traceType: 'tool',
+        title: 'DSH subagent',
+        status: 'running',
         timestamp: Date.now(),
       }).success
     ).toBe(true);

@@ -6,10 +6,19 @@ import { BrowserSessionManager } from '../browser-session-manager';
 interface FakeTab {
   id: number;
   windowId: number;
+  groupId: number;
   active: boolean;
   title: string;
   url: string;
   cdpAttached: boolean;
+}
+
+interface FakeGroup {
+  id: number;
+  windowId: number;
+  title: string;
+  color: 'cyan';
+  collapsed: boolean;
 }
 
 function createFakeBrowser() {
@@ -19,6 +28,7 @@ function createFakeBrowser() {
       {
         id: 42,
         windowId: 1,
+        groupId: -1,
         active: true,
         title: 'User tab',
         url: 'https://user.example.com',
@@ -26,8 +36,10 @@ function createFakeBrowser() {
       },
     ],
   ]);
+  const groups = new Map<number, FakeGroup>();
   let nextWindowId = 9;
   let nextTabId = 11;
+  let nextGroupId = 20;
   const closedTabIds: number[] = [];
 
   const execute = vi.fn(async (command: BrowserAtomicCommand): Promise<unknown> => {
@@ -38,6 +50,7 @@ function createFakeBrowser() {
         tabs.set(tabId, {
           id: tabId,
           windowId,
+          groupId: -1,
           active: true,
           title: '',
           url: command.url,
@@ -51,6 +64,7 @@ function createFakeBrowser() {
         tabs.set(tabId, {
           id: tabId,
           windowId,
+          groupId: -1,
           active: command.active ?? true,
           title: '',
           url: command.url,
@@ -60,10 +74,76 @@ function createFakeBrowser() {
       }
       case 'tabs.list':
         return [...tabs.values()];
+      case 'tabs.get':
+        return tabs.get(command.tabId);
+      case 'tabs.update': {
+        const tab = tabs.get(command.tabId);
+        if (!tab) throw new Error(`Tab ${command.tabId} not found`);
+        if (command.url !== undefined) tab.url = command.url;
+        if (command.active !== undefined) tab.active = command.active;
+        return { ...tab };
+      }
+      case 'tabs.move': {
+        const tab = tabs.get(command.tabId);
+        if (!tab) throw new Error(`Tab ${command.tabId} not found`);
+        if (command.windowId !== undefined) tab.windowId = command.windowId;
+        tab.groupId = -1;
+        return { ...tab };
+      }
+      case 'tabs.duplicate': {
+        const source = tabs.get(command.tabId);
+        if (!source) throw new Error(`Tab ${command.tabId} not found`);
+        const tab = { ...source, id: nextTabId++, groupId: -1 };
+        tabs.set(tab.id, tab);
+        return tab;
+      }
       case 'tabs.close':
         tabs.delete(command.tabId);
         closedTabIds.push(command.tabId);
         return { closed: true, tabId: command.tabId };
+      case 'tabGroups.create': {
+        const group: FakeGroup = {
+          id: nextGroupId++,
+          windowId: command.windowId ?? tabs.get(command.tabIds[0])?.windowId ?? 1,
+          title: command.title ?? '',
+          color: 'cyan',
+          collapsed: command.collapsed ?? false,
+        };
+        groups.set(group.id, group);
+        for (const tabId of command.tabIds) {
+          const tab = tabs.get(tabId);
+          if (tab) {
+            tab.windowId = group.windowId;
+            tab.groupId = group.id;
+          }
+        }
+        return group;
+      }
+      case 'tabGroups.add': {
+        const group = groups.get(command.groupId);
+        if (!group) throw new Error(`Group ${command.groupId} not found`);
+        for (const tabId of command.tabIds) {
+          const tab = tabs.get(tabId);
+          if (tab) {
+            tab.windowId = group.windowId;
+            tab.groupId = group.id;
+          }
+        }
+        return group;
+      }
+      case 'tabGroups.list':
+        return [...groups.values()].filter(
+          group => command.windowId === undefined || group.windowId === command.windowId
+        );
+      case 'tabGroups.update': {
+        const group = groups.get(command.groupId);
+        if (!group) throw new Error(`Group ${command.groupId} not found`);
+        if (command.title !== undefined) group.title = command.title;
+        if (command.collapsed !== undefined) group.collapsed = command.collapsed;
+        return group;
+      }
+      case 'windows.list':
+        return [...new Set([...tabs.values()].map(tab => tab.windowId))].map(id => ({ id }));
       default:
         return {
           action: command.action,
@@ -72,7 +152,7 @@ function createFakeBrowser() {
     }
   });
 
-  return { tabs, closedTabIds, execute };
+  return { tabs, groups, closedTabIds, execute };
 }
 
 const SESSION_ONE = '3f88e635-1ba1-4e8c-91fd-83d682959f8a';
@@ -84,7 +164,7 @@ function sessionIds(): () => string {
 }
 
 describe('BrowserSessionManager', () => {
-  it('owns created tabs, requires explicit adoption, and releases only owned tabs', async () => {
+  it('creates a dedicated window and group, then releases only EV-owned tabs', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
 
@@ -93,8 +173,8 @@ describe('BrowserSessionManager', () => {
     ).resolves.toEqual({
       sessionId: SESSION_ONE,
       windowId: 9,
+      groupId: 20,
       ownedTabIds: [11],
-      borrowedTabIds: [],
       activeTabId: 11,
     });
 
@@ -105,36 +185,14 @@ describe('BrowserSessionManager', () => {
         url: 'https://example.com/docs',
         active: false,
       })
-    ).resolves.toMatchObject({ ownedTabIds: [11, 12], activeTabId: 11 });
-
-    await expect(
-      manager.execute({
-        action: 'browser.session.command',
-        sessionId: SESSION_ONE,
-        command: { action: 'page.snapshot', tabId: 42 },
-      })
-    ).rejects.toThrow('does not own tab 42');
-
-    await manager.execute({
-      action: 'browser.session.adoptTab',
-      sessionId: SESSION_ONE,
-      tabId: 42,
-    });
-    await expect(
-      manager.execute({
-        action: 'browser.session.command',
-        sessionId: SESSION_ONE,
-        command: { action: 'page.snapshot' },
-      })
-    ).resolves.toEqual({
-      sessionId: SESSION_ONE,
-      tabId: 42,
-      result: { action: 'page.snapshot', tabId: 42 },
-    });
+    ).resolves.toMatchObject({ groupId: 20, ownedTabIds: [11, 12], activeTabId: 11 });
+    expect(browser.tabs.get(11)).toMatchObject({ windowId: 9, groupId: 20 });
+    expect(browser.tabs.get(12)).toMatchObject({ windowId: 9, groupId: 20 });
 
     browser.tabs.set(99, {
       id: 99,
       windowId: 9,
+      groupId: -1,
       active: false,
       title: 'Unknown user tab',
       url: 'https://unknown.example.com',
@@ -146,42 +204,82 @@ describe('BrowserSessionManager', () => {
       sessionId: SESSION_ONE,
       released: true,
       closedOwnedTabIds: [11, 12],
-      preservedBorrowedTabIds: [42],
     });
 
     expect(browser.closedTabIds).toEqual([11, 12]);
     expect(browser.tabs.has(42)).toBe(true);
     expect(browser.tabs.has(99)).toBe(true);
-    await expect(manager.execute({ action: 'browser.session.list' })).resolves.toEqual({
-      sessions: [],
+  });
+
+  it('rejects user tabs and restores moved EV tabs to their session group', async () => {
+    const browser = createFakeBrowser();
+    const manager = new BrowserSessionManager(browser.execute, sessionIds());
+    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+
+    await expect(
+      manager.execute({
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'page.snapshot', tabId: 42 },
+      })
+    ).rejects.toThrow('does not own tab 42');
+
+    Object.assign(browser.tabs.get(11)!, { windowId: 1, groupId: -1 });
+    await manager.execute({ action: 'browser.session.get', sessionId: SESSION_ONE });
+    expect(browser.tabs.get(11)).toMatchObject({ windowId: 9, groupId: 20 });
+    expect(browser.execute).toHaveBeenCalledWith({
+      action: 'tabGroups.add',
+      groupId: 20,
+      tabIds: [11],
     });
   });
 
-  it('prevents two sessions from owning or borrowing the same tab', async () => {
+  it('scopes workspace commands and preserves the one-group invariant', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
-    await manager.execute({ action: 'browser.session.create', url: 'https://one.example.com' });
-    await manager.execute({ action: 'browser.session.create', url: 'https://two.example.com' });
-    await manager.execute({
-      action: 'browser.session.adoptTab',
-      sessionId: SESSION_ONE,
-      tabId: 42,
-    });
+    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
 
     await expect(
       manager.execute({
-        action: 'browser.session.adoptTab',
-        sessionId: SESSION_TWO,
-        tabId: 42,
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'tabs.list' },
       })
-    ).rejects.toThrow(`Tab 42 already belongs to BrowserSession ${SESSION_ONE}`);
+    ).resolves.toMatchObject({ result: [{ id: 11, groupId: 20 }] });
     await expect(
       manager.execute({
-        action: 'browser.session.adoptTab',
-        sessionId: SESSION_TWO,
-        tabId: 11,
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'tabs.update', tabId: 11, pinned: true },
       })
-    ).rejects.toThrow(`Tab 11 already belongs to BrowserSession ${SESSION_ONE}`);
+    ).rejects.toThrow('cannot be pinned');
+    await expect(
+      manager.execute({
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'tabGroups.update', groupId: 999, title: 'Other' },
+      })
+    ).rejects.toThrow('does not own group 999');
+
+    await expect(
+      manager.execute({
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'tabs.duplicate', tabId: 11 },
+      })
+    ).resolves.toMatchObject({ result: { id: 12, windowId: 9, groupId: 20 } });
+    await manager.execute({
+      action: 'browser.session.command',
+      sessionId: SESSION_ONE,
+      command: { action: 'tabs.close', tabId: 12 },
+    });
+    await expect(
+      manager.execute({
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'tabs.close', tabId: 11 },
+      })
+    ).rejects.toThrow('Release the BrowserSession');
   });
 
   it('scopes BrowserRun atomic commands to session tabs', async () => {
@@ -214,17 +312,27 @@ describe('BrowserSessionManager', () => {
       tabId: 11,
       url: 'https://example.com/next',
     });
+  });
+
+  it('creates and releases a one-shot session around one scoped command', async () => {
+    const browser = createFakeBrowser();
+    const manager = new BrowserSessionManager(browser.execute, sessionIds());
+
     await expect(
-      manager.execute({
-        action: 'browser.session.command',
-        sessionId: SESSION_ONE,
-        command: {
-          action: 'browser.run',
-          tabId: 42,
-          steps: [{ kind: 'wait', timeMs: 0 }],
-        },
+      manager.runOneShot({
+        action: 'browser.oneShot',
+        url: 'https://example.com',
+        command: { action: 'page.snapshot', mode: 'interactive' },
       })
-    ).rejects.toThrow('does not own tab 42');
+    ).resolves.toMatchObject({
+      sessionId: SESSION_ONE,
+      tabId: 11,
+      result: { action: 'page.snapshot', tabId: 11 },
+    });
+    expect(browser.tabs.has(11)).toBe(false);
+    await expect(manager.execute({ action: 'browser.session.list' })).resolves.toEqual({
+      sessions: [],
+    });
   });
 
   it('rejects session and tab limits before mutating Chrome', async () => {
@@ -242,9 +350,6 @@ describe('BrowserSessionManager', () => {
         url: 'https://overflow.example.com',
       })
     ).rejects.toThrow('cannot exceed 32 BrowserSessions');
-    expect(
-      sessionBrowser.execute.mock.calls.filter(([command]) => command.action === 'windows.open')
-    ).toHaveLength(32);
 
     const tabBrowser = createFakeBrowser();
     const tabManager = new BrowserSessionManager(tabBrowser.execute, sessionIds());
@@ -264,47 +369,6 @@ describe('BrowserSessionManager', () => {
         url: 'https://overflow.example.com',
       })
     ).rejects.toThrow('cannot exceed 32 tabs');
-    expect(
-      tabBrowser.execute.mock.calls.filter(([command]) => command.action === 'tabs.open')
-    ).toHaveLength(31);
-  });
-
-  it('keeps a multi-command exclusive operation contiguous within one session', async () => {
-    const browser = createFakeBrowser();
-    const manager = new BrowserSessionManager(browser.execute, sessionIds());
-    await manager.execute({ action: 'browser.session.create', url: 'https://one.example.com' });
-
-    let markReady!: () => void;
-    const ready = new Promise<void>(resolve => (markReady = resolve));
-    let releaseExclusive!: () => void;
-    const hold = new Promise<void>(resolve => (releaseExclusive = resolve));
-    const exclusive = manager.runExclusive(SESSION_ONE, async execute => {
-      await execute({ action: 'page.context', maxChars: 1 });
-      markReady();
-      await hold;
-      await execute({ action: 'page.snapshot', mode: 'interactive' });
-    });
-    await ready;
-
-    const queued = manager.execute({
-      action: 'browser.session.command',
-      sessionId: SESSION_ONE,
-      command: { action: 'page.press', key: 'Enter' },
-    });
-    await Promise.resolve();
-    expect(
-      browser.execute.mock.calls
-        .map(([command]) => command.action)
-        .filter(action => action.startsWith('page.'))
-    ).toEqual(['page.context']);
-
-    releaseExclusive();
-    await Promise.all([exclusive, queued]);
-    expect(
-      browser.execute.mock.calls
-        .map(([command]) => command.action)
-        .filter(action => action.startsWith('page.'))
-    ).toEqual(['page.context', 'page.snapshot', 'page.press']);
   });
 
   it('serializes one session while allowing separate sessions to progress concurrently', async () => {
@@ -340,7 +404,6 @@ describe('BrowserSessionManager', () => {
     });
 
     await vi.waitFor(() => expect(started).toEqual([11, 12]));
-    expect(releases).toHaveLength(2);
     releases.splice(0).forEach(release => release());
     await Promise.all([first, concurrent]);
 

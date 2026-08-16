@@ -359,7 +359,8 @@
   }
 
   .ev-options-page,
-  .ev-newtab-page {
+  .ev-newtab-page,
+  .ev-blank-newtab {
     min-height: 100vh;
     background: var(--ev-color-bg-canvas);
     color: var(--ev-color-text-primary);
@@ -428,6 +429,15 @@
     margin-right: auto;
     color: var(--ev-color-status-success);
     font-size: var(--ev-font-size-sm);
+  }
+  .ev-status-pill {
+    flex: none;
+    padding: 3px 8px;
+    border-radius: var(--ev-radius-full);
+    color: var(--ev-color-status-success);
+    background: var(--ev-color-status-success-surface);
+    font-size: var(--ev-font-size-xs);
+    font-weight: var(--ev-font-weight-medium);
   }
   .ev-background-controls {
     display: flex;

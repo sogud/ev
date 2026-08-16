@@ -20,7 +20,7 @@ export async function readSavedBackgroundImage(): Promise<SavedBackgroundImage |
   const name = stored[BACKGROUND_IMAGE_NAME_STORAGE_KEY];
   return {
     dataUrl,
-    name: typeof name === 'string' && name.trim() ? name : 'Custom background',
+    name: typeof name === 'string' && name.trim() ? name : '',
   };
 }
 

@@ -1,5 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import type React from 'react';
+import { useState, useCallback } from 'react';
 import { Check, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from './button';
 import { Input } from './input';
 
@@ -20,10 +22,11 @@ const EditMode: React.FC<EditModeProps> = ({
   initialValue,
   onSave,
   onCancel,
-  placeholder = 'Enter a new name...',
+  placeholder,
   className = '',
   autoFocus = true,
 }) => {
+  const { t } = useTranslation();
   const [value, setValue] = useState(initialValue);
 
   const handleSave = useCallback(() => {
@@ -54,7 +57,7 @@ const EditMode: React.FC<EditModeProps> = ({
         onChange={e => setValue(e.target.value)}
         onKeyDown={handleKeyPress}
         onBlur={handleSave}
-        placeholder={placeholder}
+        placeholder={placeholder ?? t('browser.newTab.renamePlaceholder')}
         className='h-8 text-sm border-0 p-0 focus:ring-1 focus:ring-blue-500 bg-white text-gray-900 font-medium flex-1'
         autoFocus={autoFocus}
       />
@@ -63,7 +66,7 @@ const EditMode: React.FC<EditModeProps> = ({
         variant='ghost'
         className='h-6 w-6 p-0 hover:bg-green-100 hover:text-green-600'
         onClick={handleSave}
-        title='Save'>
+        title={t('browser.common.save')}>
         <Check className='h-3 w-3' />
       </Button>
       <Button
@@ -71,7 +74,7 @@ const EditMode: React.FC<EditModeProps> = ({
         variant='ghost'
         className='h-6 w-6 p-0 hover:bg-red-100 hover:text-red-600'
         onClick={onCancel}
-        title='Cancel'>
+        title={t('browser.common.cancel')}>
         <X className='h-3 w-3' />
       </Button>
     </div>

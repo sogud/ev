@@ -1,15 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Options } from '../types';
+import { DEFAULT_OPTIONS, type Options } from '../types';
 import { applySettingsStorageChanges, subscribeToSettingsStorage } from './SettingsContext';
 import { BACKGROUND_IMAGE_STORAGE_KEY } from '../shared/background-image';
 
-const settings: Options = {
-  theme: 'auto',
-  sortBy: 'name',
-  iconColor: { bookmark: '#737373', folder: '#737373' },
-  background: { type: 'color', value: 'transparent', opacity: 100 },
-  uiCustomization: { cardStyle: 'minimal', animationEnabled: true, compactMode: true },
-};
+const settings: Options = DEFAULT_OPTIONS;
 
 describe('settings storage synchronization', () => {
   it('applies sync setting changes to an already loaded settings snapshot', () => {
@@ -25,6 +19,25 @@ describe('settings storage synchronization', () => {
     );
 
     expect(next.background).toEqual({ type: 'image', value: 'local', opacity: 80 });
+  });
+
+  it('applies language and new-tab preference changes to loaded pages', () => {
+    const current = {
+      ...settings,
+      language: 'system',
+      showNewTabBookmarks: true,
+    } as Options;
+    const next = applySettingsStorageChanges(
+      current,
+      {
+        language: { oldValue: 'system', newValue: 'zh' },
+        showNewTabBookmarks: { oldValue: true, newValue: false },
+      },
+      'sync'
+    ) as Options & { language: string; showNewTabBookmarks: boolean };
+
+    expect(next.language).toBe('zh');
+    expect(next.showNewTabBookmarks).toBe(false);
   });
 
   it('refreshes settings identity when the local background image changes', () => {

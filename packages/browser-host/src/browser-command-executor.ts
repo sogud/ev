@@ -3,11 +3,11 @@ import {
   BrowserDownloadStatusSchema,
   type BrowserAtomicCommand,
   type BrowserCommand,
+  type BrowserOneShotCommand,
   type BrowserRecipeCommand,
   type BrowserSessionCommand,
 } from '@ev/contracts';
 import type { BrowserBridgeService } from './browser-bridge-service';
-import { BrowserRunExecutor } from './browser-run-executor';
 import { BrowserSessionManager } from './browser-session-manager';
 import type { MediaDownloadService } from './media-download-service';
 import { defaultSiteRecipeFilePath, SiteRecipeRegistry } from './site-recipe-registry';
@@ -17,7 +17,6 @@ const SESSION_ACTIONS = [
   'browser.session.list',
   'browser.session.get',
   'browser.session.open',
-  'browser.session.adoptTab',
   'browser.session.command',
   'browser.session.release',
 ] as const;
@@ -38,9 +37,46 @@ function isSessionCommand(command: BrowserCommand): command is BrowserSessionCom
   return command.action.startsWith('browser.session.');
 }
 
+function isOneShotCommand(command: BrowserCommand): command is BrowserOneShotCommand {
+  return command.action === 'browser.oneShot';
+}
+
+function isExplicitProfileAction(action: string): boolean {
+  return (
+    action.startsWith('bookmarks.') ||
+    action.startsWith('downloads.') ||
+    action.startsWith('history.') ||
+    action === 'sessions.recent'
+  );
+}
+
+function isSessionScopedAction(action: string): boolean {
+  return (
+    action.startsWith('page.') ||
+    action.startsWith('zoom.') ||
+    [
+      'tabs.list',
+      'tabs.get',
+      'tabs.update',
+      'tabs.move',
+      'tabs.duplicate',
+      'tabs.discard',
+      'tabs.close',
+      'tabs.activate',
+      'windows.list',
+      'windows.update',
+      'tabGroups.list',
+      'tabGroups.update',
+    ].includes(action)
+  );
+}
+
 function isAtomicCommand(command: BrowserCommand): command is BrowserAtomicCommand {
   return (
-    command.action !== 'browser.run' && !isSessionCommand(command) && !isRecipeCommand(command)
+    command.action !== 'browser.run' &&
+    !isOneShotCommand(command) &&
+    !isSessionCommand(command) &&
+    !isRecipeCommand(command)
   );
 }
 
@@ -62,11 +98,18 @@ export class BrowserCommandExecutor {
   async sendCommand(command: BrowserCommand): Promise<unknown> {
     if (isRecipeCommand(command)) return this.recipes.execute(command);
     if (isSessionCommand(command)) return this.sessions.execute(command);
-    if (command.action === 'browser.run') {
-      return new BrowserRunExecutor(atomic => this.executeAtomic(atomic)).execute(command);
+    if (isOneShotCommand(command)) return this.sessions.runOneShot(command);
+    if (!isAtomicCommand(command)) {
+      throw new Error(
+        'Browser workspace commands require browser.session.command or browser.oneShot'
+      );
     }
-    if (!isAtomicCommand(command)) throw new Error('Unsupported Browser Host command');
-    return this.executeAtomic(command);
+    if (command.action === 'browser.capabilities' || isExplicitProfileAction(command.action)) {
+      return this.executeAtomic(command);
+    }
+    throw new Error(
+      'Browser workspace commands require browser.session.command or browser.oneShot'
+    );
   }
 
   private async executeAtomic(command: BrowserAtomicCommand): Promise<unknown> {
@@ -86,16 +129,28 @@ export class BrowserCommandExecutor {
         (action): action is string => typeof action === 'string'
       );
       const supportsPageControl = extensionActions.includes('page.navigate');
-      const supportsSessions = supportsPageControl && extensionActions.includes('windows.open');
+      const supportsSessions =
+        supportsPageControl &&
+        [
+          'windows.open',
+          'tabs.open',
+          'tabs.list',
+          'tabs.close',
+          'tabGroups.create',
+          'tabGroups.add',
+        ].every(action => extensionActions.includes(action));
       return {
         ...result,
         actions: [
           ...new Set([
-            ...extensionActions,
-            ...(supportsPageControl ? ['browser.run'] : []),
-            ...(supportsSessions ? [...SESSION_ACTIONS, ...RECIPE_ACTIONS] : []),
+            'browser.capabilities',
+            ...extensionActions.filter(isExplicitProfileAction),
+            ...(supportsSessions ? ['browser.oneShot', ...SESSION_ACTIONS, ...RECIPE_ACTIONS] : []),
           ]),
         ],
+        sessionActions: supportsSessions
+          ? [...extensionActions.filter(isSessionScopedAction), 'browser.run']
+          : [],
       };
     }
     if (command.action !== 'page.download') return result;

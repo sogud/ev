@@ -10,12 +10,16 @@ describe('CDP browser controller', () => {
   const calls: DebuggerCall[] = [];
   const eventListeners = new Set<(...args: unknown[]) => void>();
   const detachListeners = new Set<(...args: unknown[]) => void>();
+  const tabCreatedListeners = new Set<(tab: chrome.tabs.Tab) => void>();
+  const downloadCreatedListeners = new Set<(item: chrome.downloads.DownloadItem) => void>();
   const permissionContains = vi.fn(async () => true);
 
   beforeEach(() => {
     calls.length = 0;
     eventListeners.clear();
     detachListeners.clear();
+    tabCreatedListeners.clear();
+    downloadCreatedListeners.clear();
     permissionContains.mockReset();
     permissionContains.mockResolvedValue(true);
     globalThis.chrome = {
@@ -25,10 +29,19 @@ describe('CDP browser controller', () => {
             ? [{ id: 11, active: true, windowId: 9, url: 'https://example.com' }]
             : [{ id: 7, active: true, windowId: 1, url: 'https://example.com' }]
         ),
-        get: vi.fn(async () => ({
-          id: 7,
+        get: vi.fn(async (tabId: number) => ({
+          id: tabId,
           active: true,
           windowId: 1,
+          index: 0,
+          pinned: false,
+          highlighted: true,
+          incognito: false,
+          selected: true,
+          discarded: false,
+          autoDiscardable: true,
+          groupId: -1,
+          title: 'Example',
           url: 'https://example.com',
         })),
         create: vi.fn(async (details: { url: string; windowId?: number; active?: boolean }) => ({
@@ -37,11 +50,104 @@ describe('CDP browser controller', () => {
           active: details.active ?? true,
           url: details.url,
         })),
+        update: vi.fn(async (tabId: number, changes: chrome.tabs.UpdateProperties) => ({
+          id: tabId,
+          windowId: 1,
+          index: 0,
+          active: changes.active ?? true,
+          pinned: changes.pinned ?? false,
+          mutedInfo: { muted: changes.muted ?? false },
+          highlighted: true,
+          incognito: false,
+          selected: true,
+          discarded: false,
+          autoDiscardable: true,
+          groupId: -1,
+          url: changes.url ?? 'https://example.com',
+        })),
+        move: vi.fn(async (tabId: number, details: chrome.tabs.MoveProperties) => ({
+          id: tabId,
+          windowId: details.windowId ?? 1,
+          index: details.index,
+          active: true,
+          pinned: false,
+          highlighted: true,
+          incognito: false,
+          selected: true,
+          discarded: false,
+          autoDiscardable: true,
+          groupId: -1,
+        })),
+        duplicate: vi.fn(async (tabId: number) => ({
+          id: tabId + 100,
+          windowId: 1,
+          index: 1,
+          active: true,
+          pinned: false,
+          highlighted: true,
+          incognito: false,
+          selected: true,
+          discarded: false,
+          autoDiscardable: true,
+          groupId: -1,
+        })),
+        discard: vi.fn(async (tabId: number) => ({
+          id: tabId,
+          windowId: 1,
+          index: 0,
+          active: false,
+          pinned: false,
+          highlighted: false,
+          incognito: false,
+          selected: false,
+          discarded: true,
+          autoDiscardable: true,
+          groupId: -1,
+        })),
+        remove: vi.fn(async () => undefined),
+        group: vi.fn(async () => 4),
+        ungroup: vi.fn(async () => undefined),
+        getZoom: vi.fn(async () => 1),
+        setZoom: vi.fn(async () => undefined),
+        onCreated: {
+          addListener: vi.fn(listener => tabCreatedListeners.add(listener)),
+          removeListener: vi.fn(listener => tabCreatedListeners.delete(listener)),
+        },
       },
       windows: {
+        getAll: vi.fn(async () => [
+          { id: 1, focused: true, incognito: false, type: 'normal', state: 'normal' },
+        ]),
         create: vi.fn(async (details: { url: string; focused?: boolean }) => ({
           id: 9,
           focused: details.focused ?? true,
+        })),
+        update: vi.fn(async (windowId: number, changes: chrome.windows.UpdateInfo) => ({
+          id: windowId,
+          focused: changes.focused ?? true,
+          incognito: false,
+          type: 'normal',
+          state: changes.state ?? 'normal',
+        })),
+        remove: vi.fn(async () => undefined),
+      },
+      tabGroups: {
+        query: vi.fn(async () => [
+          { id: 4, windowId: 1, collapsed: false, color: 'blue', title: 'Research' },
+        ]),
+        get: vi.fn(async (groupId: number) => ({
+          id: groupId,
+          windowId: 1,
+          collapsed: false,
+          color: 'blue',
+          title: 'Research',
+        })),
+        update: vi.fn(async (groupId: number, changes: chrome.tabGroups.UpdateProperties) => ({
+          id: groupId,
+          windowId: 1,
+          collapsed: changes.collapsed ?? false,
+          color: changes.color ?? 'blue',
+          title: changes.title ?? 'Research',
         })),
       },
       permissions: {
@@ -96,6 +202,78 @@ describe('CDP browser controller', () => {
             filename: '/Users/test/Downloads/EV/photo.jpg',
           },
         ]),
+        pause: vi.fn(async () => undefined),
+        resume: vi.fn(async () => undefined),
+        cancel: vi.fn(async () => undefined),
+        open: vi.fn(async () => undefined),
+        show: vi.fn(),
+        removeFile: vi.fn(async () => undefined),
+        erase: vi.fn(async (query: chrome.downloads.DownloadQuery) => query.id ?? []),
+        onCreated: {
+          addListener: vi.fn(listener => downloadCreatedListeners.add(listener)),
+          removeListener: vi.fn(listener => downloadCreatedListeners.delete(listener)),
+        },
+      },
+      history: {
+        search: vi.fn(async () => [
+          {
+            id: 'https://example.com',
+            url: 'https://example.com',
+            title: 'Example',
+            visitCount: 2,
+          },
+        ]),
+        getVisits: vi.fn(async () => [
+          {
+            id: 'visit-1',
+            visitId: 'visit-1',
+            visitTime: 1_500,
+            referringVisitId: '0',
+            transition: 'link',
+          },
+        ]),
+        deleteUrl: vi.fn(async () => undefined),
+        deleteRange: vi.fn(async () => undefined),
+        deleteAll: vi.fn(async () => undefined),
+      },
+      sessions: {
+        getRecentlyClosed: vi.fn(async () => [
+          {
+            tab: {
+              sessionId: 'recent-tab',
+              id: 8,
+              windowId: 1,
+              index: 0,
+              active: false,
+              pinned: false,
+              highlighted: false,
+              incognito: false,
+              selected: false,
+              discarded: false,
+              autoDiscardable: true,
+              groupId: -1,
+              title: 'Closed',
+              url: 'https://example.com/closed',
+            },
+          },
+        ]),
+        restore: vi.fn(async () => ({
+          tab: {
+            sessionId: 'recent-tab',
+            id: 18,
+            windowId: 1,
+            index: 0,
+            active: true,
+            pinned: false,
+            highlighted: true,
+            incognito: false,
+            selected: true,
+            discarded: false,
+            autoDiscardable: true,
+            groupId: -1,
+            url: 'https://example.com/closed',
+          },
+        })),
       },
       debugger: {
         attach: vi.fn(async () => undefined),
@@ -133,6 +311,45 @@ describe('CDP browser controller', () => {
           if (method === 'DOM.getBoxModel') {
             return { model: { border: [10, 20, 110, 20, 110, 60, 10, 60] } };
           }
+          if (method === 'DOM.resolveNode') {
+            return { object: { objectId: 'object-1' } };
+          }
+          if (method === 'Page.createIsolatedWorld') {
+            return { executionContextId: 91 };
+          }
+          if (method === 'Page.getNavigationHistory') {
+            return {
+              currentIndex: 1,
+              entries: [
+                { id: 10, url: 'https://example.com/previous' },
+                { id: 11, url: 'https://example.com/current' },
+                { id: 12, url: 'https://example.com/next' },
+              ],
+            };
+          }
+          if (method === 'Runtime.callFunctionOn') {
+            const declaration = String(params?.functionDeclaration ?? '');
+            if (declaration.includes('evReadCheckState')) {
+              return { result: { value: { checkable: true, checked: false } } };
+            }
+            if (declaration.includes('evSelectOptions')) {
+              return { result: { value: { selectedValues: ['ca'] } } };
+            }
+            if (declaration.includes('evInspectElement')) {
+              return {
+                result: {
+                  value: {
+                    tagName: 'input',
+                    role: 'textbox',
+                    value: 'Draft',
+                    checked: false,
+                    disabled: false,
+                    attributes: { 'aria-label': 'Title' },
+                  },
+                },
+              };
+            }
+          }
           if (
             method === 'Runtime.evaluate' &&
             typeof params?.expression === 'string' &&
@@ -165,6 +382,142 @@ describe('CDP browser controller', () => {
     resetBrowserControllerForTests();
   });
 
+  test('coalesces concurrent debugger attachment for one tab', async () => {
+    let finishAttach!: () => void;
+    const attachPending = new Promise<void>(resolve => (finishAttach = resolve));
+    vi.mocked(chrome.debugger.attach).mockImplementation(() => attachPending);
+
+    const advancedCommands = [
+      executeBrowserCommand({ action: 'page.pointer', tabId: 7, type: 'move', x: 10, y: 20 }),
+      executeBrowserCommand({ action: 'page.pointer', tabId: 7, type: 'move', x: 20, y: 30 }),
+      executeBrowserCommand({ action: 'page.pointer', tabId: 7, type: 'move', x: 30, y: 40 }),
+    ];
+    await Promise.resolve();
+    await Promise.resolve();
+    const attachCalls = vi.mocked(chrome.debugger.attach).mock.calls.length;
+    finishAttach();
+    await Promise.all(advancedCommands);
+
+    expect(attachCalls).toBe(1);
+  });
+
+  test('uses fixed content-script operations for common page actions without CDP', async () => {
+    const executeScript = vi.fn(async (injection: { args?: unknown[] }) => {
+      const operation = injection.args?.[0] as { kind?: string } | undefined;
+      if (operation?.kind === 'snapshot') {
+        return [
+          {
+            frameId: 0,
+            result: {
+              nodes: [{ ref: '@e1', role: 'button', name: 'Save', selector: '#save' }],
+              truncated: false,
+            },
+          },
+        ];
+      }
+      if (operation?.kind === 'context') {
+        return [
+          {
+            frameId: 0,
+            result: {
+              url: 'https://example.com',
+              title: 'Example',
+              text: 'Page text',
+              capturedAt: '2026-08-15T00:00:00.000Z',
+            },
+          },
+        ];
+      }
+      if (operation?.kind === 'click') {
+        return [{ frameId: 0, result: { clicked: true, x: 10, y: 20 } }];
+      }
+      if (operation?.kind === 'type') {
+        return [{ frameId: 0, result: { typed: true, textLength: 5 } }];
+      }
+      if (operation?.kind === 'setChecked') {
+        return [{ frameId: 0, result: { checked: true, changed: true } }];
+      }
+      if (operation?.kind === 'select') {
+        return [{ frameId: 0, result: { selectedValues: ['ca'] } }];
+      }
+      if (operation?.kind === 'focus') {
+        return [{ frameId: 0, result: { focused: true } }];
+      }
+      if (operation?.kind === 'inspect') {
+        return [{ frameId: 0, result: { tagName: 'button', attributes: {} } }];
+      }
+      if (operation?.kind === 'scroll') {
+        return [{ frameId: 0, result: { x: 0, y: 600 } }];
+      }
+      if (operation?.kind === 'waitTarget') {
+        return [{ frameId: 0, result: { condition: 'target', matched: true, elapsedMs: 1 } }];
+      }
+      return [{ frameId: 0, result: { operation: 'back' } }];
+    });
+    (
+      globalThis.chrome as unknown as { scripting: { executeScript: typeof executeScript } }
+    ).scripting = { executeScript };
+    const captureVisibleTab = vi.fn(async () => 'data:image/png;base64,cG5n');
+    (
+      globalThis.chrome.tabs as unknown as {
+        captureVisibleTab: typeof captureVisibleTab;
+      }
+    ).captureVisibleTab = captureVisibleTab;
+    resetBrowserControllerForTests();
+
+    await expect(
+      executeBrowserCommand({ action: 'page.snapshot', tabId: 7, mode: 'interactive' })
+    ).resolves.toMatchObject({ nodes: [{ ref: '@e1', role: 'button', name: 'Save' }] });
+    await expect(
+      executeBrowserCommand({ action: 'page.click', tabId: 7, selector: '@e1' })
+    ).resolves.toMatchObject({ clicked: true, selector: '@e1' });
+    await expect(
+      executeBrowserCommand({ action: 'page.context', tabId: 7 })
+    ).resolves.toMatchObject({ text: 'Page text' });
+    await executeBrowserCommand({ action: 'page.history', tabId: 7, operation: 'back' });
+    await executeBrowserCommand({
+      action: 'page.type',
+      tabId: 7,
+      selector: '#input',
+      text: 'hello',
+    });
+    await executeBrowserCommand({
+      action: 'page.setChecked',
+      tabId: 7,
+      selector: '#remember',
+      checked: true,
+    });
+    await executeBrowserCommand({
+      action: 'page.select',
+      tabId: 7,
+      selector: '#country',
+      values: ['ca'],
+    });
+    await executeBrowserCommand({ action: 'page.focus', tabId: 7, selector: '#input' });
+    await executeBrowserCommand({ action: 'page.inspect', tabId: 7, selector: '#input' });
+    await executeBrowserCommand({ action: 'page.scroll', tabId: 7, direction: 'down' });
+    await executeBrowserCommand({
+      action: 'page.wait',
+      tabId: 7,
+      condition: 'target',
+      selector: '#ready',
+    });
+    await executeBrowserCommand({ action: 'page.wait', tabId: 7, timeMs: 0 });
+    await expect(
+      executeBrowserCommand({ action: 'page.screenshot', tabId: 7 })
+    ).resolves.toMatchObject({ data: 'cG5n', fullPage: false });
+    await executeBrowserCommand({
+      action: 'page.navigate',
+      tabId: 7,
+      url: 'https://example.com/next',
+    });
+
+    expect(chrome.debugger.attach).not.toHaveBeenCalled();
+    expect(executeScript).toHaveBeenCalledTimes(11);
+    expect(captureVisibleTab).toHaveBeenCalledWith(1, { format: 'png' });
+    expect(chrome.tabs.update).toHaveBeenCalledWith(7, { url: 'https://example.com/next' });
+  });
+
   test('opens an unfocused window and tabs inside a specified window', async () => {
     await expect(
       executeBrowserCommand({
@@ -192,6 +545,142 @@ describe('CDP browser controller', () => {
       windowId: 9,
       active: false,
     });
+  });
+
+  test('manages P1 windows, tabs, tab groups, and zoom through typed actions', async () => {
+    await expect(executeBrowserCommand({ action: 'windows.list' })).resolves.toEqual([
+      expect.objectContaining({ id: 1, focused: true, state: 'normal' }),
+    ]);
+    await executeBrowserCommand({
+      action: 'windows.update',
+      windowId: 1,
+      focused: true,
+      state: 'maximized',
+    });
+    expect(chrome.windows.update).toHaveBeenCalledWith(1, {
+      focused: true,
+      state: 'maximized',
+    });
+    await executeBrowserCommand({ action: 'windows.close', windowId: 1 });
+    expect(chrome.windows.remove).toHaveBeenCalledWith(1);
+
+    await expect(executeBrowserCommand({ action: 'tabs.get', tabId: 7 })).resolves.toMatchObject({
+      id: 7,
+      windowId: 1,
+      url: 'https://example.com',
+    });
+    await executeBrowserCommand({ action: 'tabs.update', tabId: 7, pinned: true, muted: true });
+    expect(chrome.tabs.update).toHaveBeenCalledWith(7, { pinned: true, muted: true });
+    await executeBrowserCommand({ action: 'tabs.move', tabId: 7, windowId: 9, index: 0 });
+    expect(chrome.tabs.move).toHaveBeenCalledWith(7, { windowId: 9, index: 0 });
+    await expect(
+      executeBrowserCommand({ action: 'tabs.duplicate', tabId: 7 })
+    ).resolves.toMatchObject({
+      id: 107,
+    });
+    await expect(
+      executeBrowserCommand({ action: 'tabs.discard', tabId: 7 })
+    ).resolves.toMatchObject({
+      id: 7,
+      discarded: true,
+    });
+
+    await expect(executeBrowserCommand({ action: 'tabGroups.list' })).resolves.toEqual([
+      expect.objectContaining({ id: 4, title: 'Research' }),
+    ]);
+    await executeBrowserCommand({
+      action: 'tabGroups.add',
+      groupId: 4,
+      tabIds: [7, 12],
+    });
+    expect(chrome.tabs.group).toHaveBeenCalledWith({ groupId: 4, tabIds: [7, 12] });
+    await executeBrowserCommand({
+      action: 'tabGroups.create',
+      tabIds: [7, 12],
+      title: 'Reading',
+      color: 'green',
+      collapsed: true,
+    });
+    expect(chrome.tabs.group).toHaveBeenCalledWith({ tabIds: [7, 12] });
+    expect(chrome.tabGroups.update).toHaveBeenCalledWith(4, {
+      title: 'Reading',
+      color: 'green',
+      collapsed: true,
+    });
+    await executeBrowserCommand({ action: 'tabGroups.ungroup', tabIds: [7, 12] });
+    expect(chrome.tabs.ungroup).toHaveBeenCalledWith([7, 12]);
+
+    await expect(executeBrowserCommand({ action: 'zoom.get', tabId: 7 })).resolves.toEqual({
+      tabId: 7,
+      factor: 1,
+    });
+    await executeBrowserCommand({ action: 'zoom.set', tabId: 7, factor: 1.25 });
+    expect(chrome.tabs.setZoom).toHaveBeenCalledWith(7, 1.25);
+  });
+
+  test('manages P1 downloads with optional permission and explicit deletion', async () => {
+    await expect(
+      executeBrowserCommand({ action: 'downloads.list', state: 'complete', limit: 50 })
+    ).resolves.toEqual([expect.objectContaining({ downloadId: 'chrome:55', state: 'complete' })]);
+    await executeBrowserCommand({ action: 'downloads.pause', downloadId: 'chrome:55' });
+    await executeBrowserCommand({ action: 'downloads.resume', downloadId: 'chrome:55' });
+    await executeBrowserCommand({ action: 'downloads.cancel', downloadId: 'chrome:55' });
+    await executeBrowserCommand({ action: 'downloads.open', downloadId: 'chrome:55' });
+    await executeBrowserCommand({ action: 'downloads.show', downloadId: 'chrome:55' });
+    expect(chrome.downloads.pause).toHaveBeenCalledWith(55);
+    expect(chrome.downloads.resume).toHaveBeenCalledWith(55);
+    expect(chrome.downloads.cancel).toHaveBeenCalledWith(55);
+    expect(chrome.downloads.open).toHaveBeenCalledWith(55);
+    expect(chrome.downloads.show).toHaveBeenCalledWith(55);
+
+    await executeBrowserCommand({
+      action: 'downloads.remove',
+      downloadId: 'chrome:55',
+      mode: 'both',
+      confirm: 'REMOVE_DOWNLOAD',
+    });
+    expect(chrome.downloads.removeFile).toHaveBeenCalledWith(55);
+    expect(chrome.downloads.erase).toHaveBeenCalledWith({ id: 55 });
+
+    permissionContains.mockResolvedValue(false);
+    await expect(executeBrowserCommand({ action: 'downloads.list' })).rejects.toThrow(
+      'Downloads permission is required'
+    );
+  });
+
+  test('manages bounded history and recently closed sessions', async () => {
+    await expect(
+      executeBrowserCommand({ action: 'history.search', text: 'Example', maxResults: 20 })
+    ).resolves.toEqual([expect.objectContaining({ url: 'https://example.com', visitCount: 2 })]);
+    await expect(
+      executeBrowserCommand({ action: 'history.getVisits', url: 'https://example.com' })
+    ).resolves.toEqual([expect.objectContaining({ visitId: 'visit-1' })]);
+
+    await executeBrowserCommand({
+      action: 'history.remove',
+      target: { type: 'url', url: 'https://example.com' },
+      confirm: 'REMOVE_BROWSER_HISTORY',
+    });
+    expect(chrome.history.deleteUrl).toHaveBeenCalledWith({ url: 'https://example.com' });
+    await executeBrowserCommand({
+      action: 'history.remove',
+      target: { type: 'range', startTime: 1_000, endTime: 2_000 },
+      confirm: 'REMOVE_BROWSER_HISTORY',
+    });
+    expect(chrome.history.deleteRange).toHaveBeenCalledWith({ startTime: 1_000, endTime: 2_000 });
+    await executeBrowserCommand({
+      action: 'history.remove',
+      target: { type: 'all' },
+      confirm: 'REMOVE_BROWSER_HISTORY',
+    });
+    expect(chrome.history.deleteAll).toHaveBeenCalled();
+
+    await expect(
+      executeBrowserCommand({ action: 'sessions.recent', maxResults: 10 })
+    ).resolves.toEqual([expect.objectContaining({ type: 'tab', sessionId: 'recent-tab' })]);
+    await expect(
+      executeBrowserCommand({ action: 'sessions.restore', sessionId: 'recent-tab' })
+    ).resolves.toMatchObject({ type: 'tab', sessionId: 'recent-tab' });
   });
 
   test('reads a fixed main scope without accepting arbitrary selectors', async () => {
@@ -234,6 +723,191 @@ describe('CDP browser controller', () => {
         params: { type: 'mouseReleased', x: 60, y: 40, button: 'left', clickCount: 1 },
       },
     ]);
+  });
+
+  test('supports complete typed P0 page interactions', async () => {
+    await executeBrowserCommand({ action: 'page.snapshot', tabId: 7, frameId: 'frame-1' });
+    expect(calls).toContainEqual({
+      method: 'Accessibility.getFullAXTree',
+      params: { frameId: 'frame-1' },
+    });
+
+    await executeBrowserCommand({
+      action: 'page.setChecked',
+      tabId: 7,
+      selector: '@e1',
+      checked: true,
+    });
+    expect(calls).toContainEqual({
+      method: 'Runtime.callFunctionOn',
+      params: expect.objectContaining({
+        functionDeclaration: expect.stringContaining('evReadCheckState'),
+      }),
+    });
+
+    await expect(
+      executeBrowserCommand({
+        action: 'page.select',
+        tabId: 7,
+        selector: '@e1',
+        values: ['ca'],
+      })
+    ).resolves.toMatchObject({ selectedValues: ['ca'] });
+
+    await executeBrowserCommand({
+      action: 'page.drag',
+      tabId: 7,
+      sourceSelector: '@e1',
+      targetSelector: '@e1',
+    });
+    expect(calls).toContainEqual({
+      method: 'Input.dispatchMouseEvent',
+      params: { type: 'mouseMoved', x: 60, y: 40, button: 'left', buttons: 1 },
+    });
+
+    await executeBrowserCommand({ action: 'page.focus', tabId: 7, selector: '@e1' });
+    expect(calls).toContainEqual({ method: 'DOM.focus', params: { backendNodeId: 44 } });
+
+    await expect(
+      executeBrowserCommand({ action: 'page.inspect', tabId: 7, selector: '@e1' })
+    ).resolves.toMatchObject({
+      tagName: 'input',
+      role: 'textbox',
+      value: 'Draft',
+      attributes: { 'aria-label': 'Title' },
+    });
+
+    await executeBrowserCommand({
+      action: 'page.dialog.respond',
+      tabId: 7,
+      accept: true,
+      promptText: 'approved',
+    });
+    expect(calls).toContainEqual({
+      method: 'Page.handleJavaScriptDialog',
+      params: { accept: true, promptText: 'approved' },
+    });
+
+    await executeBrowserCommand({
+      action: 'page.pointer',
+      tabId: 7,
+      type: 'click',
+      x: 25,
+      y: 50,
+      button: 'right',
+      clickCount: 2,
+    });
+    expect(calls.slice(-4)).toEqual([
+      {
+        method: 'Input.dispatchMouseEvent',
+        params: { type: 'mousePressed', x: 25, y: 50, button: 'right', clickCount: 1 },
+      },
+      {
+        method: 'Input.dispatchMouseEvent',
+        params: { type: 'mouseReleased', x: 25, y: 50, button: 'right', clickCount: 1 },
+      },
+      {
+        method: 'Input.dispatchMouseEvent',
+        params: { type: 'mousePressed', x: 25, y: 50, button: 'right', clickCount: 2 },
+      },
+      {
+        method: 'Input.dispatchMouseEvent',
+        params: { type: 'mouseReleased', x: 25, y: 50, button: 'right', clickCount: 2 },
+      },
+    ]);
+  });
+
+  test('supports page history, rich scrolling, keyboard shortcuts, and event waits', async () => {
+    await executeBrowserCommand({ action: 'page.history', tabId: 7, operation: 'back' });
+    expect(calls).toContainEqual({
+      method: 'Page.navigateToHistoryEntry',
+      params: { entryId: 10 },
+    });
+    await executeBrowserCommand({ action: 'page.history', tabId: 7, operation: 'forward' });
+    expect(calls).toContainEqual({
+      method: 'Page.navigateToHistoryEntry',
+      params: { entryId: 12 },
+    });
+    await executeBrowserCommand({ action: 'page.history', tabId: 7, operation: 'reload' });
+    await executeBrowserCommand({ action: 'page.history', tabId: 7, operation: 'stop' });
+    expect(calls).toContainEqual({ method: 'Page.reload', params: {} });
+    expect(calls).toContainEqual({ method: 'Page.stopLoading', params: {} });
+
+    await executeBrowserCommand({ action: 'page.press', tabId: 7, key: 'a', modifiers: ['Meta'] });
+    expect(calls).toContainEqual({
+      method: 'Input.dispatchKeyEvent',
+      params: expect.objectContaining({ type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 4 }),
+    });
+
+    await executeBrowserCommand({
+      action: 'page.scroll',
+      tabId: 7,
+      deltaX: 20,
+      deltaY: 400,
+    });
+    expect(calls).toContainEqual({
+      method: 'Input.dispatchMouseEvent',
+      params: { type: 'mouseWheel', x: 0, y: 0, deltaX: 20, deltaY: 400 },
+    });
+
+    const popup = executeBrowserCommand({
+      action: 'page.wait',
+      tabId: 7,
+      condition: 'popup',
+      timeoutMs: 1_000,
+    });
+    await vi.waitFor(() => expect(tabCreatedListeners.size).toBe(1));
+    tabCreatedListeners.forEach(listener =>
+      listener({
+        id: 22,
+        openerTabId: 7,
+        windowId: 1,
+        active: true,
+        index: 1,
+        pinned: false,
+        highlighted: true,
+        incognito: false,
+        selected: true,
+        discarded: false,
+        autoDiscardable: true,
+        groupId: -1,
+      })
+    );
+    await expect(popup).resolves.toMatchObject({ tabId: 7, popupTabId: 22 });
+
+    const download = executeBrowserCommand({
+      action: 'page.wait',
+      tabId: 7,
+      condition: 'download',
+      timeoutMs: 1_000,
+    });
+    await vi.waitFor(() => expect(downloadCreatedListeners.size).toBe(1));
+    downloadCreatedListeners.forEach(listener =>
+      listener({
+        id: 56,
+        url: 'https://example.com/file.zip',
+        finalUrl: 'https://example.com/file.zip',
+        filename: '',
+        danger: 'safe',
+        mime: '',
+        startTime: new Date().toISOString(),
+        endTime: undefined,
+        estimatedEndTime: undefined,
+        state: 'in_progress',
+        paused: false,
+        canResume: false,
+        error: undefined,
+        bytesReceived: 0,
+        totalBytes: 0,
+        fileSize: -1,
+        exists: true,
+        byExtensionId: undefined,
+        byExtensionName: undefined,
+        incognito: false,
+        referrer: '',
+      })
+    );
+    await expect(download).resolves.toMatchObject({ tabId: 7, downloadId: 'chrome:56' });
   });
 
   test('collects CDP diagnostics and supports advanced page controls', async () => {
@@ -353,7 +1027,7 @@ describe('CDP browser controller', () => {
     expect(chrome.downloads.download).not.toHaveBeenCalled();
   });
 
-  test('keeps bookmarks available when the browser has no CDP debugger API', async () => {
+  test('keeps browser-shell and bookmark actions available without CDP page control', async () => {
     delete (chrome as unknown as { debugger?: typeof chrome.debugger }).debugger;
     resetBrowserControllerForTests();
 
@@ -369,10 +1043,15 @@ describe('CDP browser controller', () => {
       arbitraryEval: false,
     });
     expect(capabilities.actions).toContain('bookmarks.list');
+    expect(capabilities.actions).toContain('tabs.list');
+    expect(capabilities.actions).not.toContain('page.navigate');
     await expect(executeBrowserCommand({ action: 'bookmarks.list' })).resolves.toMatchObject({
       nodes: expect.any(Array),
     });
-    await expect(executeBrowserCommand({ action: 'tabs.list' })).rejects.toThrow(
+    await expect(executeBrowserCommand({ action: 'tabs.list' })).resolves.toEqual([
+      expect.objectContaining({ id: 7, windowId: 1 }),
+    ]);
+    await expect(executeBrowserCommand({ action: 'page.snapshot', tabId: 7 })).rejects.toThrow(
       'Chrome CDP control is unavailable'
     );
   });
@@ -480,6 +1159,9 @@ describe('CDP browser controller', () => {
     })) as { transport: string; arbitraryEval: boolean; actions: string[] };
     expect(capabilities).toMatchObject({ transport: 'cdp', arbitraryEval: false });
     expect(capabilities.actions).toContain('bookmarks.restore');
+    expect(capabilities.actions).toContain('page.setChecked');
+    expect(capabilities.actions).toContain('windows.list');
+    expect(capabilities.actions).toContain('history.search');
 
     await executeBrowserCommand({ action: 'page.snapshot', tabId: 7 });
     await executeBrowserCommand({ action: 'page.release', tabId: 7 });

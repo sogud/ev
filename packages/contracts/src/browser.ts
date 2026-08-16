@@ -4,7 +4,14 @@ import { EV_PROTOCOL_VERSION } from './protocol';
 
 const TabIdSchema = z.number().int().nonnegative();
 const WindowIdSchema = z.number().int().nonnegative();
+const TabGroupIdSchema = z.number().int().nonnegative();
+const FrameIdSchema = z.string().trim().min(1).max(256);
 const BrowserSessionIdSchema = z.string().uuid();
+const ChromeSessionIdSchema = z.string().trim().min(1).max(512);
+const BrowserDownloadIdSchema = z.string().regex(/^chrome:\d+$/);
+const CoordinateSchema = z.number().finite().min(0).max(100_000);
+const ScrollDeltaSchema = z.number().finite().min(-100_000).max(100_000);
+const MouseButtonSchema = z.enum(['left', 'right', 'middle']);
 const WebUrlSchema = z
   .string()
   .url()
@@ -48,12 +55,13 @@ const BookmarkBackupNodeSchema: z.ZodType<BookmarkBackupNode> = z.lazy(() =>
       message: 'A bookmark backup node cannot be both a URL and a folder',
     })
 );
-const KeySchema = z.enum([
+const NamedKeySchema = z.enum([
   'Enter',
   'Tab',
   'Escape',
   'Backspace',
   'Delete',
+  'Insert',
   'ArrowUp',
   'ArrowDown',
   'ArrowLeft',
@@ -63,38 +71,117 @@ const KeySchema = z.enum([
   'PageUp',
   'PageDown',
   'Space',
+  'F1',
+  'F2',
+  'F3',
+  'F4',
+  'F5',
+  'F6',
+  'F7',
+  'F8',
+  'F9',
+  'F10',
+  'F11',
+  'F12',
 ]);
+const KeySchema = z.union([NamedKeySchema, z.string().regex(/^[a-zA-Z0-9]$/)]);
 
 const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('browser.capabilities') }),
-  z.object({ action: z.literal('tabs.list') }),
+  z.object({ action: z.literal('windows.list') }),
   z.object({
     action: z.literal('windows.open'),
     url: WebUrlSchema,
     focused: z.boolean().optional(),
   }),
   z.object({
+    action: z.literal('windows.update'),
+    windowId: WindowIdSchema,
+    focused: z.boolean().optional(),
+    state: z.enum(['normal', 'minimized', 'maximized', 'fullscreen']).optional(),
+    left: z.number().int().min(-100_000).max(100_000).optional(),
+    top: z.number().int().min(-100_000).max(100_000).optional(),
+    width: z.number().int().min(100).max(100_000).optional(),
+    height: z.number().int().min(100).max(100_000).optional(),
+  }),
+  z.object({ action: z.literal('windows.close'), windowId: WindowIdSchema }),
+  z.object({ action: z.literal('tabs.list') }),
+  z.object({ action: z.literal('tabs.get'), tabId: TabIdSchema }),
+  z.object({
     action: z.literal('tabs.open'),
     url: WebUrlSchema,
     windowId: WindowIdSchema.optional(),
     active: z.boolean().optional(),
   }),
+  z.object({
+    action: z.literal('tabs.update'),
+    tabId: TabIdSchema,
+    url: WebUrlSchema.optional(),
+    active: z.boolean().optional(),
+    pinned: z.boolean().optional(),
+    muted: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal('tabs.move'),
+    tabId: TabIdSchema,
+    windowId: WindowIdSchema.optional(),
+    index: z.number().int().min(-1).max(100_000),
+  }),
+  z.object({ action: z.literal('tabs.duplicate'), tabId: TabIdSchema }),
+  z.object({ action: z.literal('tabs.discard'), tabId: TabIdSchema }),
   z.object({ action: z.literal('tabs.close'), tabId: TabIdSchema }),
   z.object({ action: z.literal('tabs.activate'), tabId: TabIdSchema }),
+  z.object({ action: z.literal('tabGroups.list'), windowId: WindowIdSchema.optional() }),
+  z.object({
+    action: z.literal('tabGroups.add'),
+    groupId: TabGroupIdSchema,
+    tabIds: z.array(TabIdSchema).min(1).max(100),
+  }),
+  z.object({
+    action: z.literal('tabGroups.create'),
+    tabIds: z.array(TabIdSchema).min(1).max(100),
+    windowId: WindowIdSchema.optional(),
+    title: z.string().trim().min(1).max(256).optional(),
+    color: z
+      .enum(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'])
+      .optional(),
+    collapsed: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal('tabGroups.update'),
+    groupId: TabGroupIdSchema,
+    title: z.string().trim().min(1).max(256).optional(),
+    color: z
+      .enum(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'])
+      .optional(),
+    collapsed: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal('tabGroups.ungroup'),
+    tabIds: z.array(TabIdSchema).min(1).max(100),
+  }),
   z.object({
     action: z.literal('page.navigate'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
     url: WebUrlSchema,
+  }),
+  z.object({
+    action: z.literal('page.history'),
+    tabId: TabIdSchema.optional(),
+    operation: z.enum(['back', 'forward', 'reload', 'stop']),
   }),
   z.object({
     action: z.literal('page.context'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
     scope: z.enum(['body', 'main']).optional(),
     maxChars: z.number().int().min(1).max(100_000).optional(),
   }),
   z.object({
     action: z.literal('page.snapshot'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
     mode: z.enum(['full', 'interactive']).optional(),
     maxNodes: BoundedLimitSchema.optional(),
     maxChars: z.number().int().min(1).max(200_000).optional(),
@@ -102,18 +189,59 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('page.click'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
     selector: SelectorSchema,
+    button: MouseButtonSchema.optional(),
+    clickCount: z.number().int().min(1).max(2).optional(),
+    waitFor: z.enum(['navigation', 'networkIdle', 'popup', 'download']).optional(),
+    timeoutMs: z.number().int().min(100).max(30_000).optional(),
   }),
   z.object({
     action: z.literal('page.type'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
     selector: SelectorSchema,
     text: z.string().max(100_000),
     clearFirst: z.boolean().optional(),
   }),
   z.object({
+    action: z.literal('page.setChecked'),
+    tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
+    selector: SelectorSchema,
+    checked: z.boolean(),
+  }),
+  z.object({
+    action: z.literal('page.select'),
+    tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
+    selector: SelectorSchema,
+    values: z.array(z.string().max(10_000)).min(1).max(100),
+  }),
+  z.object({
+    action: z.literal('page.drag'),
+    tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
+    sourceSelector: SelectorSchema,
+    targetSelector: SelectorSchema,
+  }),
+  z.object({
+    action: z.literal('page.focus'),
+    tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
+    selector: SelectorSchema,
+  }),
+  z.object({
+    action: z.literal('page.inspect'),
+    tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
+    selector: SelectorSchema,
+    maxChars: z.number().int().min(1).max(10_000).optional(),
+  }),
+  z.object({
     action: z.literal('page.hover'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
     selector: SelectorSchema,
   }),
   z.object({
@@ -126,17 +254,41 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
       .optional(),
   }),
   z.object({
+    action: z.literal('page.pointer'),
+    tabId: TabIdSchema.optional(),
+    type: z.enum(['move', 'down', 'up', 'click']),
+    x: CoordinateSchema,
+    y: CoordinateSchema,
+    button: MouseButtonSchema.optional(),
+    clickCount: z.number().int().min(1).max(2).optional(),
+  }),
+  z.object({
     action: z.literal('page.scroll'),
     tabId: TabIdSchema.optional(),
-    direction: z.enum(['up', 'down', 'top', 'bottom']),
+    frameId: FrameIdSchema.optional(),
+    direction: z.enum(['up', 'down', 'top', 'bottom']).optional(),
     distance: z.number().int().min(1).max(100_000).optional(),
+    selector: SelectorSchema.optional(),
+    deltaX: ScrollDeltaSchema.optional(),
+    deltaY: ScrollDeltaSchema.optional(),
   }),
   z.object({
     action: z.literal('page.wait'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
+    condition: z
+      .enum(['target', 'time', 'navigation', 'networkIdle', 'popup', 'download'])
+      .optional(),
     selector: SelectorSchema.optional(),
     timeMs: z.number().int().min(0).max(30_000).optional(),
     timeoutMs: z.number().int().min(100).max(30_000).optional(),
+    idleMs: z.number().int().min(100).max(5_000).optional(),
+  }),
+  z.object({
+    action: z.literal('page.dialog.respond'),
+    tabId: TabIdSchema.optional(),
+    accept: z.boolean(),
+    promptText: z.string().max(10_000).optional(),
   }),
   z.object({
     action: z.literal('page.screenshot'),
@@ -148,6 +300,7 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('page.upload'),
     tabId: TabIdSchema.optional(),
+    frameId: FrameIdSchema.optional(),
     selector: SelectorSchema,
     filePaths: z.array(z.string().trim().min(1).max(4096)).min(1).max(10),
   }),
@@ -165,6 +318,58 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('downloads.status'),
     downloadId: z.string().trim().min(1).max(100),
+  }),
+  z.object({
+    action: z.literal('downloads.list'),
+    query: z.string().trim().min(1).max(1_000).optional(),
+    state: z.enum(['in_progress', 'complete', 'interrupted']).optional(),
+    limit: z.number().int().min(1).max(1_000).optional(),
+  }),
+  z.object({ action: z.literal('downloads.pause'), downloadId: BrowserDownloadIdSchema }),
+  z.object({ action: z.literal('downloads.resume'), downloadId: BrowserDownloadIdSchema }),
+  z.object({ action: z.literal('downloads.cancel'), downloadId: BrowserDownloadIdSchema }),
+  z.object({ action: z.literal('downloads.open'), downloadId: BrowserDownloadIdSchema }),
+  z.object({ action: z.literal('downloads.show'), downloadId: BrowserDownloadIdSchema }),
+  z.object({
+    action: z.literal('downloads.remove'),
+    downloadId: BrowserDownloadIdSchema,
+    mode: z.enum(['file', 'record', 'both']),
+    confirm: z.literal('REMOVE_DOWNLOAD'),
+  }),
+  z.object({
+    action: z.literal('history.search'),
+    text: z.string().max(1_000).optional(),
+    startTime: z.number().finite().nonnegative().optional(),
+    endTime: z.number().finite().nonnegative().optional(),
+    maxResults: z.number().int().min(1).max(10_000).optional(),
+  }),
+  z.object({ action: z.literal('history.getVisits'), url: WebUrlSchema }),
+  z.object({
+    action: z.literal('history.remove'),
+    target: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('url'), url: WebUrlSchema }),
+      z.object({
+        type: z.literal('range'),
+        startTime: z.number().finite().nonnegative(),
+        endTime: z.number().finite().nonnegative(),
+      }),
+      z.object({ type: z.literal('all') }),
+    ]),
+    confirm: z.literal('REMOVE_BROWSER_HISTORY'),
+  }),
+  z.object({
+    action: z.literal('sessions.recent'),
+    maxResults: z.number().int().min(1).max(25).optional(),
+  }),
+  z.object({
+    action: z.literal('sessions.restore'),
+    sessionId: ChromeSessionIdSchema.optional(),
+  }),
+  z.object({ action: z.literal('zoom.get'), tabId: TabIdSchema.optional() }),
+  z.object({
+    action: z.literal('zoom.set'),
+    tabId: TabIdSchema.optional(),
+    factor: z.number().finite().min(0.25).max(5),
   }),
   z.object({
     action: z.literal('page.logs'),
@@ -234,6 +439,86 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
 export const BrowserAtomicCommandSchema = BrowserCommandUnionSchema.superRefine(
   (command, context) => {
     if (
+      command.action === 'windows.update' &&
+      command.focused === undefined &&
+      command.state === undefined &&
+      command.left === undefined &&
+      command.top === undefined &&
+      command.width === undefined &&
+      command.height === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Window update requires at least one property',
+      });
+    }
+    if (
+      command.action === 'tabs.update' &&
+      command.url === undefined &&
+      command.active === undefined &&
+      command.pinned === undefined &&
+      command.muted === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Tab update requires at least one property',
+      });
+    }
+    if (
+      command.action === 'tabGroups.update' &&
+      command.title === undefined &&
+      command.color === undefined &&
+      command.collapsed === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Tab group update requires at least one property',
+      });
+    }
+    if (
+      command.action === 'page.scroll' &&
+      command.direction === undefined &&
+      command.selector === undefined &&
+      command.deltaX === undefined &&
+      command.deltaY === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Page scroll requires a direction, target, or delta',
+      });
+    }
+    if (
+      command.action === 'page.wait' &&
+      command.condition === 'target' &&
+      command.selector === undefined
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Target wait requires a selector',
+      });
+    }
+    if (
+      command.action === 'history.remove' &&
+      command.target.type === 'range' &&
+      command.target.startTime >= command.target.endTime
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'History range endTime must be greater than startTime',
+      });
+    }
+    if (
+      command.action === 'history.search' &&
+      command.startTime !== undefined &&
+      command.endTime !== undefined &&
+      command.startTime >= command.endTime
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'History search endTime must be greater than startTime',
+      });
+    }
+    if (
       command.action === 'bookmarks.update' &&
       command.title === undefined &&
       command.url === undefined
@@ -295,13 +580,64 @@ export const BrowserRunRetrySchema = z
   .strict();
 
 const BrowserRunAtomicStepCommandSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('page.navigate'), url: WebUrlSchema }),
-  z.object({ action: z.literal('page.click'), target: BrowserRunTargetSchema }),
+  z.object({
+    action: z.literal('page.navigate'),
+    frameId: FrameIdSchema.optional(),
+    url: WebUrlSchema,
+  }),
+  z.object({
+    action: z.literal('page.history'),
+    operation: z.enum(['back', 'forward', 'reload', 'stop']),
+  }),
+  z.object({
+    action: z.literal('page.click'),
+    frameId: FrameIdSchema.optional(),
+    target: BrowserRunTargetSchema,
+    button: MouseButtonSchema.optional(),
+    clickCount: z.number().int().min(1).max(2).optional(),
+    waitFor: z.enum(['navigation', 'networkIdle', 'popup', 'download']).optional(),
+    timeoutMs: z.number().int().min(100).max(30_000).optional(),
+  }),
   z.object({
     action: z.literal('page.type'),
+    frameId: FrameIdSchema.optional(),
     target: BrowserRunTargetSchema,
     text: BrowserRunTextSchema,
     clearFirst: z.boolean().optional(),
+  }),
+  z.object({
+    action: z.literal('page.setChecked'),
+    frameId: FrameIdSchema.optional(),
+    target: BrowserRunTargetSchema,
+    checked: z.boolean(),
+  }),
+  z.object({
+    action: z.literal('page.select'),
+    frameId: FrameIdSchema.optional(),
+    target: BrowserRunTargetSchema,
+    values: z.array(z.string().max(10_000)).min(1).max(100),
+  }),
+  z.object({
+    action: z.literal('page.drag'),
+    frameId: FrameIdSchema.optional(),
+    source: BrowserRunTargetSchema,
+    target: BrowserRunTargetSchema,
+  }),
+  z.object({
+    action: z.literal('page.focus'),
+    frameId: FrameIdSchema.optional(),
+    target: BrowserRunTargetSchema,
+  }),
+  z.object({
+    action: z.literal('page.inspect'),
+    frameId: FrameIdSchema.optional(),
+    target: BrowserRunTargetSchema,
+    maxChars: z.number().int().min(1).max(10_000).optional(),
+  }),
+  z.object({
+    action: z.literal('page.hover'),
+    frameId: FrameIdSchema.optional(),
+    target: BrowserRunTargetSchema,
   }),
   z.object({
     action: z.literal('page.press'),
@@ -311,7 +647,40 @@ const BrowserRunAtomicStepCommandSchema = z.discriminatedUnion('action', [
       .max(4)
       .optional(),
   }),
+  z.object({
+    action: z.literal('page.pointer'),
+    type: z.enum(['move', 'down', 'up', 'click']),
+    x: CoordinateSchema,
+    y: CoordinateSchema,
+    button: MouseButtonSchema.optional(),
+    clickCount: z.number().int().min(1).max(2).optional(),
+  }),
+  z.object({
+    action: z.literal('page.scroll'),
+    frameId: FrameIdSchema.optional(),
+    target: BrowserRunTargetSchema.optional(),
+    direction: z.enum(['up', 'down', 'top', 'bottom']).optional(),
+    distance: z.number().int().min(1).max(100_000).optional(),
+    deltaX: ScrollDeltaSchema.optional(),
+    deltaY: ScrollDeltaSchema.optional(),
+  }),
+  z.object({
+    action: z.literal('page.wait'),
+    frameId: FrameIdSchema.optional(),
+    condition: z.enum(['target', 'time', 'navigation', 'networkIdle', 'popup', 'download']),
+    target: BrowserRunTargetSchema.optional(),
+    timeMs: z.number().int().min(0).max(30_000).optional(),
+    timeoutMs: z.number().int().min(100).max(30_000).optional(),
+    idleMs: z.number().int().min(100).max(5_000).optional(),
+  }),
+  z.object({
+    action: z.literal('page.dialog.respond'),
+    accept: z.boolean(),
+    promptText: z.string().max(10_000).optional(),
+  }),
 ]);
+
+type BrowserRunAtomicStepCommand = z.infer<typeof BrowserRunAtomicStepCommandSchema>;
 
 export const BrowserRunCommandStepSchema = z.object({
   kind: z.literal('command'),
@@ -353,10 +722,41 @@ export const BrowserRunCommandSchema = z
     steps: z.array(BrowserRunStepSchema).min(1).max(50),
   })
   .superRefine((run, context) => {
+    const validateCommand = (
+      command: BrowserRunAtomicStepCommand,
+      path: Array<string | number>
+    ): void => {
+      if (
+        command.action === 'page.scroll' &&
+        command.target === undefined &&
+        command.direction === undefined &&
+        command.deltaX === undefined &&
+        command.deltaY === undefined
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: 'BrowserRun page.scroll requires a direction, target, or delta',
+        });
+      }
+      if (
+        command.action === 'page.wait' &&
+        command.condition === 'target' &&
+        command.target === undefined
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path,
+          message: 'BrowserRun target wait requires a target',
+        });
+      }
+    };
+
     let atomicCommands = 0;
     run.steps.forEach((step, stepIndex) => {
       if (step.kind === 'command') {
         atomicCommands += 1;
+        validateCommand(step.command, ['steps', stepIndex, 'command']);
         if (step.command.action === 'page.type' && typeof step.command.text !== 'string') {
           context.addIssue({
             code: z.ZodIssueCode.custom,
@@ -367,8 +767,11 @@ export const BrowserRunCommandSchema = z
         return;
       }
       if (step.kind === 'forEach') {
-        const childCommands = step.steps.filter(child => child.kind === 'command').length;
-        atomicCommands += step.items.length * childCommands;
+        const childCommands = step.steps.filter(child => child.kind === 'command');
+        childCommands.forEach((child, childIndex) =>
+          validateCommand(child.command, ['steps', stepIndex, 'steps', childIndex, 'command'])
+        );
+        atomicCommands += step.items.length * childCommands.length;
       }
     });
     if (atomicCommands > 2_000) {
@@ -411,10 +814,30 @@ export type BrowserRunResult = z.infer<typeof BrowserRunResultSchema>;
 
 export type BrowserPageCommand = Extract<BrowserAtomicCommand, { action: `page.${string}` }>;
 
+const BROWSER_SESSION_SCOPED_ACTIONS = new Set<BrowserAtomicCommand['action']>([
+  'tabs.list',
+  'tabs.get',
+  'tabs.update',
+  'tabs.move',
+  'tabs.duplicate',
+  'tabs.discard',
+  'tabs.close',
+  'tabs.activate',
+  'windows.list',
+  'windows.update',
+  'tabGroups.list',
+  'tabGroups.update',
+  'zoom.get',
+  'zoom.set',
+]);
+
 const BrowserSessionScopedAtomicCommandSchema = BrowserAtomicCommandSchema.refine(
-  command => command.action.startsWith('page.'),
-  { message: 'BrowserSession only accepts page commands or browser.run' }
-).transform(command => command as BrowserPageCommand);
+  command =>
+    command.action.startsWith('page.') || BROWSER_SESSION_SCOPED_ACTIONS.has(command.action),
+  {
+    message: 'BrowserSession accepts page, owned workspace, zoom, or browser.run commands only',
+  }
+);
 
 export const BrowserSessionScopedCommandSchema = z.union([
   BrowserSessionScopedAtomicCommandSchema,
@@ -432,11 +855,6 @@ export const BrowserSessionCommandSchema = z.discriminatedUnion('action', [
     active: z.boolean().optional(),
   }),
   z.object({
-    action: z.literal('browser.session.adoptTab'),
-    sessionId: BrowserSessionIdSchema,
-    tabId: TabIdSchema,
-  }),
-  z.object({
     action: z.literal('browser.session.command'),
     sessionId: BrowserSessionIdSchema,
     command: BrowserSessionScopedCommandSchema,
@@ -451,27 +869,12 @@ export const BrowserSessionSnapshotSchema = z
   .object({
     sessionId: BrowserSessionIdSchema,
     windowId: WindowIdSchema,
-    ownedTabIds: z.array(TabIdSchema).max(32),
-    borrowedTabIds: z.array(TabIdSchema).max(32),
-    activeTabId: TabIdSchema.optional(),
+    groupId: TabGroupIdSchema,
+    ownedTabIds: z.array(TabIdSchema).min(1).max(32),
+    activeTabId: TabIdSchema,
   })
   .superRefine((session, context) => {
-    const allTabIds = [...session.ownedTabIds, ...session.borrowedTabIds];
-    if (allTabIds.length > 32) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['ownedTabIds'],
-        message: 'BrowserSession cannot exceed 32 tabs',
-      });
-    }
-    if (new Set(allTabIds).size !== allTabIds.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['borrowedTabIds'],
-        message: 'BrowserSession tab ownership must be unique',
-      });
-    }
-    if (session.activeTabId !== undefined && !allTabIds.includes(session.activeTabId)) {
+    if (!session.ownedTabIds.includes(session.activeTabId)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['activeTabId'],
@@ -496,12 +899,12 @@ export const BrowserSessionReleaseResultSchema = z.object({
   sessionId: BrowserSessionIdSchema,
   released: z.literal(true),
   closedOwnedTabIds: z.array(TabIdSchema).max(32),
-  preservedBorrowedTabIds: z.array(TabIdSchema).max(32),
 });
 
 export const BrowserTabSchema = z.object({
   id: TabIdSchema,
   windowId: WindowIdSchema,
+  groupId: z.number().int().min(-1),
   active: z.boolean(),
   title: z.string().max(100_000),
   url: z.string().max(100_000),
@@ -520,6 +923,13 @@ export const BrowserTabOpenResultSchema = z.object({
   id: TabIdSchema,
   windowId: WindowIdSchema,
   url: WebUrlSchema,
+});
+export const BrowserTabGroupSchema = z.object({
+  id: TabGroupIdSchema,
+  windowId: WindowIdSchema,
+  title: z.string().max(256),
+  color: z.enum(['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange']),
+  collapsed: z.boolean(),
 });
 
 const SiteRecipeIdSchema = z
@@ -649,6 +1059,14 @@ export const BrowserRecipeCommandSchema = z.discriminatedUnion('action', [
 
 export type BrowserRecipeCommand = z.infer<typeof BrowserRecipeCommandSchema>;
 
+export const BrowserOneShotCommandSchema = z.object({
+  action: z.literal('browser.oneShot'),
+  url: WebUrlSchema,
+  command: BrowserSessionScopedCommandSchema,
+});
+
+export type BrowserOneShotCommand = z.infer<typeof BrowserOneShotCommandSchema>;
+
 const SiteRecipeResultBaseShape = {
   recipeId: SiteRecipeIdSchema,
   version: z.number().int().positive(),
@@ -708,6 +1126,7 @@ export const BrowserCommandSchema = z.union([
   BrowserRunCommandSchema,
   BrowserSessionCommandSchema,
   BrowserRecipeCommandSchema,
+  BrowserOneShotCommandSchema,
 ]);
 
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>;

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Folder as FolderIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { BookmarkFolder, BookmarkHandler, FolderHandler, FolderItemProps } from '../../types';
 import { cn } from '../../lib/utils';
 import EditMode from '../ui/edit-mode';
@@ -24,6 +25,7 @@ const Folder: React.FC<FolderProps> = React.memo(
     onContextMenu,
     isSelected = false,
   }) => {
+    const { t } = useTranslation();
     const [mode, setMode] = useState<FolderMode>('normal');
     const cardRef = useRef<HTMLButtonElement>(null);
 
@@ -58,7 +60,7 @@ const Folder: React.FC<FolderProps> = React.memo(
               initialValue={folder.title}
               onSave={handleEditSave}
               onCancel={() => setMode('normal')}
-              placeholder='Enter folder name...'
+              placeholder={t('browser.newTab.folderNamePlaceholder')}
             />
           </div>
         </div>
@@ -102,7 +104,7 @@ const Folder: React.FC<FolderProps> = React.memo(
           setMode('editing');
         }}
         onContextMenu={event => onContextMenu?.(event, folder)}
-        aria-label={`Open folder: ${folder.title}, ${itemCount} items`}>
+        aria-label={t('browser.newTab.openFolder', { title: folder.title, count: itemCount })}>
         <div className='icon-container-modern'>
           <FolderIcon className='folder-icon-modern' />
         </div>
@@ -110,7 +112,11 @@ const Folder: React.FC<FolderProps> = React.memo(
           <span className='card-title-modern' title={folder.title}>
             {folder.title}
           </span>
-          <small>{itemCount === 0 ? 'Empty folder' : `${itemCount} items`}</small>
+          <small>
+            {itemCount === 0
+              ? t('browser.newTab.emptyFolderLabel')
+              : t('browser.newTab.folderItems', { count: itemCount })}
+          </small>
         </div>
       </button>
     );

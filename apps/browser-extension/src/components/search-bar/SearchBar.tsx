@@ -7,6 +7,7 @@ import React, {
   useCallback,
 } from 'react';
 import { Search, X, Command } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { Bookmark, BookmarkFolder } from '../../types';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -27,6 +28,7 @@ export interface SearchBarRef {
 
 const SearchBar = forwardRef<SearchBarRef, SearchBarProps>(
   ({ currentFolder, rootFolder, onSearchResult }, ref) => {
+    const { t } = useTranslation();
     const [searchTerm, setSearchTerm] = useState('');
     const [resultCount, setResultCount] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -74,8 +76,8 @@ const SearchBar = forwardRef<SearchBarRef, SearchBarProps>(
             type='text'
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            placeholder='Search all bookmarks and folders…'
-            aria-label='Search all bookmarks and folders'
+            placeholder={t('browser.newTab.searchPlaceholder')}
+            aria-label={t('browser.newTab.searchAria')}
             className='search-input pl-9 pr-14'
           />
           <div className='search-shortcut'>
@@ -96,8 +98,8 @@ const SearchBar = forwardRef<SearchBarRef, SearchBarProps>(
           <div className='search-indicator' aria-live='polite'>
             <span>
               {resultCount > 0
-                ? `${resultCount} results for "${searchTerm}"`
-                : `No results for "${searchTerm}"`}
+                ? t('browser.newTab.searchFound', { count: resultCount, term: searchTerm })
+                : t('browser.newTab.searchEmpty', { term: searchTerm })}
             </span>
           </div>
         )}

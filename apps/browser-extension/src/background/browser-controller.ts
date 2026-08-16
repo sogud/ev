@@ -5,6 +5,7 @@ import {
   type BrowserAtomicCommand,
   type BookmarkBackupNode,
   type BrowserMediaItem,
+  type BrowserPageCommand,
 } from '@ev/contracts';
 
 const CDP_VERSION = '1.3';
@@ -24,31 +25,70 @@ const SENSITIVE_EVENT_KEYS = new Set([
   'accesstoken',
   'associatedcookies',
 ]);
-const CDP_ACTIONS = [
-  'tabs.list',
-  'windows.open',
-  'tabs.open',
-  'tabs.close',
-  'tabs.activate',
+const DOM_PAGE_ACTIONS = [
   'page.navigate',
+  'page.history',
   'page.context',
   'page.snapshot',
   'page.click',
   'page.type',
-  'page.hover',
-  'page.press',
+  'page.setChecked',
+  'page.select',
+  'page.focus',
+  'page.inspect',
   'page.scroll',
   'page.wait',
   'page.screenshot',
+  'page.release',
+] as const;
+const CDP_PAGE_ACTIONS = [
+  'page.drag',
+  'page.hover',
+  'page.press',
+  'page.pointer',
+  'page.dialog.respond',
   'page.upload',
   'page.frames',
   'page.media',
   'page.download',
-  'downloads.status',
   'page.logs',
   'page.network',
   'page.emulate',
-  'page.release',
+] as const;
+const BROWSER_SHELL_ACTIONS = [
+  'windows.list',
+  'windows.open',
+  'windows.update',
+  'windows.close',
+  'tabs.list',
+  'tabs.get',
+  'tabs.open',
+  'tabs.update',
+  'tabs.move',
+  'tabs.duplicate',
+  'tabs.discard',
+  'tabs.close',
+  'tabs.activate',
+  'tabGroups.list',
+  'tabGroups.add',
+  'tabGroups.create',
+  'tabGroups.update',
+  'tabGroups.ungroup',
+  'downloads.status',
+  'downloads.list',
+  'downloads.pause',
+  'downloads.resume',
+  'downloads.cancel',
+  'downloads.open',
+  'downloads.show',
+  'downloads.remove',
+  'history.search',
+  'history.getVisits',
+  'history.remove',
+  'sessions.recent',
+  'sessions.restore',
+  'zoom.get',
+  'zoom.set',
 ] as const;
 const BOOKMARK_ACTIONS = [
   'bookmarks.list',
@@ -284,15 +324,16 @@ function flattenFrameTree(frameTree: unknown): Array<Record<string, unknown>> {
   return frames;
 }
 
-const KEY_DEFINITIONS: Record<
-  Extract<BrowserAtomicCommand, { action: 'page.press' }>['key'],
-  { key: string; code: string; keyCode: number; text?: string }
-> = {
+type PressKey = Extract<BrowserAtomicCommand, { action: 'page.press' }>['key'];
+type KeyDefinition = { key: string; code: string; keyCode: number; text?: string };
+
+const NAMED_KEY_DEFINITIONS: Record<string, KeyDefinition> = {
   Enter: { key: 'Enter', code: 'Enter', keyCode: 13, text: '\r' },
   Tab: { key: 'Tab', code: 'Tab', keyCode: 9 },
   Escape: { key: 'Escape', code: 'Escape', keyCode: 27 },
   Backspace: { key: 'Backspace', code: 'Backspace', keyCode: 8 },
   Delete: { key: 'Delete', code: 'Delete', keyCode: 46 },
+  Insert: { key: 'Insert', code: 'Insert', keyCode: 45 },
   ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
   ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
   ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
@@ -304,15 +345,440 @@ const KEY_DEFINITIONS: Record<
   Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
 };
 
+function keyDefinition(key: PressKey): KeyDefinition {
+  const named = NAMED_KEY_DEFINITIONS[key];
+  if (named) return named;
+  const functionKey = /^F(\d{1,2})$/.exec(key);
+  if (functionKey) {
+    const index = Number(functionKey[1]);
+    return { key, code: key, keyCode: 111 + index };
+  }
+  const upper = key.toUpperCase();
+  return {
+    key,
+    code: /[A-Z]/.test(upper) ? `Key${upper}` : `Digit${key}`,
+    keyCode: upper.charCodeAt(0),
+    text: key,
+  };
+}
+
+function tabResult(tab: chrome.tabs.Tab, cdpAttached = false): Record<string, unknown> {
+  if (tab.id === undefined) throw new Error('Chrome tab has no id');
+  return {
+    id: tab.id,
+    windowId: tab.windowId,
+    index: tab.index,
+    active: tab.active,
+    pinned: tab.pinned,
+    muted: tab.mutedInfo?.muted ?? false,
+    discarded: tab.discarded,
+    groupId: tab.groupId,
+    title: tab.title ?? '',
+    url: tab.url ?? tab.pendingUrl ?? '',
+    cdpAttached,
+  };
+}
+
+function windowResult(window: chrome.windows.Window): Record<string, unknown> {
+  if (window.id === undefined) throw new Error('Chrome window has no id');
+  return {
+    id: window.id,
+    focused: window.focused,
+    incognito: window.incognito,
+    type: window.type,
+    state: window.state,
+    left: window.left,
+    top: window.top,
+    width: window.width,
+    height: window.height,
+    tabIds: (window.tabs ?? []).flatMap(tab => (tab.id === undefined ? [] : [tab.id])),
+  };
+}
+
+function tabGroupResult(group: chrome.tabGroups.TabGroup): Record<string, unknown> {
+  return {
+    id: group.id,
+    windowId: group.windowId,
+    title: group.title ?? '',
+    color: group.color,
+    collapsed: group.collapsed,
+  };
+}
+
+function chromeDownloadId(value: string): number {
+  const id = Number(value.slice('chrome:'.length));
+  if (!Number.isSafeInteger(id) || id < 0) throw new Error(`Invalid Chrome download id: ${value}`);
+  return id;
+}
+
+async function requireDownloadsPermission(): Promise<void> {
+  const allowed = await chrome.permissions.contains({ permissions: ['downloads'] });
+  if (!allowed) throw new Error('Downloads permission is required');
+}
+
+async function requireDownloadsOpenPermission(): Promise<void> {
+  const allowed = await chrome.permissions.contains({
+    permissions: ['downloads', 'downloads.open'],
+  });
+  if (!allowed) throw new Error('Downloads permission is required');
+}
+
+function downloadResult(item: chrome.downloads.DownloadItem): Record<string, unknown> {
+  return {
+    downloadId: `chrome:${item.id}`,
+    state: item.state,
+    paused: item.paused,
+    canResume: item.canResume,
+    filename: item.filename,
+    url: sanitizeUrl(item.url),
+    finalUrl: sanitizeUrl(item.finalUrl),
+    mime: item.mime,
+    bytesReceived: item.bytesReceived,
+    totalBytes: item.totalBytes,
+    exists: item.exists,
+    error: item.error,
+    startTime: item.startTime,
+    endTime: item.endTime,
+  };
+}
+
+function sessionResult(session: chrome.sessions.Session): Record<string, unknown> | undefined {
+  if (session.tab?.sessionId) {
+    const tab = session.tab;
+    return {
+      type: 'tab',
+      sessionId: tab.sessionId,
+      tab: {
+        ...(tab.id !== undefined ? { id: tab.id } : {}),
+        windowId: tab.windowId,
+        index: tab.index,
+        active: tab.active,
+        pinned: tab.pinned,
+        title: tab.title ?? '',
+        url: tab.url ?? '',
+      },
+    };
+  }
+  if (session.window?.sessionId) {
+    const window = session.window;
+    return {
+      type: 'window',
+      sessionId: window.sessionId,
+      window: {
+        ...(window.id !== undefined ? { id: window.id } : {}),
+        focused: window.focused,
+        state: window.state,
+        tabIds: (window.tabs ?? []).flatMap(tab => (tab.id === undefined ? [] : [tab.id])),
+      },
+    };
+  }
+  return undefined;
+}
+
+type DomPageOperation =
+  | { kind: 'context'; maxChars: number; scope: 'body' | 'main' }
+  | { kind: 'history'; operation: 'back' | 'forward' | 'reload' | 'stop' }
+  | { kind: 'snapshot'; maxNodes: number; maxChars: number; mode: 'full' | 'interactive' }
+  | { kind: 'click'; selector: string }
+  | { kind: 'type'; selector: string; text: string; clearFirst: boolean }
+  | { kind: 'setChecked'; selector: string; checked: boolean }
+  | { kind: 'select'; selector: string; values: string[] }
+  | { kind: 'focus'; selector: string }
+  | { kind: 'inspect'; selector: string; maxChars: number }
+  | {
+      kind: 'scroll';
+      selector?: string;
+      direction?: 'up' | 'down' | 'top' | 'bottom';
+      distance: number;
+      deltaX: number;
+      deltaY: number;
+    }
+  | { kind: 'waitTarget'; selector: string; timeoutMs: number };
+
+async function executeDomPageOperation(operation: DomPageOperation): Promise<unknown> {
+  const find = (selector: string): Element => {
+    const element = document.querySelector(selector);
+    if (!element) throw new Error(`Element not found: ${selector}`);
+    return element;
+  };
+  const selectorFor = (element: Element): string | undefined => {
+    if (element.id) {
+      const byId = `#${CSS.escape(element.id)}`;
+      if (document.querySelectorAll(byId).length === 1) return byId;
+    }
+    const parts: string[] = [];
+    let current: Element | null = element;
+    while (current && current !== document.documentElement) {
+      let part = current.tagName.toLowerCase();
+      const parentElement: Element | null = current.parentElement;
+      if (!parentElement) return undefined;
+      const siblings = [...parentElement.children].filter(
+        sibling => sibling.tagName === current?.tagName
+      );
+      if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(current) + 1})`;
+      parts.unshift(part);
+      current = parentElement;
+    }
+    parts.unshift('html');
+    const selector = parts.join(' > ');
+    return document.querySelector(selector) === element ? selector : undefined;
+  };
+  const roleFor = (element: Element): string => {
+    const explicit = element.getAttribute('role');
+    if (explicit) return explicit;
+    const tag = element.tagName.toLowerCase();
+    if (tag === 'a' && element.hasAttribute('href')) return 'link';
+    if (tag === 'button') return 'button';
+    if (tag === 'select') return 'combobox';
+    if (tag === 'textarea') return 'textbox';
+    if (/^h[1-6]$/.test(tag)) return 'heading';
+    if (tag === 'img') return 'img';
+    if (tag === 'input') {
+      const type = (element.getAttribute('type') ?? 'text').toLowerCase();
+      if (type === 'checkbox') return 'checkbox';
+      if (type === 'radio') return 'radio';
+      if (['button', 'submit', 'reset'].includes(type)) return 'button';
+      return 'textbox';
+    }
+    return tag;
+  };
+  const nameFor = (element: Element): string => {
+    const labelledBy = element.getAttribute('aria-labelledby');
+    const labelledText = labelledBy
+      ?.split(/\s+/)
+      .map(id => document.querySelector(`#${CSS.escape(id)}`)?.textContent?.trim() ?? '')
+      .filter(Boolean)
+      .join(' ');
+    if (labelledText) return labelledText;
+    const ariaLabel = element.getAttribute('aria-label')?.trim();
+    if (ariaLabel) return ariaLabel;
+    if (element instanceof HTMLInputElement && element.type !== 'password') {
+      const label = [...(element.labels ?? [])]
+        .map(item => item.textContent?.trim() ?? '')
+        .filter(Boolean)
+        .join(' ');
+      if (label) return label;
+      if (['button', 'submit', 'reset'].includes(element.type) && element.value) {
+        return element.value;
+      }
+    }
+    if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) {
+      const label = [...(element.labels ?? [])]
+        .map(item => item.textContent?.trim() ?? '')
+        .filter(Boolean)
+        .join(' ');
+      if (label) return label;
+    }
+    return (
+      element.getAttribute('alt') ??
+      element.getAttribute('title') ??
+      element.getAttribute('placeholder') ??
+      element.textContent ??
+      ''
+    )
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  switch (operation.kind) {
+    case 'context': {
+      const root = operation.scope === 'main' ? document.querySelector('main') : document.body;
+      return {
+        url: location.href,
+        title: document.title,
+        selection: getSelection()?.toString().slice(0, operation.maxChars) || undefined,
+        text: (root?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, operation.maxChars),
+        capturedAt: new Date().toISOString(),
+      };
+    }
+    case 'history':
+      if (operation.operation === 'back') history.back();
+      if (operation.operation === 'forward') history.forward();
+      if (operation.operation === 'reload') location.reload();
+      if (operation.operation === 'stop') window.stop();
+      return { operation: operation.operation };
+    case 'snapshot': {
+      const query =
+        operation.mode === 'interactive'
+          ? 'a[href],button,input,select,textarea,[role],[tabindex],[contenteditable="true"]'
+          : 'a[href],button,input,select,textarea,[role],[tabindex],[contenteditable="true"],h1,h2,h3,h4,h5,h6,img';
+      const candidates = [...document.querySelectorAll(query)];
+      const nodes: Array<Record<string, unknown>> = [];
+      let encodedChars = 0;
+      for (const element of candidates) {
+        const selector = selectorFor(element);
+        if (!selector) continue;
+        const ref = `@e${nodes.length + 1}`;
+        const value: Record<string, unknown> = {
+          ref,
+          role: roleFor(element),
+          name: nameFor(element).slice(0, 1_024),
+          selector,
+        };
+        const description = element.getAttribute('aria-description')?.trim();
+        if (description) value.description = description.slice(0, 1_024);
+        const nextChars = JSON.stringify(value).length;
+        if (nodes.length >= operation.maxNodes || encodedChars + nextChars > operation.maxChars) {
+          break;
+        }
+        encodedChars += nextChars;
+        nodes.push(value);
+      }
+      return { nodes, truncated: nodes.length < candidates.length };
+    }
+    case 'click': {
+      const element = find(operation.selector);
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      if (!(element instanceof HTMLElement)) throw new Error('Target is not clickable');
+      element.click();
+      const rect = element.getBoundingClientRect();
+      return { clicked: true, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+    case 'type': {
+      const element = find(operation.selector);
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        element.focus();
+        const prototype =
+          element instanceof HTMLInputElement
+            ? HTMLInputElement.prototype
+            : HTMLTextAreaElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+        const value = operation.clearFirst ? operation.text : element.value + operation.text;
+        setter?.call(element, value);
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (element instanceof HTMLElement && element.isContentEditable) {
+        element.focus();
+        element.textContent = operation.clearFirst
+          ? operation.text
+          : (element.textContent ?? '') + operation.text;
+        element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+      } else {
+        throw new Error('Target is not editable');
+      }
+      return { typed: true, textLength: operation.text.length };
+    }
+    case 'setChecked': {
+      const element = find(operation.selector);
+      const role = element.getAttribute('role');
+      const native =
+        element instanceof HTMLInputElement && ['checkbox', 'radio'].includes(element.type);
+      if (!native && !['checkbox', 'radio', 'switch'].includes(role ?? '')) {
+        throw new Error('Target is not checkable');
+      }
+      const current = native ? element.checked : element.getAttribute('aria-checked') === 'true';
+      if (current !== operation.checked) {
+        if (!(element instanceof HTMLElement)) throw new Error('Target is not clickable');
+        element.click();
+      }
+      return { checked: operation.checked, changed: current !== operation.checked };
+    }
+    case 'select': {
+      const element = find(operation.selector);
+      if (!(element instanceof HTMLSelectElement)) {
+        throw new Error('Target is not a native select');
+      }
+      const requested = new Set(operation.values);
+      const available = new Set([...element.options].map(option => option.value));
+      const missing = operation.values.filter(value => !available.has(value));
+      if (missing.length) throw new Error(`Select values not found: ${missing.join(', ')}`);
+      for (const option of element.options) option.selected = requested.has(option.value);
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      return { selectedValues: [...element.selectedOptions].map(option => option.value) };
+    }
+    case 'focus': {
+      const element = find(operation.selector);
+      if (!(element instanceof HTMLElement)) throw new Error('Target is not focusable');
+      element.focus();
+      return { focused: true };
+    }
+    case 'inspect': {
+      const element = find(operation.selector);
+      const attributes: Record<string, string> = {};
+      for (const attribute of [...element.attributes].slice(0, 100)) {
+        if (!/(password|secret|token|authorization|cookie|value)/i.test(attribute.name)) {
+          attributes[attribute.name] = attribute.value.slice(0, operation.maxChars);
+        }
+      }
+      const password = element instanceof HTMLInputElement && element.type === 'password';
+      const rawValue =
+        element instanceof HTMLInputElement ||
+        element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLSelectElement
+          ? element.value
+          : (element.textContent ?? '');
+      return {
+        tagName: element.tagName.toLowerCase(),
+        role: element.getAttribute('role') ?? undefined,
+        value: password ? '[redacted]' : rawValue.slice(0, operation.maxChars),
+        checked: element instanceof HTMLInputElement ? element.checked : undefined,
+        selectedValues:
+          element instanceof HTMLSelectElement
+            ? [...element.selectedOptions].map(option => option.value)
+            : undefined,
+        disabled:
+          element instanceof HTMLInputElement ||
+          element instanceof HTMLTextAreaElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLButtonElement
+            ? element.disabled
+            : undefined,
+        editable: element instanceof HTMLElement ? element.isContentEditable : false,
+        attributes,
+      };
+    }
+    case 'scroll': {
+      if (operation.selector) {
+        find(operation.selector).scrollIntoView({ block: 'center', inline: 'center' });
+      }
+      if (operation.deltaX || operation.deltaY) {
+        window.scrollBy({ left: operation.deltaX, top: operation.deltaY, behavior: 'instant' });
+      }
+      if (operation.direction === 'top' || operation.direction === 'bottom') {
+        window.scrollTo({
+          top: operation.direction === 'top' ? 0 : document.documentElement.scrollHeight,
+          behavior: 'instant',
+        });
+      } else if (operation.direction === 'up' || operation.direction === 'down') {
+        window.scrollBy({
+          top: operation.direction === 'down' ? operation.distance : -operation.distance,
+          behavior: 'instant',
+        });
+      }
+      return { x: window.scrollX, y: window.scrollY };
+    }
+    case 'waitTarget': {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt <= operation.timeoutMs) {
+        if (document.querySelector(operation.selector)) {
+          return { condition: 'target', matched: true, elapsedMs: Date.now() - startedAt };
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      throw new Error(`Timed out waiting for target: ${operation.selector}`);
+    }
+    default:
+      throw new Error('Unsupported fixed DOM page operation');
+  }
+}
+
 class CdpBrowserController {
   private readonly debuggerApi = (chrome as unknown as { debugger?: typeof chrome.debugger })
     .debugger;
+  private readonly scriptingApi = (chrome as unknown as { scripting?: typeof chrome.scripting })
+    .scripting;
   private readonly attachedTabs = new Set<number>();
+  private readonly attachingTabs = new Map<number, Promise<void>>();
+  private readonly domRefsByTab = new Map<number, Map<string, string>>();
   private readonly refsByTab = new Map<number, Map<string, number>>();
   private readonly mediaByTab = new Map<number, Map<string, CachedMediaItem>>();
   private readonly logsByTab = new Map<number, BrowserEventRecord[]>();
   private readonly networkByTab = new Map<number, BrowserEventRecord[]>();
   private readonly rawNetworkMediaByTab = new Map<number, RawNetworkMedia[]>();
+  private readonly inFlightRequestsByTab = new Map<number, Set<string>>();
+  private readonly lastNetworkActivityByTab = new Map<number, number>();
 
   private readonly handleEvent = (
     source: chrome.debugger.Debuggee,
@@ -321,6 +787,20 @@ class CdpBrowserController {
   ): void => {
     const tabId = source.tabId;
     if (tabId === undefined) return;
+    const requestId = params ? (params as CdpParams).requestId : undefined;
+    if (method === 'Network.requestWillBeSent' && typeof requestId === 'string') {
+      const requests = this.inFlightRequestsByTab.get(tabId) ?? new Set<string>();
+      requests.add(requestId);
+      this.inFlightRequestsByTab.set(tabId, requests);
+      this.lastNetworkActivityByTab.set(tabId, Date.now());
+    }
+    if (
+      (method === 'Network.loadingFinished' || method === 'Network.loadingFailed') &&
+      typeof requestId === 'string'
+    ) {
+      this.inFlightRequestsByTab.get(tabId)?.delete(requestId);
+      this.lastNetworkActivityByTab.set(tabId, Date.now());
+    }
     if (method === 'Network.responseReceived' && params) {
       const response = (params as CdpParams).response as Record<string, unknown> | undefined;
       const url = response?.url;
@@ -349,6 +829,8 @@ class CdpBrowserController {
     this.refsByTab.delete(source.tabId);
     this.mediaByTab.delete(source.tabId);
     this.rawNetworkMediaByTab.delete(source.tabId);
+    this.inFlightRequestsByTab.delete(source.tabId);
+    this.lastNetworkActivityByTab.delete(source.tabId);
   };
 
   constructor() {
@@ -363,29 +845,29 @@ class CdpBrowserController {
 
   async execute(command: BrowserAtomicCommand): Promise<unknown> {
     switch (command.action) {
-      case 'browser.capabilities':
+      case 'browser.capabilities': {
+        let transport = 'unavailable';
+        if (this.scriptingApi) transport = 'dom';
+        if (this.debuggerApi) transport = 'cdp';
+        if (this.debuggerApi && this.scriptingApi) transport = 'hybrid';
         return {
-          transport: this.debuggerApi ? 'cdp' : 'unavailable',
+          transport,
           cdp: Boolean(this.debuggerApi),
+          dom: Boolean(this.scriptingApi),
           arbitraryEval: false,
-          actions: this.debuggerApi ? [...CDP_ACTIONS, ...BOOKMARK_ACTIONS] : [...BOOKMARK_ACTIONS],
+          actions: [
+            ...new Set([
+              ...BROWSER_SHELL_ACTIONS,
+              ...BOOKMARK_ACTIONS,
+              ...(this.scriptingApi ? DOM_PAGE_ACTIONS : []),
+              ...(this.debuggerApi ? [...DOM_PAGE_ACTIONS, ...CDP_PAGE_ACTIONS] : []),
+            ]),
+          ],
         };
-      case 'tabs.list': {
-        const tabs = await chrome.tabs.query({});
-        return tabs.flatMap(tab =>
-          tab.id === undefined
-            ? []
-            : [
-                {
-                  id: tab.id,
-                  windowId: tab.windowId,
-                  active: tab.active,
-                  title: tab.title ?? '',
-                  url: tab.url ?? '',
-                  cdpAttached: this.attachedTabs.has(tab.id),
-                },
-              ]
-        );
+      }
+      case 'windows.list': {
+        const windows = await chrome.windows.getAll({ populate: true });
+        return windows.map(windowResult);
       }
       case 'windows.open': {
         assertWebUrl(command.url);
@@ -398,6 +880,31 @@ class CdpBrowserController {
         if (tab?.id === undefined) throw new Error('Chrome did not return the created tab');
         return { windowId: window.id, tabId: tab.id, url: tab.url || command.url };
       }
+      case 'windows.update': {
+        const changes = {
+          ...(command.focused !== undefined ? { focused: command.focused } : {}),
+          ...(command.state !== undefined ? { state: command.state } : {}),
+          ...(command.left !== undefined ? { left: command.left } : {}),
+          ...(command.top !== undefined ? { top: command.top } : {}),
+          ...(command.width !== undefined ? { width: command.width } : {}),
+          ...(command.height !== undefined ? { height: command.height } : {}),
+        };
+        return windowResult(await chrome.windows.update(command.windowId, changes));
+      }
+      case 'windows.close':
+        await chrome.windows.remove(command.windowId);
+        return { closed: true, windowId: command.windowId };
+      case 'tabs.list': {
+        const tabs = await chrome.tabs.query({});
+        return tabs.flatMap(tab =>
+          tab.id === undefined ? [] : [tabResult(tab, this.attachedTabs.has(tab.id))]
+        );
+      }
+      case 'tabs.get':
+        return tabResult(
+          await chrome.tabs.get(command.tabId),
+          this.attachedTabs.has(command.tabId)
+        );
       case 'tabs.open': {
         assertWebUrl(command.url);
         const tab = await chrome.tabs.create({
@@ -408,6 +915,35 @@ class CdpBrowserController {
         if (tab.id === undefined) throw new Error('Chrome did not return the created tab');
         return { id: tab.id, windowId: tab.windowId, url: tab.url || command.url };
       }
+      case 'tabs.update': {
+        if (command.url) assertWebUrl(command.url);
+        const changes = {
+          ...(command.url !== undefined ? { url: command.url } : {}),
+          ...(command.active !== undefined ? { active: command.active } : {}),
+          ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
+          ...(command.muted !== undefined ? { muted: command.muted } : {}),
+        };
+        return tabResult(await chrome.tabs.update(command.tabId, changes));
+      }
+      case 'tabs.move': {
+        const moved = await chrome.tabs.move(command.tabId, {
+          ...(command.windowId !== undefined ? { windowId: command.windowId } : {}),
+          index: command.index,
+        });
+        const tab = Array.isArray(moved) ? moved[0] : moved;
+        if (!tab) throw new Error('Chrome did not return the moved tab');
+        return tabResult(tab);
+      }
+      case 'tabs.duplicate': {
+        const tab = await chrome.tabs.duplicate(command.tabId);
+        if (!tab) throw new Error('Chrome did not return the duplicated tab');
+        return tabResult(tab);
+      }
+      case 'tabs.discard': {
+        const tab = await chrome.tabs.discard(command.tabId);
+        if (!tab) throw new Error('Chrome did not return the discarded tab');
+        return tabResult(tab);
+      }
       case 'tabs.close':
         await this.release(command.tabId);
         await chrome.tabs.remove(command.tabId);
@@ -417,12 +953,132 @@ class CdpBrowserController {
         await chrome.windows.update(tab.windowId, { focused: true });
         return { activated: true, tabId: command.tabId };
       }
+      case 'tabGroups.list': {
+        const groups = await chrome.tabGroups.query(
+          command.windowId === undefined ? {} : { windowId: command.windowId }
+        );
+        return groups.map(tabGroupResult);
+      }
+      case 'tabGroups.add': {
+        const groupId = await chrome.tabs.group({
+          groupId: command.groupId,
+          tabIds: command.tabIds,
+        });
+        return tabGroupResult(await chrome.tabGroups.get(groupId));
+      }
+      case 'tabGroups.create': {
+        const groupId = await chrome.tabs.group({
+          tabIds: command.tabIds,
+          ...(command.windowId === undefined
+            ? {}
+            : { createProperties: { windowId: command.windowId } }),
+        });
+        const group = await chrome.tabGroups.update(groupId, {
+          ...(command.title !== undefined ? { title: command.title } : {}),
+          ...(command.color !== undefined ? { color: command.color } : {}),
+          ...(command.collapsed !== undefined ? { collapsed: command.collapsed } : {}),
+        });
+        return tabGroupResult(group);
+      }
+      case 'tabGroups.update':
+        return tabGroupResult(
+          await chrome.tabGroups.update(command.groupId, {
+            ...(command.title !== undefined ? { title: command.title } : {}),
+            ...(command.color !== undefined ? { color: command.color } : {}),
+            ...(command.collapsed !== undefined ? { collapsed: command.collapsed } : {}),
+          })
+        );
+      case 'tabGroups.ungroup':
+        await chrome.tabs.ungroup(command.tabIds);
+        return { ungroupedTabIds: command.tabIds };
+      case 'zoom.get': {
+        const tabId = command.tabId ?? (await activeTabId());
+        return { tabId, factor: await chrome.tabs.getZoom(tabId) };
+      }
+      case 'zoom.set': {
+        const tabId = command.tabId ?? (await activeTabId());
+        await chrome.tabs.setZoom(tabId, command.factor);
+        return { tabId, factor: command.factor };
+      }
       case 'page.release': {
         const tabId = command.tabId ?? (await activeTabId());
         return { tabId, released: await this.release(tabId) };
       }
       case 'downloads.status':
         return this.downloadStatus(command.downloadId);
+      case 'downloads.list': {
+        await requireDownloadsPermission();
+        const items = await chrome.downloads.search({
+          ...(command.query ? { query: [command.query] } : {}),
+          ...(command.state ? { state: command.state } : {}),
+          limit: command.limit ?? 100,
+        });
+        return items.slice(0, command.limit ?? 100).map(downloadResult);
+      }
+      case 'downloads.pause':
+        await requireDownloadsPermission();
+        await chrome.downloads.pause(chromeDownloadId(command.downloadId));
+        return { downloadId: command.downloadId, paused: true };
+      case 'downloads.resume':
+        await requireDownloadsPermission();
+        await chrome.downloads.resume(chromeDownloadId(command.downloadId));
+        return { downloadId: command.downloadId, resumed: true };
+      case 'downloads.cancel':
+        await requireDownloadsPermission();
+        await chrome.downloads.cancel(chromeDownloadId(command.downloadId));
+        return { downloadId: command.downloadId, cancelled: true };
+      case 'downloads.open':
+        await requireDownloadsOpenPermission();
+        chrome.downloads.open(chromeDownloadId(command.downloadId));
+        return { downloadId: command.downloadId, opened: true };
+      case 'downloads.show':
+        await requireDownloadsPermission();
+        chrome.downloads.show(chromeDownloadId(command.downloadId));
+        return { downloadId: command.downloadId, shown: true };
+      case 'downloads.remove': {
+        await requireDownloadsPermission();
+        const id = chromeDownloadId(command.downloadId);
+        if (command.mode === 'file' || command.mode === 'both')
+          await chrome.downloads.removeFile(id);
+        if (command.mode === 'record' || command.mode === 'both')
+          await chrome.downloads.erase({ id });
+        return { downloadId: command.downloadId, removed: command.mode };
+      }
+      case 'history.search':
+        return chrome.history.search({
+          text: command.text ?? '',
+          ...(command.startTime !== undefined ? { startTime: command.startTime } : {}),
+          ...(command.endTime !== undefined ? { endTime: command.endTime } : {}),
+          maxResults: command.maxResults ?? 100,
+        });
+      case 'history.getVisits':
+        return chrome.history.getVisits({ url: command.url });
+      case 'history.remove':
+        if (command.target.type === 'url') {
+          await chrome.history.deleteUrl({ url: command.target.url });
+        } else if (command.target.type === 'range') {
+          await chrome.history.deleteRange({
+            startTime: command.target.startTime,
+            endTime: command.target.endTime,
+          });
+        } else {
+          await chrome.history.deleteAll();
+        }
+        return { removed: command.target.type };
+      case 'sessions.recent': {
+        const sessions = await chrome.sessions.getRecentlyClosed({
+          maxResults: command.maxResults ?? 10,
+        });
+        return sessions
+          .map(sessionResult)
+          .filter((session): session is Record<string, unknown> => session !== undefined);
+      }
+      case 'sessions.restore': {
+        const restored = await chrome.sessions.restore(command.sessionId);
+        const result = sessionResult(restored);
+        if (!result) throw new Error('Chrome did not return a restored session');
+        return result;
+      }
       case 'bookmarks.list':
         return this.bookmarksList(command.maxNodes ?? 2_000);
       case 'bookmarks.search':
@@ -460,7 +1116,10 @@ class CdpBrowserController {
       case 'bookmarks.restore':
         return this.bookmarksRestore(command.tree, command.parentId, command.title);
       default:
-        return this.executePageCommand(command);
+        if (command.action.startsWith('page.')) {
+          return this.executePageCommand(command as BrowserPageCommand);
+        }
+        throw new Error(`Unsupported browser action: ${command.action}`);
     }
   }
 
@@ -540,96 +1199,476 @@ class CdpBrowserController {
     }
   }
 
-  private async executePageCommand(
-    command: Exclude<
-      BrowserAtomicCommand,
-      | { action: 'browser.capabilities' }
-      | { action: 'tabs.list' }
-      | { action: 'windows.open' }
-      | { action: 'tabs.open' }
-      | { action: 'tabs.close' }
-      | { action: 'tabs.activate' }
-      | { action: 'page.release' }
-      | { action: 'downloads.status' }
-      | { action: 'bookmarks.list' }
-      | { action: 'bookmarks.search' }
-      | { action: 'bookmarks.create' }
-      | { action: 'bookmarks.update' }
-      | { action: 'bookmarks.move' }
-      | { action: 'bookmarks.remove' }
-      | { action: 'bookmarks.removeTree' }
-      | { action: 'bookmarks.export' }
-      | { action: 'bookmarks.restore' }
-    >
+  private canExecuteWithoutDebugger(command: BrowserPageCommand): boolean {
+    if (command.action === 'page.navigate') return command.frameId === undefined;
+    if (command.action === 'page.release') return true;
+    if (command.action === 'page.screenshot') return !command.fullPage;
+    if (!this.scriptingApi) return false;
+    switch (command.action) {
+      case 'page.history':
+        return true;
+      case 'page.context':
+      case 'page.snapshot':
+      case 'page.type':
+      case 'page.setChecked':
+      case 'page.select':
+      case 'page.focus':
+      case 'page.inspect':
+      case 'page.scroll':
+        return command.frameId === undefined;
+      case 'page.click':
+        return (
+          command.frameId === undefined &&
+          (command.button === undefined || command.button === 'left') &&
+          (command.clickCount === undefined || command.clickCount === 1) &&
+          command.waitFor === undefined
+        );
+      case 'page.wait': {
+        const condition = command.condition ?? (command.selector ? 'target' : 'time');
+        return command.frameId === undefined && (condition === 'target' || condition === 'time');
+      }
+      default:
+        return false;
+    }
+  }
+
+  private async runDomOperation(tabId: number, operation: DomPageOperation): Promise<unknown> {
+    if (!this.scriptingApi) throw new Error('Content-script page control is unavailable');
+    const results = await this.scriptingApi.executeScript({
+      target: { tabId },
+      func: executeDomPageOperation,
+      args: [operation],
+    });
+    const result = results[0];
+    if (!result) throw new Error('Content-script page control returned no result');
+    return result.result;
+  }
+
+  private domSelector(tabId: number, selector: string): string {
+    if (!selector.startsWith('@e')) return selector;
+    const resolved = this.domRefsByTab.get(tabId)?.get(selector);
+    if (!resolved) throw new Error(`Snapshot ref is missing or stale: ${selector}`);
+    return resolved;
+  }
+
+  private async executeWithoutDebugger(
+    tabId: number,
+    command: BrowserPageCommand
   ): Promise<unknown> {
-    const tab = await resolveTab(command.tabId);
-    const tabId = tab.id!;
+    if (command.action === 'page.navigate') {
+      await chrome.tabs.update(tabId, { url: command.url });
+      this.refsByTab.delete(tabId);
+      this.domRefsByTab.delete(tabId);
+      return { tabId, url: command.url };
+    }
+    if (command.action === 'page.release') {
+      this.domRefsByTab.delete(tabId);
+      return { tabId, released: await this.release(tabId) };
+    }
+    if (command.action === 'page.screenshot') {
+      const tab = await chrome.tabs.get(tabId);
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+        format: command.format ?? 'png',
+        ...(command.format === 'jpeg' ? { quality: command.quality ?? 90 } : {}),
+      });
+      const data = dataUrl.slice(dataUrl.indexOf(',') + 1);
+      return { tabId, format: command.format ?? 'png', data, fullPage: false };
+    }
+    if (command.action === 'page.history') {
+      this.refsByTab.delete(tabId);
+      this.domRefsByTab.delete(tabId);
+      return {
+        tabId,
+        ...((await this.runDomOperation(tabId, {
+          kind: 'history',
+          operation: command.operation,
+        })) as Record<string, unknown>),
+      };
+    }
+    if (command.action === 'page.context') {
+      return this.runDomOperation(tabId, {
+        kind: 'context',
+        maxChars: command.maxChars ?? 20_000,
+        scope: command.scope ?? 'body',
+      });
+    }
+    if (command.action === 'page.snapshot') {
+      const snapshot = (await this.runDomOperation(tabId, {
+        kind: 'snapshot',
+        mode: command.mode ?? 'full',
+        maxNodes: command.maxNodes ?? 500,
+        maxChars: command.maxChars ?? 100_000,
+      })) as { nodes?: Array<Record<string, unknown>>; truncated?: boolean };
+      const refs = new Map<string, string>();
+      const nodes = (snapshot.nodes ?? []).flatMap(node => {
+        const ref = node.ref;
+        const selector = node.selector;
+        if (typeof ref !== 'string' || typeof selector !== 'string') return [];
+        refs.set(ref, selector);
+        const { selector: _selector, ...visible } = node;
+        return [visible];
+      });
+      this.domRefsByTab.set(tabId, refs);
+      this.refsByTab.delete(tabId);
+      return {
+        tabId,
+        mode: command.mode ?? 'full',
+        nodes,
+        truncated: snapshot.truncated ?? false,
+      };
+    }
+
+    const selector =
+      'selector' in command && typeof command.selector === 'string'
+        ? this.domSelector(tabId, command.selector)
+        : undefined;
+    if (command.action === 'page.click' && selector) {
+      return {
+        tabId,
+        selector: command.selector,
+        ...((await this.runDomOperation(tabId, { kind: 'click', selector })) as object),
+      };
+    }
+    if (command.action === 'page.type' && selector) {
+      return {
+        tabId,
+        selector: command.selector,
+        ...((await this.runDomOperation(tabId, {
+          kind: 'type',
+          selector,
+          text: command.text,
+          clearFirst: command.clearFirst ?? true,
+        })) as object),
+      };
+    }
+    if (command.action === 'page.setChecked' && selector) {
+      return {
+        tabId,
+        selector: command.selector,
+        ...((await this.runDomOperation(tabId, {
+          kind: 'setChecked',
+          selector,
+          checked: command.checked,
+        })) as object),
+      };
+    }
+    if (command.action === 'page.select' && selector) {
+      return {
+        tabId,
+        selector: command.selector,
+        ...((await this.runDomOperation(tabId, {
+          kind: 'select',
+          selector,
+          values: command.values,
+        })) as object),
+      };
+    }
+    if (command.action === 'page.focus' && selector) {
+      return {
+        tabId,
+        selector: command.selector,
+        ...((await this.runDomOperation(tabId, { kind: 'focus', selector })) as object),
+      };
+    }
+    if (command.action === 'page.inspect' && selector) {
+      return {
+        tabId,
+        selector: command.selector,
+        ...((await this.runDomOperation(tabId, {
+          kind: 'inspect',
+          selector,
+          maxChars: command.maxChars ?? 2_000,
+        })) as object),
+      };
+    }
+    if (command.action === 'page.scroll') {
+      const resolvedSelector = command.selector
+        ? this.domSelector(tabId, command.selector)
+        : undefined;
+      return {
+        tabId,
+        ...((await this.runDomOperation(tabId, {
+          kind: 'scroll',
+          selector: resolvedSelector,
+          direction: command.direction,
+          distance: command.distance ?? 600,
+          deltaX: command.deltaX ?? 0,
+          deltaY: command.deltaY ?? 0,
+        })) as object),
+      };
+    }
+    if (command.action === 'page.wait') {
+      const condition = command.condition ?? (command.selector ? 'target' : 'time');
+      if (condition === 'time') {
+        const startedAt = Date.now();
+        await new Promise(resolve => setTimeout(resolve, command.timeMs ?? 0));
+        return { tabId, condition, elapsedMs: Date.now() - startedAt };
+      }
+      if (!command.selector) throw new Error('Target wait requires a selector');
+      return {
+        tabId,
+        ...((await this.runDomOperation(tabId, {
+          kind: 'waitTarget',
+          selector: this.domSelector(tabId, command.selector),
+          timeoutMs: command.timeoutMs ?? 10_000,
+        })) as object),
+      };
+    }
+    throw new Error(`Content-script page action is unavailable: ${command.action}`);
+  }
+
+  private async executePageCommand(command: BrowserPageCommand): Promise<unknown> {
+    const tabId = command.tabId ?? (await activeTabId());
+    await resolveTab(tabId);
+    if (this.canExecuteWithoutDebugger(command)) {
+      return this.executeWithoutDebugger(tabId, command);
+    }
     await this.ensureAttached(tabId);
 
     switch (command.action) {
       case 'page.navigate': {
-        const response = await this.send(tabId, 'Page.navigate', { url: command.url });
+        const response = await this.send(tabId, 'Page.navigate', {
+          url: command.url,
+          ...(command.frameId ? { frameId: command.frameId } : {}),
+        });
         return { tabId, url: command.url, frameId: response.frameId };
       }
+      case 'page.history':
+        return this.navigateHistory(tabId, command.operation);
       case 'page.context': {
         const maxChars = command.maxChars ?? 20_000;
         const scope = command.scope === 'main' ? `document.querySelector('main')` : 'document.body';
         return this.evaluate<Record<string, unknown>>(
           tabId,
-          `(() => { const root = ${scope}; return {url: location.href, title: document.title, selection: getSelection()?.toString().slice(0, ${maxChars}) || undefined, text: (root?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, ${maxChars}), capturedAt: new Date().toISOString()}; })()`
+          `(() => { const root = ${scope}; return {url: location.href, title: document.title, selection: getSelection()?.toString().slice(0, ${maxChars}) || undefined, text: (root?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, ${maxChars}), capturedAt: new Date().toISOString()}; })()`,
+          command.frameId
         );
       }
       case 'page.snapshot':
-        return this.snapshot(tabId, command.mode ?? 'full', command.maxNodes, command.maxChars);
+        return this.snapshot(
+          tabId,
+          command.mode ?? 'full',
+          command.maxNodes,
+          command.maxChars,
+          command.frameId
+        );
       case 'page.click': {
-        const backendNodeId = await this.resolveBackendNode(tabId, command.selector);
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
         await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
-        const { x, y } = await this.nodeCenter(tabId, backendNodeId);
-        await this.send(tabId, 'Input.dispatchMouseEvent', {
-          type: 'mousePressed',
-          x,
-          y,
-          button: 'left',
-          clickCount: 1,
-        });
-        await this.send(tabId, 'Input.dispatchMouseEvent', {
-          type: 'mouseReleased',
-          x,
-          y,
-          button: 'left',
-          clickCount: 1,
-        });
-        return { tabId, clicked: true, selector: command.selector, x, y };
+        const point = await this.nodeCenter(tabId, backendNodeId);
+        if (command.waitFor === 'download') await requireDownloadsPermission();
+        let eventWait: Promise<unknown> | undefined;
+        if (command.waitFor === 'download') {
+          eventWait = this.waitForDownload(tabId, command.timeoutMs ?? 10_000);
+        } else if (command.waitFor && command.waitFor !== 'networkIdle') {
+          eventWait = this.waitForCondition(
+            tabId,
+            command.waitFor,
+            undefined,
+            undefined,
+            command.timeoutMs
+          );
+        }
+        let waited: unknown;
+        try {
+          await this.dispatchClick(tabId, point, command.button ?? 'left', command.clickCount ?? 1);
+          if (eventWait) waited = await eventWait;
+        } catch (error) {
+          void eventWait?.catch(() => undefined);
+          throw error;
+        }
+        if (command.waitFor === 'networkIdle') {
+          waited = await this.waitForCondition(
+            tabId,
+            'networkIdle',
+            undefined,
+            undefined,
+            command.timeoutMs
+          );
+        }
+        return {
+          tabId,
+          clicked: true,
+          selector: command.selector,
+          ...point,
+          ...(waited ? { waited } : {}),
+        };
       }
       case 'page.type': {
-        const backendNodeId = await this.resolveBackendNode(tabId, command.selector);
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
         await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
         await this.send(tabId, 'DOM.focus', { backendNodeId });
         if (command.clearFirst ?? true) await this.clearEditable(tabId, backendNodeId);
         await this.send(tabId, 'Input.insertText', { text: command.text });
         return { tabId, typed: true, selector: command.selector, textLength: command.text.length };
       }
+      case 'page.setChecked': {
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
+        const state = await this.callFunctionOn<{ checkable: boolean; checked: boolean }>(
+          tabId,
+          backendNodeId,
+          `function evReadCheckState() {
+            const role = this.getAttribute?.('role');
+            const checkable = this instanceof HTMLInputElement && ['checkbox', 'radio'].includes(this.type) || ['checkbox', 'radio', 'switch'].includes(role);
+            return { checkable, checked: Boolean(this.checked ?? this.getAttribute?.('aria-checked') === 'true') };
+          }`
+        );
+        if (!state.checkable) throw new Error('Target is not checkable');
+        if (state.checked !== command.checked) await this.clickNode(tabId, backendNodeId);
+        return {
+          tabId,
+          selector: command.selector,
+          checked: command.checked,
+          changed: state.checked !== command.checked,
+        };
+      }
+      case 'page.select': {
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
+        const result = await this.callFunctionOn<{ selectedValues: string[] }>(
+          tabId,
+          backendNodeId,
+          `function evSelectOptions(values) {
+            if (!(this instanceof HTMLSelectElement)) throw new Error('Target is not a native select');
+            const requested = new Set(values);
+            const available = new Set(Array.from(this.options, option => option.value));
+            const missing = values.filter(value => !available.has(value));
+            if (missing.length) throw new Error('Select values not found: ' + missing.join(', '));
+            for (const option of this.options) option.selected = requested.has(option.value);
+            this.dispatchEvent(new Event('input', { bubbles: true }));
+            this.dispatchEvent(new Event('change', { bubbles: true }));
+            return { selectedValues: Array.from(this.selectedOptions, option => option.value) };
+          }`,
+          [command.values]
+        );
+        return { tabId, selector: command.selector, ...result };
+      }
+      case 'page.drag': {
+        const sourceNodeId = await this.resolveBackendNode(
+          tabId,
+          command.sourceSelector,
+          command.frameId
+        );
+        const targetNodeId = await this.resolveBackendNode(
+          tabId,
+          command.targetSelector,
+          command.frameId
+        );
+        const from = await this.nodeCenter(tabId, sourceNodeId);
+        const to = await this.nodeCenter(tabId, targetNodeId);
+        await this.send(tabId, 'Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          ...from,
+          button: 'left',
+        });
+        await this.send(tabId, 'Input.dispatchMouseEvent', {
+          type: 'mousePressed',
+          ...from,
+          button: 'left',
+          clickCount: 1,
+        });
+        await this.send(tabId, 'Input.dispatchMouseEvent', {
+          type: 'mouseMoved',
+          ...to,
+          button: 'left',
+          buttons: 1,
+        });
+        await this.send(tabId, 'Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          ...to,
+          button: 'left',
+          clickCount: 1,
+        });
+        return {
+          tabId,
+          dragged: true,
+          sourceSelector: command.sourceSelector,
+          targetSelector: command.targetSelector,
+        };
+      }
+      case 'page.focus': {
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
+        await this.send(tabId, 'DOM.focus', { backendNodeId });
+        return { tabId, focused: true, selector: command.selector };
+      }
+      case 'page.inspect': {
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
+        const maxChars = command.maxChars ?? 2_000;
+        const result = await this.callFunctionOn<Record<string, unknown>>(
+          tabId,
+          backendNodeId,
+          `function evInspectElement(maxChars) {
+            const truncate = value => typeof value === 'string' ? value.slice(0, maxChars) : value;
+            const attributes = {};
+            for (const attribute of Array.from(this.attributes ?? []).slice(0, 100)) {
+              if (!/(password|secret|token|authorization|cookie|value)/i.test(attribute.name)) attributes[attribute.name] = truncate(attribute.value);
+            }
+            const password = this instanceof HTMLInputElement && this.type === 'password';
+            return {
+              tagName: String(this.tagName ?? '').toLowerCase(),
+              role: this.getAttribute?.('role') ?? undefined,
+              value: password ? '[redacted]' : truncate(this.value ?? this.textContent ?? ''),
+              checked: typeof this.checked === 'boolean' ? this.checked : undefined,
+              selectedValues: this instanceof HTMLSelectElement ? Array.from(this.selectedOptions, option => option.value) : undefined,
+              disabled: typeof this.disabled === 'boolean' ? this.disabled : undefined,
+              editable: Boolean(this.isContentEditable),
+              attributes,
+            };
+          }`,
+          [maxChars]
+        );
+        return { tabId, selector: command.selector, ...result };
+      }
       case 'page.hover': {
-        const backendNodeId = await this.resolveBackendNode(tabId, command.selector);
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
         await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
         const { x, y } = await this.nodeCenter(tabId, backendNodeId);
         await this.send(tabId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
         return { tabId, hovered: true, selector: command.selector, x, y };
       }
       case 'page.press': {
-        const definition = KEY_DEFINITIONS[command.key];
+        const definition = keyDefinition(command.key);
         const modifierMap = { Alt: 1, Control: 2, Meta: 4, Shift: 8 } as const;
         const modifiers = (command.modifiers ?? []).reduce(
           (value, modifier) => value | modifierMap[modifier],
           0
         );
+        const hasCommandModifier =
+          (modifiers & (modifierMap.Alt | modifierMap.Control | modifierMap.Meta)) !== 0;
         const base = {
           key: definition.key,
           code: definition.code,
           windowsVirtualKeyCode: definition.keyCode,
           nativeVirtualKeyCode: definition.keyCode,
           modifiers,
-          ...(definition.text ? { text: definition.text } : {}),
+          ...(!hasCommandModifier && definition.text ? { text: definition.text } : {}),
         };
         await this.send(tabId, 'Input.dispatchKeyEvent', { type: 'keyDown', ...base });
         await this.send(tabId, 'Input.dispatchKeyEvent', {
@@ -639,27 +1678,96 @@ class CdpBrowserController {
         });
         return { tabId, pressed: true, key: command.key, modifiers: command.modifiers ?? [] };
       }
+      case 'page.pointer': {
+        const button = command.button ?? 'left';
+        const clickCount = command.clickCount ?? 1;
+        if (command.type === 'click') {
+          await this.dispatchClick(tabId, { x: command.x, y: command.y }, button, clickCount);
+        } else {
+          let type = 'mouseMoved';
+          if (command.type === 'down') type = 'mousePressed';
+          if (command.type === 'up') type = 'mouseReleased';
+          await this.send(tabId, 'Input.dispatchMouseEvent', {
+            type,
+            x: command.x,
+            y: command.y,
+            button,
+            clickCount,
+          });
+        }
+        return { tabId, ...command };
+      }
       case 'page.scroll': {
-        const distance = command.distance ?? 600;
-        const expression =
-          command.direction === 'top'
-            ? `window.scrollTo({top: 0, behavior: 'instant'})`
-            : command.direction === 'bottom'
-              ? `window.scrollTo({top: document.documentElement.scrollHeight, behavior: 'instant'})`
-              : `window.scrollBy({top: ${command.direction === 'down' ? distance : -distance}, behavior: 'instant'})`;
-        await this.evaluate(tabId, expression);
+        let x = 0;
+        let y = 0;
+        if (command.selector) {
+          const backendNodeId = await this.resolveBackendNode(
+            tabId,
+            command.selector,
+            command.frameId
+          );
+          await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
+          ({ x, y } = await this.nodeCenter(tabId, backendNodeId));
+        }
+        if (command.deltaX !== undefined || command.deltaY !== undefined) {
+          await this.send(tabId, 'Input.dispatchMouseEvent', {
+            type: 'mouseWheel',
+            x,
+            y,
+            deltaX: command.deltaX ?? 0,
+            deltaY: command.deltaY ?? 0,
+          });
+        }
+        if (command.direction === 'top' || command.direction === 'bottom') {
+          const top = command.direction === 'top' ? 0 : 'document.documentElement.scrollHeight';
+          await this.evaluate(
+            tabId,
+            `window.scrollTo({top: ${top}, behavior: 'instant'})`,
+            command.frameId
+          );
+        } else if (command.direction === 'up' || command.direction === 'down') {
+          const distance = command.distance ?? 600;
+          await this.send(tabId, 'Input.dispatchMouseEvent', {
+            type: 'mouseWheel',
+            x,
+            y,
+            deltaX: 0,
+            deltaY: command.direction === 'down' ? distance : -distance,
+          });
+        }
         const position = await this.evaluate<{ x: number; y: number }>(
           tabId,
-          `({x: window.scrollX, y: window.scrollY})`
+          `({x: window.scrollX, y: window.scrollY})`,
+          command.frameId
         );
-        return { tabId, direction: command.direction, ...position };
+        return { tabId, ...position };
       }
-      case 'page.wait':
-        return this.wait(tabId, command.selector, command.timeMs, command.timeoutMs);
+      case 'page.wait': {
+        const condition = command.condition ?? (command.selector ? 'target' : 'time');
+        return this.waitForCondition(
+          tabId,
+          condition,
+          command.selector,
+          command.timeMs,
+          command.timeoutMs,
+          command.idleMs,
+          command.frameId
+        );
+      }
+      case 'page.dialog.respond':
+        await this.send(tabId, 'Page.handleJavaScriptDialog', {
+          accept: command.accept,
+          ...(command.promptText !== undefined ? { promptText: command.promptText } : {}),
+        });
+        return { tabId, accepted: command.accept };
       case 'page.screenshot':
         return this.screenshot(tabId, command.format, command.quality, command.fullPage);
       case 'page.upload': {
-        const backendNodeId = await this.resolveBackendNode(tabId, command.selector);
+        const backendNodeId = await this.resolveBackendNode(
+          tabId,
+          command.selector,
+          command.frameId
+        );
         await this.send(tabId, 'DOM.setFileInputFiles', {
           backendNodeId,
           files: command.filePaths,
@@ -699,28 +1807,228 @@ class CdpBrowserController {
       }
       case 'page.emulate':
         return this.emulate(tabId, command);
+      case 'page.release':
+        return { tabId, released: await this.release(tabId) };
+      default:
+        throw new Error(`Unsupported page action: ${(command as { action: string }).action}`);
     }
+  }
+
+  private async navigateHistory(
+    tabId: number,
+    operation: Extract<BrowserPageCommand, { action: 'page.history' }>['operation']
+  ): Promise<unknown> {
+    if (operation === 'reload') {
+      await this.send(tabId, 'Page.reload', {});
+      return { tabId, operation };
+    }
+    if (operation === 'stop') {
+      await this.send(tabId, 'Page.stopLoading', {});
+      return { tabId, operation };
+    }
+
+    const history = await this.send(tabId, 'Page.getNavigationHistory');
+    const entries = Array.isArray(history.entries)
+      ? (history.entries as Array<Record<string, unknown>>)
+      : [];
+    const currentIndex = typeof history.currentIndex === 'number' ? history.currentIndex : -1;
+    const targetIndex = operation === 'back' ? currentIndex - 1 : currentIndex + 1;
+    const entry = entries[targetIndex];
+    if (typeof entry?.id !== 'number') throw new Error(`Cannot navigate ${operation}`);
+    await this.send(tabId, 'Page.navigateToHistoryEntry', { entryId: entry.id });
+    return { tabId, operation, url: entry.url };
+  }
+
+  private async clickNode(
+    tabId: number,
+    backendNodeId: number,
+    button: 'left' | 'right' | 'middle' = 'left',
+    clickCount = 1
+  ): Promise<{ x: number; y: number }> {
+    await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
+    const point = await this.nodeCenter(tabId, backendNodeId);
+    await this.dispatchClick(tabId, point, button, clickCount);
+    return point;
+  }
+
+  private async dispatchClick(
+    tabId: number,
+    point: { x: number; y: number },
+    button: 'left' | 'right' | 'middle',
+    clickCount: number
+  ): Promise<void> {
+    for (let currentCount = 1; currentCount <= clickCount; currentCount += 1) {
+      await this.send(tabId, 'Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        ...point,
+        button,
+        clickCount: currentCount,
+      });
+      await this.send(tabId, 'Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        ...point,
+        button,
+        clickCount: currentCount,
+      });
+    }
+  }
+
+  private async callFunctionOn<T>(
+    tabId: number,
+    backendNodeId: number,
+    functionDeclaration: string,
+    args: unknown[] = []
+  ): Promise<T> {
+    const resolved = await this.send(tabId, 'DOM.resolveNode', { backendNodeId });
+    const object = resolved.object as Record<string, unknown> | undefined;
+    if (typeof object?.objectId !== 'string') throw new Error('Unable to inspect target element');
+    const response = await this.send(tabId, 'Runtime.callFunctionOn', {
+      objectId: object.objectId,
+      functionDeclaration,
+      arguments: args.map(value => ({ value })),
+      returnByValue: true,
+      awaitPromise: true,
+    });
+    const exception = response.exceptionDetails as Record<string, unknown> | undefined;
+    if (exception)
+      throw new Error(`Element operation failed: ${String(exception.text ?? 'unknown')}`);
+    const result = response.result as Record<string, unknown> | undefined;
+    return result?.value as T;
+  }
+
+  private async waitForCondition(
+    tabId: number,
+    condition: 'target' | 'time' | 'navigation' | 'networkIdle' | 'popup' | 'download',
+    selector?: string,
+    timeMs?: number,
+    timeoutMs = 10_000,
+    idleMs = 500,
+    frameId?: string
+  ): Promise<unknown> {
+    if (condition === 'time') {
+      const duration = timeMs ?? 500;
+      await new Promise(resolve => setTimeout(resolve, duration));
+      return { tabId, waitedMs: duration };
+    }
+    if (condition === 'target') return this.wait(tabId, selector, 0, timeoutMs, frameId);
+    if (condition === 'navigation') {
+      await this.waitForDebuggerEvent(
+        tabId,
+        ['Page.loadEventFired', 'Page.frameStoppedLoading'],
+        timeoutMs
+      );
+      return { tabId, navigation: true };
+    }
+    if (condition === 'popup') return this.waitForPopup(tabId, timeoutMs);
+    if (condition === 'download') return this.waitForDownload(tabId, timeoutMs);
+    return this.waitForNetworkIdle(tabId, timeoutMs, idleMs);
+  }
+
+  private waitForDebuggerEvent(tabId: number, methods: string[], timeoutMs: number): Promise<void> {
+    const debuggerEvents = this.debuggerApi?.onEvent;
+    if (!debuggerEvents) return Promise.reject(new Error('Chrome CDP control is unavailable'));
+    return new Promise((resolve, reject) => {
+      const listener = (source: chrome.debugger.Debuggee, method: string): void => {
+        if (source.tabId !== tabId || !methods.includes(method)) return;
+        cleanup();
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timed out waiting for ${methods.join(' or ')}`));
+      }, timeoutMs);
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        debuggerEvents.removeListener(listener);
+      };
+      debuggerEvents.addListener(listener);
+    });
+  }
+
+  private waitForPopup(tabId: number, timeoutMs: number): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const listener = (tab: chrome.tabs.Tab): void => {
+        if (tab.openerTabId !== tabId || tab.id === undefined) return;
+        cleanup();
+        resolve({ tabId, popupTabId: tab.id, windowId: tab.windowId, url: tab.url ?? '' });
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timed out waiting for popup tab'));
+      }, timeoutMs);
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        chrome.tabs.onCreated.removeListener(listener);
+      };
+      chrome.tabs.onCreated.addListener(listener);
+    });
+  }
+
+  private waitForDownload(tabId: number, timeoutMs: number): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      const listener = (item: chrome.downloads.DownloadItem): void => {
+        cleanup();
+        resolve({ tabId, downloadId: `chrome:${item.id}`, url: sanitizeUrl(item.url) });
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timed out waiting for download'));
+      }, timeoutMs);
+      const cleanup = (): void => {
+        clearTimeout(timer);
+        chrome.downloads.onCreated.removeListener(listener);
+      };
+      chrome.downloads.onCreated.addListener(listener);
+    });
+  }
+
+  private async waitForNetworkIdle(
+    tabId: number,
+    timeoutMs: number,
+    idleMs: number
+  ): Promise<unknown> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt <= timeoutMs) {
+      const inFlight = this.inFlightRequestsByTab.get(tabId)?.size ?? 0;
+      const lastActivity = this.lastNetworkActivityByTab.get(tabId) ?? startedAt;
+      if (inFlight === 0 && Date.now() - lastActivity >= idleMs) {
+        return { tabId, networkIdle: true, waitedMs: Date.now() - startedAt };
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Timed out waiting for network idle');
   }
 
   private async ensureAttached(tabId: number): Promise<void> {
     if (this.attachedTabs.has(tabId)) return;
-    await chrome.debugger.attach({ tabId }, CDP_VERSION);
-    this.attachedTabs.add(tabId);
+    const pending = this.attachingTabs.get(tabId);
+    if (pending) return pending;
+
+    const attachment = (async () => {
+      await chrome.debugger.attach({ tabId }, CDP_VERSION);
+      this.attachedTabs.add(tabId);
+      try {
+        await Promise.all([
+          this.send(tabId, 'Page.enable'),
+          this.send(tabId, 'DOM.enable'),
+          this.send(tabId, 'Runtime.enable'),
+          this.send(tabId, 'Accessibility.enable'),
+          this.send(tabId, 'Log.enable'),
+          this.send(tabId, 'Network.enable', {
+            maxTotalBufferSize: 10_000_000,
+            maxResourceBufferSize: 2_000_000,
+          }),
+        ]);
+      } catch (error) {
+        await this.release(tabId);
+        throw error;
+      }
+    })();
+    this.attachingTabs.set(tabId, attachment);
     try {
-      await Promise.all([
-        this.send(tabId, 'Page.enable'),
-        this.send(tabId, 'DOM.enable'),
-        this.send(tabId, 'Runtime.enable'),
-        this.send(tabId, 'Accessibility.enable'),
-        this.send(tabId, 'Log.enable'),
-        this.send(tabId, 'Network.enable', {
-          maxTotalBufferSize: 10_000_000,
-          maxResourceBufferSize: 2_000_000,
-        }),
-      ]);
-    } catch (error) {
-      await this.release(tabId);
-      throw error;
+      await attachment;
+    } finally {
+      if (this.attachingTabs.get(tabId) === attachment) this.attachingTabs.delete(tabId);
     }
   }
 
@@ -733,12 +2041,30 @@ class CdpBrowserController {
     return sendCommand({ tabId }, method, params);
   }
 
-  private async evaluate<T = unknown>(tabId: number, expression: string): Promise<T> {
+  private async frameExecutionContextId(tabId: number, frameId: string): Promise<number> {
+    const world = await this.send(tabId, 'Page.createIsolatedWorld', {
+      frameId,
+      worldName: 'EV Browser',
+      grantUniversalAccess: false,
+    });
+    if (typeof world.executionContextId !== 'number') {
+      throw new Error(`Unable to access frame: ${frameId}`);
+    }
+    return world.executionContextId;
+  }
+
+  private async evaluate<T = unknown>(
+    tabId: number,
+    expression: string,
+    frameId?: string
+  ): Promise<T> {
+    const contextId = frameId ? await this.frameExecutionContextId(tabId, frameId) : undefined;
     const response = await this.send(tabId, 'Runtime.evaluate', {
       expression,
       returnByValue: true,
       awaitPromise: true,
       userGesture: false,
+      ...(contextId !== undefined ? { contextId } : {}),
     });
     const exception = response.exceptionDetails as Record<string, unknown> | undefined;
     if (exception) throw new Error(`CDP evaluation failed: ${String(exception.text ?? 'unknown')}`);
@@ -750,9 +2076,14 @@ class CdpBrowserController {
     tabId: number,
     mode: 'full' | 'interactive',
     maxNodes = 500,
-    maxChars = 100_000
+    maxChars = 100_000,
+    frameId?: string
   ): Promise<unknown> {
-    const response = await this.send(tabId, 'Accessibility.getFullAXTree');
+    const response = await this.send(
+      tabId,
+      'Accessibility.getFullAXTree',
+      frameId ? { frameId } : undefined
+    );
     const source = Array.isArray(response.nodes) ? (response.nodes as AxNode[]) : [];
     const refs = new Map<string, number>();
     const nodes: Array<Record<string, unknown>> = [];
@@ -772,41 +2103,66 @@ class CdpBrowserController {
       const nextChars = JSON.stringify(value).length;
       if (nodes.length >= maxNodes || encodedChars + nextChars > maxChars) break;
       encodedChars += nextChars;
-      refs.set(ref, node.backendDOMNodeId!);
+      const backendNodeId = node.backendDOMNodeId;
+      if (backendNodeId === undefined) continue;
+      refs.set(ref, backendNodeId);
       nodes.push(value);
     }
 
     this.refsByTab.set(tabId, refs);
+    this.domRefsByTab.delete(tabId);
     return {
       tabId,
       mode,
+      ...(frameId ? { frameId } : {}),
       nodes,
       truncated: nodes.length < eligibleNodes.length,
     };
   }
 
-  private async resolveBackendNode(tabId: number, selector: string): Promise<number> {
+  private async resolveBackendNode(
+    tabId: number,
+    requestedSelector: string,
+    frameId?: string
+  ): Promise<number> {
+    let selector = requestedSelector;
     if (selector.startsWith('@e')) {
       const backendNodeId = this.refsByTab.get(tabId)?.get(selector);
-      if (backendNodeId === undefined) {
-        throw new Error(`Snapshot ref is missing or stale: ${selector}`);
-      }
-      return backendNodeId;
+      if (backendNodeId !== undefined) return backendNodeId;
+      const domSelector = this.domRefsByTab.get(tabId)?.get(selector);
+      if (!domSelector) throw new Error(`Snapshot ref is missing or stale: ${selector}`);
+      selector = domSelector;
     }
 
-    const documentResponse = await this.send(tabId, 'DOM.getDocument', { depth: 0, pierce: true });
-    const root = documentResponse.root as Record<string, unknown> | undefined;
-    if (typeof root?.nodeId !== 'number') throw new Error('Unable to inspect page DOM');
-    const queryResponse = await this.send(tabId, 'DOM.querySelector', {
-      nodeId: root.nodeId,
-      selector,
-    });
-    if (typeof queryResponse.nodeId !== 'number' || queryResponse.nodeId === 0) {
-      throw new Error(`Element not found: ${selector}`);
+    let nodeId: number | undefined;
+    if (frameId) {
+      const contextId = await this.frameExecutionContextId(tabId, frameId);
+      const evaluated = await this.send(tabId, 'Runtime.evaluate', {
+        expression: `document.querySelector(${JSON.stringify(selector)})`,
+        contextId,
+        returnByValue: false,
+      });
+      const result = evaluated.result as Record<string, unknown> | undefined;
+      if (typeof result?.objectId !== 'string') throw new Error(`Element not found: ${selector}`);
+      const requested = await this.send(tabId, 'DOM.requestNode', { objectId: result.objectId });
+      if (typeof requested.nodeId === 'number') nodeId = requested.nodeId;
+    } else {
+      const documentResponse = await this.send(tabId, 'DOM.getDocument', {
+        depth: 0,
+        pierce: true,
+      });
+      const root = documentResponse.root as Record<string, unknown> | undefined;
+      if (typeof root?.nodeId !== 'number') throw new Error('Unable to inspect page DOM');
+      const queryResponse = await this.send(tabId, 'DOM.querySelector', {
+        nodeId: root.nodeId,
+        selector,
+      });
+      if (typeof queryResponse.nodeId === 'number' && queryResponse.nodeId !== 0) {
+        nodeId = queryResponse.nodeId;
+      }
     }
-    const describeResponse = await this.send(tabId, 'DOM.describeNode', {
-      nodeId: queryResponse.nodeId,
-    });
+    if (nodeId === undefined) throw new Error(`Element not found: ${selector}`);
+    const describeResponse = await this.send(tabId, 'DOM.describeNode', { nodeId });
     const node = describeResponse.node as Record<string, unknown> | undefined;
     if (typeof node?.backendNodeId !== 'number') throw new Error(`Element not found: ${selector}`);
     return node.backendNodeId;
@@ -854,7 +2210,8 @@ class CdpBrowserController {
     tabId: number,
     selector?: string,
     timeMs = selector ? 0 : 500,
-    timeoutMs = 10_000
+    timeoutMs = 10_000,
+    frameId?: string
   ): Promise<unknown> {
     if (timeMs > 0) await new Promise(resolve => setTimeout(resolve, timeMs));
     if (!selector) return { tabId, waitedMs: timeMs };
@@ -862,7 +2219,7 @@ class CdpBrowserController {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
       try {
-        await this.resolveBackendNode(tabId, selector);
+        await this.resolveBackendNode(tabId, selector, frameId);
         return { tabId, found: true, selector, waitedMs: Date.now() - startedAt };
       } catch {
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -1077,9 +2434,10 @@ class CdpBrowserController {
   }
 
   private async release(tabId: number): Promise<boolean> {
+    this.domRefsByTab.delete(tabId);
+    this.refsByTab.delete(tabId);
     if (!this.attachedTabs.has(tabId)) return false;
     this.attachedTabs.delete(tabId);
-    this.refsByTab.delete(tabId);
     this.mediaByTab.delete(tabId);
     this.logsByTab.delete(tabId);
     this.networkByTab.delete(tabId);
@@ -1098,8 +2456,7 @@ function getController(): CdpBrowserController {
 
 export async function executeBrowserCommand(command: BrowserAtomicCommand): Promise<unknown> {
   const debuggerApi = (chrome as unknown as { debugger?: typeof chrome.debugger }).debugger;
-  const usesBookmarks = command.action.startsWith('bookmarks.');
-  if (!debuggerApi && command.action !== 'browser.capabilities' && !usesBookmarks) {
+  if (!debuggerApi && command.action.startsWith('page.')) {
     throw new Error('Chrome CDP control is unavailable in this browser');
   }
   return getController().execute(command);

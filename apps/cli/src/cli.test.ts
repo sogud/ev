@@ -89,7 +89,11 @@ describe('ev browser CLI', () => {
         const request = parseJson(input.slice(0, input.indexOf('\n')));
         expect(request).toMatchObject({
           token,
-          command: { action: 'page.snapshot', tabId: 7, mode: 'interactive' },
+          command: {
+            action: 'browser.session.command',
+            sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+            command: { action: 'page.snapshot', mode: 'interactive' },
+          },
         });
         socket.end(
           `${JSON.stringify({
@@ -110,9 +114,12 @@ describe('ev browser CLI', () => {
     const { exitCode, stdout, stderr } = await runCli(
       [
         'browser',
-        'page.snapshot',
+        'session.command',
         '--payload',
-        JSON.stringify({ tabId: 7, mode: 'interactive' }),
+        JSON.stringify({
+          sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+          command: { action: 'page.snapshot', mode: 'interactive' },
+        }),
         '--compact',
       ],
       { ...process.env, EV_BROWSER_CONTROL_FILE: discoveryPath }
@@ -143,18 +150,26 @@ describe('ev browser CLI', () => {
         if (!input.includes('\n')) return;
         const request = parseJson(input.slice(0, input.indexOf('\n')));
         expect(request.command).toEqual({
-          action: 'browser.run',
-          steps: [{ kind: 'wait', timeMs: 0 }],
+          action: 'browser.session.command',
+          sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+          command: {
+            action: 'browser.run',
+            steps: [{ kind: 'wait', timeMs: 0 }],
+          },
         });
         socket.end(
           `${JSON.stringify({
             requestId: request.requestId,
             success: true,
             data: {
-              runId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
-              status: 'completed',
-              summary: { commands: 0, iterations: 0, retries: 0, durationMs: 1 },
-              failures: [],
+              sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+              tabId: 11,
+              result: {
+                runId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+                status: 'completed',
+                summary: { commands: 0, iterations: 0, retries: 0, durationMs: 1 },
+                failures: [],
+              },
             },
           })}\n`
         );
@@ -168,16 +183,29 @@ describe('ev browser CLI', () => {
     await writeFile(discoveryPath, JSON.stringify({ protocolVersion: 1, socketPath, tokenPath }));
 
     const result = await runCli(
-      ['browser', 'run', '--payload', '{"steps":[{"kind":"wait","timeMs":0}]}', '--compact'],
+      [
+        'browser',
+        'session.command',
+        '--payload',
+        JSON.stringify({
+          sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+          command: { action: 'browser.run', steps: [{ kind: 'wait', timeMs: 0 }] },
+        }),
+        '--compact',
+      ],
       { ...process.env, EV_BROWSER_CONTROL_FILE: discoveryPath }
     );
 
     expect(result).toMatchObject({ exitCode: 0, stderr: '' });
     expect(parseJson(result.stdout)).toEqual({
-      runId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
-      status: 'completed',
-      summary: { commands: 0, iterations: 0, retries: 0, durationMs: 1 },
-      failures: [],
+      sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+      tabId: 11,
+      result: {
+        runId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+        status: 'completed',
+        summary: { commands: 0, iterations: 0, retries: 0, durationMs: 1 },
+        failures: [],
+      },
     });
   });
 
@@ -218,8 +246,8 @@ describe('ev browser CLI', () => {
             data: {
               sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
               windowId: 9,
+              groupId: 20,
               ownedTabIds: [11],
-              borrowedTabIds: [],
               activeTabId: 11,
             },
           })}\n`
@@ -241,8 +269,8 @@ describe('ev browser CLI', () => {
     expect(result).toMatchObject({ exitCode: 0, stderr: '' });
     expect(parseJson(result.stdout)).toMatchObject({
       windowId: 9,
+      groupId: 20,
       ownedTabIds: [11],
-      borrowedTabIds: [],
     });
 
     const recipes = await runCli(['browser', 'recipe.list', '--compact'], {
@@ -253,6 +281,80 @@ describe('ev browser CLI', () => {
     expect(parseJson(recipes.stdout)).toEqual({
       recipes: [{ id: 'x.mute-words', status: 'approved' }],
     });
+  });
+
+  it('writes a scoped BrowserSession screenshot without printing base64', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'ev-cli-screenshot-'));
+    directories.push(directory);
+    const socketPath = path.join(directory, 'browser.sock');
+    const tokenPath = path.join(directory, 'browser.token');
+    const discoveryPath = path.join(directory, 'browser-control.json');
+    const outputPath = path.join(directory, 'screenshots', 'page.png');
+    const token = 't'.repeat(43);
+    await writeFile(tokenPath, `${token}\n`, { mode: 0o600 });
+
+    const server = net.createServer(socket => {
+      socket.setEncoding('utf8');
+      let input = '';
+      socket.on('data', chunk => {
+        input += chunk;
+        if (!input.includes('\n')) return;
+        const request = parseJson(input.slice(0, input.indexOf('\n')));
+        expect(request.command).toEqual({
+          action: 'browser.session.command',
+          sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+          command: { action: 'page.screenshot', fullPage: false },
+        });
+        socket.end(
+          `${JSON.stringify({
+            requestId: request.requestId,
+            success: true,
+            data: {
+              sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+              tabId: 11,
+              result: {
+                tabId: 11,
+                format: 'png',
+                data: Buffer.from('png-bytes').toString('base64'),
+                fullPage: false,
+              },
+            },
+          })}\n`
+        );
+      });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(socketPath, resolve);
+    });
+    await writeFile(discoveryPath, JSON.stringify({ protocolVersion: 1, socketPath, tokenPath }));
+
+    const result = await runCli(
+      [
+        'browser',
+        'session.command',
+        '--payload',
+        JSON.stringify({
+          sessionId: '3f88e635-1ba1-4e8c-91fd-83d682959f8a',
+          command: { action: 'page.screenshot', fullPage: false },
+        }),
+        '--output',
+        outputPath,
+        '--compact',
+      ],
+      { ...process.env, EV_BROWSER_CONTROL_FILE: discoveryPath }
+    );
+
+    expect(result).toMatchObject({ exitCode: 0, stderr: '' });
+    expect(await readFile(outputPath, 'utf8')).toBe('png-bytes');
+    expect(parseJson(result.stdout)).toEqual({
+      tabId: 11,
+      format: 'png',
+      fullPage: false,
+      outputPath,
+    });
+    expect(result.stdout).not.toContain('cG5nLWJ5dGVz');
   });
 
   it('writes bookmark exports and automatically backs up before bookmark mutations', async () => {
@@ -417,13 +519,20 @@ describe('ev browser CLI', () => {
     await runCli(['browser', 'host', 'stop'], { ...process.env, EV_HOME: evHome });
   }, 20_000);
 
-  it('rejects arbitrary eval before connecting to Desktop', async () => {
-    const { exitCode, stderr } = await runCli(
+  it('rejects arbitrary eval and direct user-tab actions before connecting to Desktop', async () => {
+    const environment = {
+      ...process.env,
+      EV_BROWSER_CONTROL_FILE: path.join(os.tmpdir(), randomUUID()),
+    };
+    const arbitrary = await runCli(
       ['browser', 'page.eval', '--payload', '{"expression":"document.cookie"}'],
-      { ...process.env, EV_BROWSER_CONTROL_FILE: path.join(os.tmpdir(), randomUUID()) }
+      environment
     );
+    expect(arbitrary.exitCode).toBe(2);
+    expect(arbitrary.stderr).toContain('unsupported browser action or invalid parameters');
 
-    expect(exitCode).toBe(2);
-    expect(stderr).toContain('unsupported browser action or invalid parameters');
+    const direct = await runCli(['browser', 'page.snapshot'], environment);
+    expect(direct.exitCode).toBe(2);
+    expect(direct.stderr).toContain('workspace actions require session.command or oneShot');
   });
 });

@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { Edit, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ContextMenuProps {
   x: number;
@@ -28,6 +30,7 @@ if (typeof document !== 'undefined') {
 }
 
 const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, isOpen, onClose, onEdit, onDelete }) => {
+  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -121,13 +124,13 @@ const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, isOpen, onClose, onEdit
           className='px-4 py-2 text-sm cursor-pointer hover:bg-gray-100 text-gray-700 transition-colors rounded-lg mx-1 flex items-center space-x-2'
           onClick={handleEditClick}>
           <Edit className='h-4 w-4' />
-          <span>Edit</span>
+          <span>{t('browser.newTab.edit')}</span>
         </li>
         <li
           className='px-4 py-2 text-sm cursor-pointer hover:bg-red-50 hover:text-red-600 text-gray-700 transition-colors rounded-lg mx-1 flex items-center space-x-2'
           onClick={handleDeleteClick}>
           <Trash2 className='h-4 w-4' />
-          <span>Delete</span>
+          <span>{t('browser.newTab.delete')}</span>
         </li>
       </ul>
     </div>,
