@@ -5,7 +5,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    setupFiles: ['src/renderer/src/test/setup.ts'],
+    // The renderer suite moved to packages/ui with the UI it covers; the desktop
+    // shell keeps its own suite slot (main-process tests land here).
+    passWithNoTests: true,
     include: ['src/**/*.{test,spec}.{ts,tsx}', 'src/**/__tests__/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/out/**', '**/build/**'],
     coverage: {

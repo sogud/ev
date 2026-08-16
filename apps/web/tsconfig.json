@@ -16,11 +16,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["node", "vite/client"],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/renderer/src/*"]
-    }
+    "types": ["node", "vite/client"]
   },
-  "include": ["src", "electron.vite.config.ts", "vitest.config.ts"]
+  "include": ["src", "vite.config.ts"]
 }

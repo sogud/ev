@@ -42,6 +42,7 @@
     "aboutDesc": "Enhanced Vigilance · 个人桌面 Agent · 0.1.0"
   },
   "sidebar": {
+    "openMenu": "打开菜单",
     "taskListAria": "任务列表",
     "deleteTask": "删除 {{title}}",
     "collapseHistory": "收起历史",

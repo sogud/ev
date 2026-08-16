@@ -8,10 +8,11 @@
     "dev": "pnpm run dev:desktop",
     "dev:desktop": "pnpm --dir apps/cli run build && pnpm --dir apps/desktop run dev",
     "dev:extension": "pnpm --dir apps/browser-extension run dev",
-    "typecheck": "pnpm --dir packages/contracts run typecheck && pnpm --dir packages/browser-host run typecheck && pnpm --dir apps/cli run typecheck && pnpm --dir apps/server run typecheck && pnpm --dir apps/mobile run typecheck && pnpm --dir apps/desktop run typecheck && pnpm --dir apps/browser-extension run typecheck",
-    "test": "pnpm --dir packages/contracts run test && pnpm --dir packages/browser-host run test && pnpm --dir apps/cli run test && pnpm --dir apps/server run test && pnpm --dir apps/desktop run test && pnpm --dir apps/browser-extension run test",
+    "dev:web": "pnpm --dir apps/web run dev",
+    "typecheck": "pnpm --dir packages/contracts run typecheck && pnpm --dir packages/browser-host run typecheck && pnpm --dir packages/ui run typecheck && pnpm --dir apps/cli run typecheck && pnpm --dir apps/server run typecheck && pnpm --dir apps/mobile run typecheck && pnpm --dir apps/desktop run typecheck && pnpm --dir apps/browser-extension run typecheck && pnpm --dir apps/web run typecheck",
+    "test": "pnpm --dir packages/contracts run test && pnpm --dir packages/browser-host run test && pnpm --dir packages/ui run test && pnpm --dir apps/cli run test && pnpm --dir apps/server run test && pnpm --dir apps/desktop run test && pnpm --dir apps/browser-extension run test",
     "format:check": "pnpm --dir packages/browser-host run format:check && pnpm --dir apps/cli run format:check && pnpm --dir apps/desktop run format:check && pnpm --dir apps/browser-extension run format:check",
-    "build": "pnpm --dir apps/cli run build && pnpm --dir apps/desktop run build && pnpm --dir apps/browser-extension run build",
+    "build": "pnpm --dir apps/cli run build && pnpm --dir apps/desktop run build && pnpm --dir apps/browser-extension run build && pnpm --dir apps/web run build",
     "pack": "pnpm --dir apps/desktop run pack",
     "dist": "pnpm --dir apps/desktop run dist",
     "package:extension": "pnpm --dir apps/browser-extension run package",
@@ -24,7 +25,9 @@
     "release": "bash scripts/release.sh",
     "release:checksums": "node --experimental-strip-types scripts/create-release-checksums.ts",
     "lint": "eslint .",
-    "quality": "knip --no-progress && madge --circular --extensions ts,tsx apps packages"
+    "quality": "knip --no-progress && madge --circular --extensions ts,tsx apps packages",
+    "dev:site": "pnpm --dir apps/site run dev",
+    "build:site": "pnpm --dir apps/site run build"
   },
   "license": "Apache-2.0",
   "devDependencies": {

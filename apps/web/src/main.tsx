@@ -1,15 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { I18nextProvider } from 'react-i18next';
-import { App, createElectronTransport, i18n, installTransport } from '@ev/ui';
+import { App, createWebTransport, i18n, installTransport } from '@ev/ui';
 import '@ev/design-tokens/theme.css';
 import '@ev/ui/styles/primitives.css';
 import '@ev/ui/styles/index.css';
 
-// server-client-split-v1: the renderer is a pure HTTP+WS client (isomorphic between
-// the desktop shell and the web form). Electron main injects the URL hash; the
-// ElectronTransport reads it — never IPC.
-installTransport(createElectronTransport());
+// server-client-split-v1: the web form is the same pure HTTP+WS client as the
+// desktop renderer. Open with `?port=..&token=..` (or hash) pointing at a local
+// `ev server`, e.g. http://localhost:5173/?port=7877&token=<token>.
+installTransport(createWebTransport());
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

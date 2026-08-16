@@ -1,0 +1,40 @@
+{
+  "name": "@ev/ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "EV shared UI — components, store and styles consumed by the desktop shell and the web form",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles/index.css": "./src/styles/index.css",
+    "./styles/primitives.css": "./src/styles/primitives.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.7.0",
+    "@ev/contracts": "workspace:*",
+    "@ev/design-tokens": "workspace:*",
+    "@ev/locales": "workspace:*",
+    "cmdk": "1.1.1",
+    "lucide-react": "0.468.0",
+    "react-i18next": "^15.1.3",
+    "zustand": "4.5.5"
+  },
+  "peerDependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "5.7.3",
+    "vitest": "4.1.10"
+  },
+  "license": "Apache-2.0"
+}

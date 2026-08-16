@@ -20,23 +20,17 @@
     "clean:release": "node --experimental-strip-types ../../scripts/clean-release-output.ts"
   },
   "dependencies": {
-    "@base-ui/react": "^1.7.0",
     "@ev/contracts": "workspace:*",
     "@ev/design-tokens": "workspace:*",
-    "cmdk": "1.1.1",
-    "lucide-react": "0.468.0",
+    "@ev/ui": "workspace:*",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "yaml": "2.8.1",
-    "zustand": "4.5.5",
-    "@ev/locales": "workspace:*",
     "react-i18next": "^15.1.3"
   },
   "devDependencies": {
     "@types/node": "22.10.5",
     "@types/react": "18.3.18",
     "@types/react-dom": "18.3.5",
-    "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "5.2.0",
     "@vitest/coverage-v8": "4.1.10",
     "autoprefixer": "10.4.20",

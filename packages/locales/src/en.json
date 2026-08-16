@@ -42,6 +42,7 @@
     "aboutDesc": "Enhanced Vigilance · personal desktop agent · 0.1.0"
   },
   "sidebar": {
+    "openMenu": "Open menu",
     "taskListAria": "Task list",
     "deleteTask": "Delete {{title}}",
     "collapseHistory": "Collapse history",

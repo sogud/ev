@@ -2,7 +2,8 @@
 export default {
   darkMode: 'class',
   content: [
-    './src/renderer/**/*.{html,js,ts,jsx,tsx}',
+    './index.html',
+    './src/**/*.{html,js,ts,jsx,tsx}',
     '../../packages/ui/src/**/*.{html,js,ts,jsx,tsx}',
   ],
   theme: {
