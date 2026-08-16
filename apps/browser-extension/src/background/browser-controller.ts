@@ -764,6 +764,13 @@ async function executeDomPageOperation(operation: DomPageOperation): Promise<unk
   }
 }
 
+/**
+ * Quiet window after the last advanced (CDP) command before the debugger is
+ * released, so Chrome's debugging infobar clears on its own. The next advanced
+ * command re-attaches on demand.
+ */
+const DEBUGGER_IDLE_RELEASE_MS = 30_000;
+
 class CdpBrowserController {
   private readonly debuggerApi = (chrome as unknown as { debugger?: typeof chrome.debugger })
     .debugger;
@@ -771,6 +778,8 @@ class CdpBrowserController {
     .scripting;
   private readonly attachedTabs = new Set<number>();
   private readonly attachingTabs = new Map<number, Promise<void>>();
+  private readonly debuggerIdleTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private readonly inFlightAdvancedByTab = new Map<number, number>();
   private readonly domRefsByTab = new Map<number, Map<string, string>>();
   private readonly refsByTab = new Map<number, Map<string, number>>();
   private readonly mediaByTab = new Map<number, Map<string, CachedMediaItem>>();
@@ -825,6 +834,8 @@ class CdpBrowserController {
 
   private readonly handleDetach = (source: chrome.debugger.Debuggee): void => {
     if (source.tabId === undefined) return;
+    this.clearIdleDebuggerRelease(source.tabId);
+    this.inFlightAdvancedByTab.delete(source.tabId);
     this.attachedTabs.delete(source.tabId);
     this.refsByTab.delete(source.tabId);
     this.mediaByTab.delete(source.tabId);
@@ -839,6 +850,8 @@ class CdpBrowserController {
   }
 
   dispose(): void {
+    for (const timer of this.debuggerIdleTimers.values()) clearTimeout(timer);
+    this.debuggerIdleTimers.clear();
     this.debuggerApi?.onEvent.removeListener(this.handleEvent);
     this.debuggerApi?.onDetach.removeListener(this.handleDetach);
   }
@@ -1423,6 +1436,10 @@ class CdpBrowserController {
     if (this.canExecuteWithoutDebugger(command)) {
       return this.executeWithoutDebugger(tabId, command);
     }
+    return this.withAdvancedLease(tabId, () => this.executeAttached(tabId, command));
+  }
+
+  private async executeAttached(tabId: number, command: BrowserPageCommand): Promise<unknown> {
     await this.ensureAttached(tabId);
 
     switch (command.action) {
@@ -2433,7 +2450,45 @@ class CdpBrowserController {
     return { tabId, enabled: true, ...value };
   }
 
+  /**
+   * The debugger infobar stays visible for as long as the attachment is held,
+   * so hold it only while advanced commands are in flight plus a short quiet
+   * window, then release; the next advanced command re-attaches on demand.
+   */
+  private async withAdvancedLease<T>(tabId: number, run: () => Promise<T>): Promise<T> {
+    this.clearIdleDebuggerRelease(tabId);
+    this.inFlightAdvancedByTab.set(tabId, (this.inFlightAdvancedByTab.get(tabId) ?? 0) + 1);
+    try {
+      return await run();
+    } finally {
+      const left = (this.inFlightAdvancedByTab.get(tabId) ?? 1) - 1;
+      if (left <= 0) this.inFlightAdvancedByTab.delete(tabId);
+      else this.inFlightAdvancedByTab.set(tabId, left);
+      this.scheduleIdleDebuggerRelease(tabId);
+    }
+  }
+
+  private scheduleIdleDebuggerRelease(tabId: number): void {
+    this.clearIdleDebuggerRelease(tabId);
+    this.debuggerIdleTimers.set(
+      tabId,
+      setTimeout(() => {
+        this.debuggerIdleTimers.delete(tabId);
+        if ((this.inFlightAdvancedByTab.get(tabId) ?? 0) === 0) void this.release(tabId);
+      }, DEBUGGER_IDLE_RELEASE_MS)
+    );
+  }
+
+  private clearIdleDebuggerRelease(tabId: number): void {
+    const timer = this.debuggerIdleTimers.get(tabId);
+    if (timer) {
+      clearTimeout(timer);
+      this.debuggerIdleTimers.delete(tabId);
+    }
+  }
+
   private async release(tabId: number): Promise<boolean> {
+    this.clearIdleDebuggerRelease(tabId);
     this.domRefsByTab.delete(tabId);
     this.refsByTab.delete(tabId);
     if (!this.attachedTabs.has(tabId)) return false;

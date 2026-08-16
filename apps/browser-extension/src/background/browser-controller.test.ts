@@ -401,6 +401,57 @@ describe('CDP browser controller', () => {
     expect(attachCalls).toBe(1);
   });
 
+  test('detaches the debugger after the idle window and re-attaches on demand', async () => {
+    vi.useFakeTimers();
+    try {
+      await executeBrowserCommand({ action: 'page.pointer', tabId: 7, type: 'move', x: 1, y: 2 });
+      expect(vi.mocked(chrome.debugger.attach)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(chrome.debugger.detach)).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(vi.mocked(chrome.debugger.detach)).toHaveBeenCalledWith({ tabId: 7 });
+
+      await executeBrowserCommand({ action: 'page.pointer', tabId: 7, type: 'move', x: 3, y: 4 });
+      expect(vi.mocked(chrome.debugger.attach)).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('keeps the debugger attached while an advanced command is still in flight', async () => {
+    vi.useFakeTimers();
+    let finishPointer!: () => void;
+    vi.mocked(chrome.debugger.sendCommand).mockImplementation(
+      async (_target, method: string, params?: object) => {
+        calls.push({ method, params: params as Record<string, unknown> | undefined });
+        if (method === 'Input.dispatchMouseEvent') {
+          await new Promise<void>(resolve => {
+            finishPointer = resolve;
+          });
+        }
+        return {};
+      }
+    );
+    try {
+      const pending = executeBrowserCommand({
+        action: 'page.pointer',
+        tabId: 7,
+        type: 'move',
+        x: 1,
+        y: 2,
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(vi.mocked(chrome.debugger.detach)).not.toHaveBeenCalled();
+
+      finishPointer();
+      await pending;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(vi.mocked(chrome.debugger.detach)).toHaveBeenCalledWith({ tabId: 7 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('uses fixed content-script operations for common page actions without CDP', async () => {
     const executeScript = vi.fn(async (injection: { args?: unknown[] }) => {
       const operation = injection.args?.[0] as { kind?: string } | undefined;
