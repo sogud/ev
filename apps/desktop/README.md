@@ -1,14 +1,14 @@
 # EV — Enhanced Vigilance
 
-EV 是一个个人拥有、本地优先的桌面 Agent。它通过受控 CLI Process Host 使用 Pi RPC、Codex app-server 与 Claude/Qoder stream-json 协议，并负责统一的任务体验、Trace 和 Inspector。
+EV 是一个个人拥有、本地优先的桌面 Agent。它通过受控 CLI Process Host 使用 Pi RPC、Codex app-server、Claude/Qoder stream-json，以及 Experimental DeepSeek Harness stdio JSON-RPC 协议，并负责统一的任务体验、Trace 和 Inspector。
 
 当前目标不是自研模型适配层，也不是搭建云端 Agent 平台，而是先把可靠、透明、可检查的个人桌面 Agent 做好。
 
 ## 当前能力
 
 - macOS Electron 桌面端
-- Pi / Codex / Claude Code / Qoder 四种 Runtime，对话框下方 chip 行切换（首条消息前可换，之后锁定）
-- 自动列出各 Runtime 的原生历史会话
+- Pi / Codex / Claude Code / Qoder 四种常规 Runtime，加受控环境变量启用的 Experimental DSH Runtime；对话框下方 chip 行切换（首条消息前可换，之后锁定）
+- 自动列出支持 session catalog 的 Runtime 原生历史；DSH SDK 当前不提供 list/cold resume，停止 DSH Task 后必须新建 Task
 - 多任务并行和独立 Runtime session
 - OpenAI、Anthropic、Google 等模型与服务商认证
 - 自定义 OpenAI、Anthropic 和 Google 兼容服务商
@@ -28,7 +28,7 @@ EV 是一个个人拥有、本地优先的桌面 Agent。它通过受控 CLI Pro
 
 ## 开发
 
-要求：pnpm ≥ 10、Node.js 22.19+。运行 Pi/Codex 任务时，相应 CLI 需已安装并完成自身登录；也可通过 `EV_PI_CLI` 或 `EV_CODEX_CLI` 指定受信任的可执行文件。
+要求：pnpm ≥ 10、Node.js 22.19+。运行 Pi/Codex 任务时，相应 CLI 需已安装并完成自身登录；也可通过 `EV_PI_CLI` 或 `EV_CODEX_CLI` 指定受信任的可执行文件。DSH 开发态接入使用 `EV_DSH_RUNTIME` 与 `EV_DSH_CONFIG` 指定受信任的绝对路径，并从启动环境继承 `DEEPSEEK_API_KEY`。
 
 ```bash
 pnpm install
@@ -55,7 +55,7 @@ pnpm run pack
 
 ## 数据
 
-- Pi 对话正文保存在 `~/.pi/agent/sessions/`，Codex 对话正文由 Codex 原生 thread/session 存储管理；EV 不复制会话正文。
+- Pi 对话正文保存在 `~/.pi/agent/sessions/`，Codex 对话正文由 Codex 原生 thread/session 存储管理；DSH 对话由 `DSH_SESSION_ROOT` 保存。EV 不复制会话正文。
 - EV 用户数据目录只保存 Runtime/session 关联、Trace、隐藏项和 Browser 配对凭据。
 - 图形应用没有可靠的启动 CWD，因此默认工作空间固定为 `~/.ev/workspace`；可在“设置 → 通用”中修改。
 - 历史任务引用的目录被移动或删除时，任务会标记为不可用，但不会阻断应用启动。
@@ -64,4 +64,4 @@ pnpm run pack
 
 ## 开发方向
 
-后续功能和优先级见仓库根目录的 [roadmap](../../docs/specs/roadmap.md)。Pi 继续作为默认 Runtime；Codex CLI、Claude Code 和 Qoder CLI 的接入边界见 [Agent Runtime Adapters](../../docs/agent-runtime-adapters.md)。通用本地 API、复杂权限和多 Agent 协作暂不属于第一版。
+后续功能和优先级见仓库根目录的 [roadmap](../../docs/specs/roadmap.md)。Pi 继续作为默认 Runtime；Codex CLI、Claude Code、Qoder CLI 和 Experimental DSH 的接入边界见 [Agent Runtime Adapters](../../docs/agent-runtime-adapters.md)。通用本地 API、复杂权限和多 Agent 协作暂不属于第一版。

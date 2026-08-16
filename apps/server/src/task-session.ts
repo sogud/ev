@@ -154,8 +154,12 @@ export class TaskSession {
   async abort(): Promise<void> {
     const runtime = await this.ensureState();
     await runtime.session.abort();
-    this.task.status = 'idle';
+    if (this.task.status === 'running') {
+      this.task.status = 'idle';
+      this.task.error = undefined;
+    }
     this.task.updatedAt = Date.now();
+    this.persistTask();
     this.notify();
   }
 
@@ -216,13 +220,15 @@ export class TaskSession {
 
   /** For removeTask/shutdown: dispose and release every ownership record of the task. */
   async release(): Promise<void> {
-    const runtime =
-      this.runtime ?? (await this.initializing?.catch(() => undefined));
+    const runtime = this.runtime ?? (await this.initializing?.catch(() => undefined));
     runtime?.unsubscribe();
-    await runtime?.session.dispose();
-    this.runtime = undefined;
-    this.initializing = undefined;
-    this.deps.ownerIndex.releaseAll(this.task.id);
+    try {
+      await runtime?.session.dispose();
+    } finally {
+      this.runtime = undefined;
+      this.initializing = undefined;
+      this.deps.ownerIndex.releaseAll(this.task.id);
+    }
   }
 
   private ensureState(): Promise<TaskRuntimeState> {
@@ -240,9 +246,10 @@ export class TaskSession {
    * record and drop the built session (rebuilt lazily with the new config).
    * Non-pi runtimes cannot hot-swap mid-session; reconfigure always rebuilds.
    */
-  private async reconfigure(
-    patch: { model?: TaskSummary['model']; thinkingLevel?: TaskSummary['thinkingLevel'] }
-  ): Promise<void> {
+  private async reconfigure(patch: {
+    model?: TaskSummary['model'];
+    thinkingLevel?: TaskSummary['thinkingLevel'];
+  }): Promise<void> {
     await this.initializing?.catch(() => undefined);
     const current = this.runtime;
     if (current && (current.transcript.size > 0 || this.task.status === 'running')) {
@@ -335,9 +342,7 @@ export class TaskSession {
     const runtime: TaskRuntimeState = {
       session,
       transcript,
-      trace: new Map(
-        this.deps.persistence.loadTrace(task.id).map(item => [item.id, item])
-      ),
+      trace: new Map(this.deps.persistence.loadTrace(task.id).map(item => [item.id, item])),
       unsubscribe: () => undefined,
     };
     runtime.unsubscribe = session.subscribe(event => this.onRuntimeEvent(runtime, event));
@@ -378,6 +383,17 @@ export class TaskSession {
           timestamp: event.timestamp,
         });
       }
+    }
+    if (event.type === 'trace') {
+      runtime.trace.set(event.id, {
+        id: event.id,
+        type: event.traceType,
+        title: event.title,
+        ...(event.detail !== undefined ? { detail: event.detail } : {}),
+        status: event.status,
+        timestamp: event.timestamp,
+        ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+      });
     }
     if (event.type === 'status') {
       task.status = event.status;
@@ -431,9 +447,7 @@ export class TaskSession {
     if (!this.runtime) return;
     this.deps.persistence.saveTrace(
       this.task.id,
-      [...this.runtime.trace.values()]
-        .sort((a, b) => a.timestamp - b.timestamp)
-        .slice(-500)
+      [...this.runtime.trace.values()].sort((a, b) => a.timestamp - b.timestamp).slice(-500)
     );
   }
 

@@ -11,6 +11,8 @@ export function runtimeMonogram(id: RuntimeId): string {
       return 'Cl';
     case 'qoder':
       return 'Qd';
+    default:
+      return id.slice(0, 2).toUpperCase();
   }
 }
 

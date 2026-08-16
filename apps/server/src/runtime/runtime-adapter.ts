@@ -1,6 +1,13 @@
 import type { RuntimeDescriptor, RuntimeEvent, RuntimeId, RuntimeSessionRef } from '@ev/contracts';
 import type { ModelRef, ThinkingLevel } from '@ev/contracts/domain';
 
+export class RuntimeSessionUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RuntimeSessionUnavailableError';
+  }
+}
+
 export interface RuntimeSessionRecord {
   ref: RuntimeSessionRef;
   title: string;

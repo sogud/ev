@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const RuntimeIdSchema = z.enum(['pi', 'codex', 'claude-code', 'qoder']);
+export const RuntimeIdSchema = z.enum(['pi', 'codex', 'claude-code', 'qoder', 'dsh']);
 export type RuntimeId = z.infer<typeof RuntimeIdSchema>;
 
 export const RuntimeSessionRefSchema = z.object({
@@ -70,6 +70,19 @@ export const RuntimeEventSchema = z.discriminatedUnion('type', [
       })
       .optional(),
     thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  }),
+  z.object({
+    type: z.literal('trace'),
+    id: z.string().trim().min(1).max(512),
+    traceType: z.enum(['model', 'tool', 'system', 'retry', 'compaction', 'error']),
+    title: z.string().trim().min(1).max(500),
+    detail: z
+      .string()
+      .max(16 * 1024 * 1024)
+      .optional(),
+    status: z.enum(['running', 'done', 'error']),
+    timestamp: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative().optional(),
   }),
 ]);
 export type RuntimeEvent = z.infer<typeof RuntimeEventSchema>;
