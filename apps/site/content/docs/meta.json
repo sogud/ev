@@ -1,0 +1,5 @@
+{
+  "title": "EV 文档",
+  "root": true,
+  "pages": ["index", "cli", "browser-extension"]
+}

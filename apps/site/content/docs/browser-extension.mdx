@@ -1,0 +1,74 @@
+---
+title: 浏览器扩展安装
+description: 构建 EV Browser Extension（Chrome MV3），在浏览器中加载并完成配对。
+---
+
+EV Browser Extension 是 EV 的浏览器应用：基于 WXT、Vite、React、TypeScript 和 Chrome
+Manifest V3。它提供书签浏览与搜索、新标签页工作区，以及 EV Agent 所需的浏览器桥接能力。
+
+## 构建
+
+在 EV 仓库根目录：
+
+```bash
+pnpm install
+pnpm run build:extension
+```
+
+Chrome MV3 生产构建位于 `apps/browser-extension/.output/chrome-mv3/`。
+
+开发模式提供 Vite HMR 和自动扩展重载：
+
+```bash
+pnpm run dev:extension
+```
+
+## 加载到 Chrome
+
+1. 打开 `chrome://extensions`；
+2. 右上角开启**开发者模式**；
+3. 点击**加载已解压的扩展程序**，选择 `apps/browser-extension/.output/chrome-mv3/` 目录。
+
+Firefox 构建：
+
+```bash
+pnpm run build:extension:firefox
+```
+
+需要上传商店的 ZIP 包时：
+
+```bash
+pnpm run package:extension            # Chrome ZIP
+pnpm run package:extension:firefox    # Firefox ZIP
+```
+
+## 配对
+
+扩展内置基于 `@ev/contracts` 的本机 Browser Host WebSocket bridge，只连接
+`ws://127.0.0.1:43121/browser`，不接受页面或 Agent 提供的 endpoint。
+
+- **连接 standalone Browser Host（ev CLI）**：首次连接自动批准本机可信扩展，
+  不需要手填地址或 Pairing token。
+- **连接 EV Desktop**：在桌面端「设置 → EV Browser」首次批准。
+
+配对成功前，Host 拒绝执行任何浏览器命令。Extension Options、Popup 和 Desktop
+设置页都可以刷新状态或请求重连。
+
+## 配对之后验证
+
+```bash
+ev browser check
+ev browser session.create --payload '{"url":"https://example.com"}' --compact
+```
+
+更多命令见 [EV CLI 参考](/docs/cli)。
+
+## 安全边界
+
+- 每个 BrowserSession 自动创建专属非聚焦 window 和单一 EV tab group；
+  拒绝操作用户已有的 tab/window。
+- 普通 navigate / snapshot / click / type 等使用固定 content script 与 tabs API，
+  不触发远程调试；仅高级拖拽、iframe、Network/Console、emulation 等按需使用 Chrome CDP。
+- 不开放任意 `page.eval`，也不支持或绕过 DRM 媒体。
+- 扩展不保存模型密钥，也不直接执行任意本地命令。
+- 书签、历史和下载是显式的 profile 全局动作，文件默认保存到 `Downloads/EV`。

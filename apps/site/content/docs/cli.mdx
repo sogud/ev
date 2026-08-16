@@ -1,0 +1,157 @@
+---
+title: EV CLI 参考
+description: ev 命令行的完整命令树、参数与行为约定。
+---
+
+`ev` 是 EV 的命令行客户端。它随桌面应用打包（Desktop 启动时创建
+`~/.ev/bin/ev` launcher），也可以从源码构建。桌面关闭时，CLI 会自托管本地服务；
+浏览器命令在没有 Desktop 时会自动拉起 standalone Browser Host。
+
+要求 Node.js ≥ 22.19。所有命令输出结构化 JSON；服务类命令可加 `--pretty` 得到缩进输出；
+`ev --version`（`-v`）打印版本号。
+
+## 命令树概览
+
+```text
+ev status                     LAN/Tailscale URLs + masked-token hint
+ev remote on|off|status
+ev token create --tier observer|operator | list | revoke <id>
+ev server start|stop|status
+ev task …                     任务管理
+ev runtime …                  Runtime 列表
+ev browser <action> …         浏览器桥接
+ev --skill                    打印 ev-browser Skill 正文
+```
+
+## ev browser
+
+控制浏览器扩展的统一入口。命令形式：
+
+```text
+ev browser <action> [--payload <json> | --payload-file <path>]
+                  [--timeout <seconds>] [--output <path>] [--compact]
+```
+
+### 通用参数
+
+| 参数                    | 说明                                                                |
+| ----------------------- | ------------------------------------------------------------------- |
+| `--payload <json>`      | JSON 对象形式的命令参数                                             |
+| `--payload-file <path>` | 从文件读取 JSON 参数，与 `--payload` 二选一                         |
+| `--timeout <seconds>`   | 超时秒数，取值 0–300，默认 30                                       |
+| `--output <path>`       | 保存结果文件，仅支持 scoped `page.screenshot` 与 `bookmarks.export` |
+| `--compact`             | 单行 JSON 输出                                                      |
+
+### Action 与别名
+
+- `check` 等价于 `browser.capabilities`，用于检查桥接链路；
+- `oneShot`（`oneshot`）打开一次性 BrowserSession 执行单条命令后关闭；
+- `session.*`、`recipe.*` 会自动补全为 `browser.session.*`、`browser.recipe.*`；
+- `page.*`、`tabs.*`、`windows.*`、`tabGroups.*`、`zoom.*`、`sessions.restore`、
+  `browser.run` 这类工作区动作**必须**通过 `session.command` 或 `oneShot` 调用，
+  直接调用会被拒绝——EV 从不操作你已有的标签页。
+
+### 示例
+
+以下示例与 CLI 内置帮助一致：
+
+```bash
+ev browser check
+ev browser oneShot --payload '{"url":"https://example.com","command":{"action":"page.snapshot","mode":"interactive"}}'
+ev browser session.create --payload '{"url":"https://example.com"}'
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.snapshot"}}'
+ev browser history.search --payload '{"text":"EV","maxResults":20}'
+ev browser downloads.status --payload '{"downloadId":"chrome:42"}'
+ev browser bookmarks.search --payload '{"query":"EV"}'
+ev browser bookmarks.export --output ./bookmarks.json
+ev browser session.list
+ev browser recipe.run --payload-file <request.json>
+```
+
+### 行为约定
+
+- **自动备份书签**：`bookmarks.create` / `bookmarks.update` / `bookmarks.move` /
+  `bookmarks.remove` / `bookmarks.removeTree` / `bookmarks.restore` 执行前会先导出
+  书签备份到 `~/.ev/backups/bookmarks/`；失败信息里会附带备份路径。
+- **上传校验**：`page.upload` 的 `filePaths` 必须是绝对路径且文件存在。
+- **服务发现**：默认读取 `~/.ev` 下的发现文件；设置 `EV_BROWSER_CONTROL_FILE`
+  可指向自定义路径。未设置时会自动启动 standalone Browser Host。
+- **响应限制**：单次响应上限 16 MiB，且经协议 schema 校验。
+
+### Standalone Browser Host
+
+```bash
+ev browser host            # 前台运行 standalone Browser Host
+ev browser host serve      # 同上；也接受 --background
+ev browser host stop       # 停止 standalone Browser Host
+```
+
+## ev task
+
+任务管理。需要本地服务运行（不存在时自动启动）。
+
+```bash
+ev task list
+ev task get <id>
+ev task create --cwd <dir> --runtime <runtime>
+ev task prompt <id> <text...>
+ev task abort <id>
+ev task remove <id>
+ev task set-runtime <id> <runtime>
+ev task set-model <id> <model> [variant]
+ev task follow <id> [--until-idle]
+```
+
+`follow` 流式打印任务消息；`--until-idle` 在出现 assistant 回复且任务回到空闲后退出，
+任务出错时以退出码 1 结束。
+
+## ev server / ev status / ev remote
+
+```bash
+ev server start            # 启动本地服务（已运行时直接复用）
+ev server stop
+ev server status           # running / port / pid + 远程 URL
+
+ev status                  # 服务状态 + lanUrl / tailscaleUrl + 掩码手机入口
+ev remote on               # 允许绑定 LAN / Tailscale 地址
+ev remote off
+ev remote status
+```
+
+`ev remote on|off` 写入配置后需要重启服务生效：`ev server stop && ev server start`。
+LAN 是明文 HTTP，只建议在可信网络使用；不可信 WiFi 请走 Tailscale。
+
+## ev token
+
+为手机 Web / 远程客户端签发 token：
+
+```bash
+ev token create --tier observer    # 只读；可发送/变更需要 --tier operator
+ev token list                      # token 只显示前 8 位掩码
+ev token revoke <id>
+```
+
+完整 token 只在 `create` 时打印一次（`evr_` 前缀），请妥善保存。
+
+## 其它命令组
+
+```bash
+ev runtime list            # 可用 Runtime 列表
+ev provider list           # 模型服务商列表（只读，登录走各 Runtime 原生命令）
+ev inspection get <taskId> # 任务的审查信息
+ev settings get            # 读取设置
+ev settings set <json>     # 以 JSON 更新设置
+ev --skill                 # 打印 ev-browser Skill 正文（EV_SKILL_PATH 可覆盖路径）
+```
+
+## 数据目录
+
+用户数据保存在 `~/.ev`（`server.json`、`tokens.json`、`remote.json`、书签备份等）。
+测试与自动化可用环境变量 `EV_HOME` 覆盖数据目录，避免触碰真实数据。
+
+## 从源码构建 CLI
+
+```bash
+pnpm --dir apps/cli run build     # 产物 dist/ev.js（bin: ev）
+pnpm run package:cli              # build + standalone + npm pack
+```

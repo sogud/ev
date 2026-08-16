@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+/*
+ * EV design tokens (dark theme).
+ *
+ * Source of truth: packages/design-tokens/theme.css (`@ev/design-tokens`).
+ * The site is built independently of the monorepo packages, so the dark-mode
+ * resolved values are copied here. Keep them in sync with the token package.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Typography */
+  --ev-font-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI',
+    sans-serif;
+  --ev-font-mono: 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, monospace;
+
+  /* Shape */
+  --ev-radius-sm: 6px;
+  --ev-radius-md: 8px;
+  --ev-radius-lg: 10px;
+  --ev-radius-xl: 12px;
+
+  /* Semantic colors: dark values from theme.css */
+  --ev-color-bg-canvas: #181818;
+  --ev-color-bg-sidebar: #201f21;
+  --ev-color-bg-sunken: #141414;
+  --ev-color-bg-surface: #1d1d1f;
+  --ev-color-bg-raised: #242426;
+  --ev-color-bg-hover: rgb(255 255 255 / 0.06);
+  --ev-color-bg-active: rgb(255 255 255 / 0.08);
+  --ev-color-text-primary: rgb(255 255 255 / 0.88);
+  --ev-color-text-secondary: rgb(255 255 255 / 0.72);
+  --ev-color-text-tertiary: rgb(255 255 255 / 0.58);
+  --ev-color-brand-mark: #b9f2ff;
+  --ev-color-border-subtle: rgb(255 255 255 / 0.07);
+  --ev-color-border-default: rgb(255 255 255 / 0.11);
+  --ev-color-border-strong: rgb(255 255 255 / 0.18);
+  --ev-blue-300: #61adff;
+  --ev-blue-400: #3d9bff;
+  --ev-green-400: #79bd8b;
+  --ev-amber-400: #d8ad67;
+}
+
+/* Expose the EV tokens to Tailwind utility classes (bg-canvas, text-ink, ...) */
+@theme inline {
+  --font-sans: var(--ev-font-sans);
+  --font-mono: var(--ev-font-mono);
+
+  --color-canvas: var(--ev-color-bg-canvas);
+  --color-surface: var(--ev-color-bg-surface);
+  --color-raised: var(--ev-color-bg-raised);
+  --color-sunken: var(--ev-color-bg-sunken);
+  --color-ink: var(--ev-color-text-primary);
+  --color-ink-secondary: var(--ev-color-text-secondary);
+  --color-ink-tertiary: var(--ev-color-text-tertiary);
+  --color-brand: var(--ev-color-brand-mark);
+  --color-line: var(--ev-color-border-default);
+  --color-line-subtle: var(--ev-color-border-subtle);
+  --color-line-strong: var(--ev-color-border-strong);
+  --color-accent-blue: var(--ev-blue-400);
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+body {
+  font-family: var(--ev-font-sans);
+  background-color: var(--ev-color-bg-canvas);
+  color: var(--ev-color-text-primary);
+}
