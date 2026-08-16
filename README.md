@@ -9,8 +9,8 @@ your phone.**
 
 ## Why EV
 
-- **One inbox for every runtime.** Switch Pi / Codex / Claude Code / Qoder
-  per task; auth stays native to each tool — EV never stores credentials.
+- **One inbox for every runtime.** Switch Pi / Codex / Claude Code / Qoder,
+  or opt into Experimental DeepSeek Harness per task; auth stays native to each tool — EV never stores credentials.
 - **Local by design.** A headless local server on `127.0.0.1`; the Electron
   shell, the CLI and the mobile web app are thin clients of the same
   contract.
@@ -28,7 +28,8 @@ your phone.**
   footnotes; workspace diff inspector (diff-first by design).
 - Runtime health drawer: native auth status (read-only), config paths,
   model catalog — EV displays, never writes, native configs.
-- Browser bridge: paired extension over `127.0.0.1`; Agent-owned BrowserSessions, Host-local BrowserRun batches, reviewed domain-bound SiteRecipes, and safe CLI bookmark management.
+- Experimental DeepSeek Harness adapter: official stdio JSON-RPC, one isolated process per task, streamed reasoning/tools/subagents, explicit no-cold-resume behavior, and terminal process-level stop.
+- Browser bridge: paired extension over `127.0.0.1`; every page/workspace operation runs in a new Agent-owned BrowserSession window with one EV tab group, never the user's current tabs; ordinary DOM work avoids remote debugging while advanced diagnostics attach bounded CDP on demand; includes Host-local BrowserRun, reviewed SiteRecipes, safe profile-global bookmark/history/download actions, and a bilingual optional bookmark New Tab.
 - Mobile web entry at `/m`: task list, chat, model switch — nothing else.
 - i18n: English (default) and 中文, following your system locale with a
   per-user override in Settings → General → Language.
@@ -61,8 +62,9 @@ ev task follow <id> --until-idle
 
 ev browser check
 ev browser session.create --payload '{"url":"https://example.com"}' --compact
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.snapshot"}}' --compact
+ev browser oneShot --payload '{"url":"https://example.com","command":{"action":"page.context"}}' --compact
 ev browser recipe.list --compact
-ev browser run --payload-file ./browser-plan.json --compact
 # bookmark mutations auto-back up to ~/.ev/backups/bookmarks/
 ev browser bookmarks.export --output ~/Documents/ev-bookmarks.json
 ```
@@ -83,7 +85,7 @@ use it on networks you trust; use Tailscale elsewhere. Revoke with
 
 ```text
 apps/desktop        Electron shell + renderer (thin client)
-apps/server         headless local server (tasks, runtimes, WS events)
+apps/server         headless local server; built-in capabilities compose as static Cordis plugins
 apps/cli            ev … command-line client
 apps/browser-extension  paired browser bridge
 apps/mobile         standalone mobile web entry (/m)
@@ -93,8 +95,8 @@ packages/locales    i18next resources (en/zh), single source of truth
 
 - [Server/client split](docs/specs/server-client-split-v1.md) — why the
   renderer is a pure HTTP+WS client.
-- [Agent runtime adapters](docs/agent-runtime-adapters.md) — plugin levels
-  and the add-a-runtime checklist.
+- [Server Plugin Architecture](docs/specs/server-plugin-architecture-v1.md) — static Cordis composition and migration invariants.
+- [Agent runtime adapters](docs/agent-runtime-adapters.md) — Runtime plugin seam and the add-a-runtime checklist.
 - [Roadmap](docs/specs/roadmap.md) — what is in flight and what retired.
 
 Server and CLI output is English by design; the UI ships in English and

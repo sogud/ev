@@ -2,7 +2,7 @@
 
 ## Status
 
-Pi RPC、Codex app-server、Claude Code 与 Qoder 已实现（后两者共用 claude-family stream-json 适配）。Pi 是默认 Runtime。
+Pi RPC、Codex app-server、Claude Code 与 Qoder 已实现（后两者共用 claude-family stream-json 适配）。DeepSeek Harness 以 Experimental stdio JSON-RPC adapter 接入。五个 adapter 已由 `cordis@4.0.0-rc.8` 的静态 Runtime plugins 挂载；Pi 是默认 Runtime。
 
 改造前的 in-process Pi SDK 版本保存在 Git tag：
 
@@ -17,43 +17,42 @@ Runtime、Provider 和 Model 是不同概念：
 - Runtime 决定实际执行引擎。
 - Agent Project 已退役：工作区、指令与资源不再由 EV 管理，任务直接使用当前工作目录与各 CLI 的原生配置。
 - Provider/Model 控件只在 Runtime 声明确实支持时显示。
-- Pi、Codex 各自拥有原生 session、认证和配置；EV 不复制对话正文或 CLI 凭据。
+- 各 Runtime 拥有自己的 session、认证和配置；EV 不复制对话正文或 CLI 凭据。
 
 首条消息前可切换 Runtime（setRuntime 丢弃未起跑会话重建）；对话开始后固定。不同 Runtime 的 session 不能原地互换。
 
-## 插件化分层
+## Server 插件架构
 
-- **L1 接口插件化（当前）**：`AgentRuntimeAdapter` 是插件契约（describe/listSessions/createSession/
-  resumeSession/dispose），`RuntimeRegistry` 负责注册与去重。UI 只认 descriptor 与 capabilities，
-  不认具体 runtime（glyph/名称/版本/能力全部由 adapter 自报）。
-- **L2 包插件化（第 3 个 adapter 落地时）**：每个 adapter 独立成包
-  （`packages/runtime-pi` / `runtime-codex` / …），独立测试与迭代；registry 仍显式 import。
-- **L3 动态加载（暂缓，可能永不需要）**：插件目录发现、版本协商、进程沙箱。个人产品成本大于收益；
-  `@ev/contracts` 已固定 wire schema，将来升级不破坏 L1/L2。
+[ADR-0001](adr/0001-compose-server-with-static-cordis-plugins.md) 已决定用精确锁定的 upstream Cordis 组合 EV Server。第一阶段仅挂载代码内显式 import 的内置插件；不启用 Cordis Loader、Include、HMR、插件目录扫描、运行时 npm 安装或 Renderer 提供的模块路径。完整约束见 [Server Plugin Architecture v1](specs/server-plugin-architecture-v1.md)。
 
-### 增加一个 runtime 的清单（L1）
+`AgentRuntimeAdapter` 是第一条已有的真实 seam（describe/listSessions/createSession/resumeSession/dispose），`RuntimeRegistry` 负责注册、查找和释放。Runtime tracer 将 registry 变成 Cordis Service，并把 Pi、Codex、Claude Code、Qoder、DSH 分别挂载为内置 Server Plugin。UI 仍只认 descriptor 与 capabilities，不认具体 Runtime 实现。
 
-1. 新建 `main/runtime/<id>-adapter.ts`，实现 `AgentRuntimeAdapter`；事件映射成 `@ev/contracts` 的 `RuntimeEvent`。
-2. 在 `main/index.ts` 注册一行；descriptor 自报 `name/glyph/version/message/capabilities`。
-3. 补 adapter 单测（事件映射、describe、能力降级）。
-4. UI 零改动：rail/trigger/设置健康行/能力门控全部由 descriptor 驱动。
+### 增加一个 Runtime 的清单
+
+1. 在 Server runtime 目录新增 adapter，实现 `AgentRuntimeAdapter`；事件映射成 `@ev/contracts` 的 `RuntimeEvent`。
+2. 新增静态 Runtime plugin，通过 registry Service 的可逆 Effect 注册 adapter。
+3. 把 plugin 加入唯一 built-in composition；不创建第二个插件清单。
+4. 补 adapter 协议测试和 plugin 注册/卸载测试。
+5. UI 零改动：rail、trigger、设置健康行和能力控制全部由 descriptor 驱动。
 
 ## 实际架构
 
 ```text
-Renderer
-  │ typed IPC
+Desktop / Mobile / CLI
+  │ @ev/contracts over HTTP + WebSocket
   ▼
-AgentService / Task orchestration
-  │
-  ├── RuntimeRegistry
-  │     ├── PiRpcAdapter
-  │     │     └── pi --mode rpc
-  │     └── CodexAppServerAdapter
-  │           └── codex app-server --listen stdio://
-  │
-  └── RuntimeEvent → Transcript / Trace projection
+EV Server
+  ├── EV Kernel / Cordis Context
+  │     └── RuntimeRegistry Service
+  │           ├── Pi Runtime Plugin → PiRpcAdapter → pi --mode rpc
+  │           ├── Codex Runtime Plugin → CodexAppServerAdapter → codex app-server
+  │           ├── Claude Runtime Plugin ┐
+  │           ├── Qoder Runtime Plugin  ┴→ ClaudeFamilyAdapter → stream-json
+  │           └── DSH Runtime Plugin → DshRuntimeAdapter → stdio JSON-RPC
+  └── AgentService / TaskSession → RuntimeEvent → Transcript / Trace
 ```
+
+Runtime plugin Fiber 拥有 adapter 注册 Effect。单个 Fiber unload 只移除并释放自己的 adapter；Server shutdown 先释放 TaskSession，再由 EV Kernel 释放 Runtime plugins。Descriptor 顺序取自 `RuntimeIdSchema`，不依赖 Cordis plugin 激活顺序。
 
 公共 seam 保持最小：
 
@@ -74,7 +73,7 @@ interface RuntimeSession {
 }
 ```
 
-跨 Renderer/Main 的 RuntimeId、Descriptor、SessionRef 和 Event 由 `@ev/contracts` 使用 Zod 校验。
+跨 Renderer/Server 的 RuntimeId、Descriptor、SessionRef 和 Event 由 `@ev/contracts` 使用 Zod 校验。
 
 ## 原生历史是单一事实源
 
@@ -92,13 +91,20 @@ interface RuntimeSession {
 - 执行与取消：`turn/start`、`turn/interrupt`
 - Transcript：`item/*` 与 `turn/*` notifications
 
+### DeepSeek Harness（Experimental）
+
+- 存储：`DSH_SESSION_ROOT` 下的 DSH append-only session log
+- 新建与流式事件：SDK `initialize`、`session/prompt`、`session.event`、`session.status`
+- 停止：关闭该 Task 独占的 DSH 进程，并把 Task 标记为终态 error；继续工作必须新建 Task
+- 冷恢复：官方 SDK 当前不提供 list/resume；EV 明确返回 unavailable，不解析 DSH 私有日志
+
 EV Store 只保存 EV-owned task metadata、Trace 和隐藏项，不保存原生会话正文。旧 EV task 缺少 Runtime 时按 Pi 迁移，并通过 session file 与 Pi catalog 对齐。
 
 ## Process Host
 
-`JsonlProcess` 是 Pi 与 Codex 的共享进程边界：
+`JsonlProcess` 是各 JSONL/JSON-RPC Runtime 的共享进程边界：
 
-1. 只启动已注册的 `pi` 或 `codex`，Renderer 不能传任意 executable。
+1. 只启动已注册 Runtime 的受控 executable；Renderer 不能传 executable 或 argv。
 2. 使用参数数组、`shell: false` 和任务固定 cwd。
 3. 子进程 PATH 自动检测用户登录 shell（`$SHELL -ilc 'printf %s "$PATH"'`，带超时和进程内缓存），覆盖 nvm、Homebrew、npm prefix 等；检测失败时回退固定目录列表。
 4. 严格按 LF (`\n`) 解码 JSONL，不使用 Node `readline`。
@@ -112,18 +118,22 @@ EV Store 只保存 EV-owned task metadata、Trace 和隐藏项，不保存原生
 ```text
 EV_PI_CLI=/absolute/path/to/pi
 EV_CODEX_CLI=/absolute/path/to/codex
+EV_DSH_RUNTIME=/absolute/path/to/dsh-jsonrpc-agent
+EV_DSH_CONFIG=/absolute/path/to/cordis.yml
 ```
 
 ## Runtime 差异
 
-| Runtime | Transport                 | 历史目录         | 当前 UI 能力                             |
-| ------- | ------------------------- | ---------------- | ---------------------------------------- |
-| Pi      | 官方 RPC JSONL            | 全部 Pi sessions | model、thinking、tools、resume、stream   |
-| Codex   | app-server JSON-RPC/JSONL | thread/list      | resume、stream、tools、workspace sandbox |
+| Runtime             | Transport                 | 历史目录                   | 当前 UI 能力                                            |
+| ------------------- | ------------------------- | -------------------------- | ------------------------------------------------------- |
+| Pi                  | 官方 RPC JSONL            | 全部 Pi sessions           | model、thinking、tools、resume、stream                  |
+| Codex               | app-server JSON-RPC/JSONL | thread/list                | resume、stream、tools、workspace sandbox                |
+| Claude Code / Qoder | stream-json               | 原生 JSONL                 | stream、tools；resume 仍需真实会话验收                  |
+| DSH Experimental    | SDK JSON-RPC/JSONL        | `DSH_SESSION_ROOT`，不扫描 | stream、thinking、tools、subagent Trace；无 cold resume |
 
 Codex 第一版固定使用 `workspace-write` sandbox 与 `approvalPolicy: never`：不会弹出无法处理的 CLI 交互，也不会绕过 sandbox。Codex model/effort 协议已保留，但在完成原生 model catalog UI 前不显示 Pi 的 Provider/Model 控件。
 
-Pi Skills/Extensions 不自动映射成 Codex Skills。两种 Runtime 都会继承 EV CLI 的 PATH，因此可以调用 `ev browser`；更完整的 Codex browser skill 分发需要单独设计。
+Runtime 之间不自动映射 Skills。Runtime 子进程继承 EV CLI 的 PATH，因此可以调用 `ev browser`；DSH 的 Cordis composition 由 `EV_DSH_CONFIG` 指定，EV 不提供任意 plugin 或 MCP 安装入口。
 
 ## UI 规则
 
@@ -139,15 +149,16 @@ Pi Skills/Extensions 不自动映射成 Codex Skills。两种 Runtime 都会继�
 
 - Pi CLI `0.82.1`：RPC state、catalog、history resume
 - Codex CLI `0.145.0`：app-server initialize、thread catalog、resume、real turn
+- DeepSeek Harness source `47f943859bef60e4160492346772ded9b24f765a` / SDK server `0.0.1`：两个独立 Runtime 进程、local mock model、stream、stop、shutdown、Zstandard session persistence
 
-Fake protocol fixtures覆盖 LF chunk、Unicode 行分隔符、损坏/结构化事件边界和进程退出。真实 smoke 产生的临时 Pi/Codex session 均已清理。
+Fake protocol fixtures覆盖 LF chunk、Unicode 行分隔符、损坏/结构化事件边界、DSH response 前成功/失败、receipt-before-idle、必需/可忽略事件和进程退出。Server SIGTERM smoke 覆盖 active prompt 与 in-flight initialize，均等待 DSH shutdown 和子进程退出。真实 DSH smoke 的 EV/DSH/HOME/session/workspace 均使用临时目录并已移入 `~/.Trash`。
 
 ## 下一步
 
 1. 实现 Codex 原生 model/effort catalog 与审批 UI，再开放对应 controls。
 2. 加入同一 session 的并发写入检测；活跃于其他 Pi/Codex 客户端时默认只读或 fork。
-3. 接入 Claude Code 的稳定 structured protocol。
-4. 对 Qoder 先验证 headless、stream、resume 和 cancel；缺少稳定协议时保持 unsupported。
+3. 完成 Claude Code/Qoder 真实 cold resume 和 cancel 验证。
+4. DSH 官方 SDK 提供 per-session cancel 与 cold list/resume 后，重新审查协议并决定是否移除 Experimental 标记。
 
 ## 明确不做
 

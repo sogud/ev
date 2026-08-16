@@ -7,7 +7,9 @@
 
 ## 进行中
 
+- [ ] Server Plugin Architecture 后续迁移：Store → Task/AgentService → Management → Browser → HTTP/WS；每步替换旧 composition（spec: server-plugin-architecture-v1，ADR-0001）
 - [ ] Claude/Qoder adapter 收尾：resume 链路真实会话验证（effort 映射已完成于 Bug Sprint）
+- [ ] DSH productization：等待官方 stdio SDK 提供 per-session cancel 与 cold session list/resume；当前保持 Experimental
 
 ## 表达层与开发体验
 
@@ -45,7 +47,7 @@
 ## 分发与硬化（债，未阻塞当前工作；分发线启动时优先）
 
 - [ ] ev task list 在 server.json 缺失时静默 exit 0，应报错
-- [ ] sidebar 隐藏历史深处可能残留旧测试条目（可见窗口已清）
+- [ ] 检查并清理 sidebar 历史深处的旧测试条目（可见窗口已清）
 - [ ] browser-bridge pairing token 硬化（现仅文件权限保护）
 
 ## 浏览器连接
@@ -63,8 +65,12 @@
 
 ## 已完成（2026-08 盘点退役，细节见 Git 与 spec）
 
+- [x] Cordis Runtime tracer：`apps/server` 精确锁定 upstream Cordis，RuntimeRegistry 成为 Service，五个 Runtime 由静态 plugins 挂载；单 Fiber unload 与 packaged Server DSH smoke 通过（spec: server-plugin-architecture-v1，ADR-0001）
+- [x] Experimental DSH Runtime：官方 stdio JSON-RPC、每 Task 独立进程、流式 assistant/thinking/tool/subagent 投影、明确禁用 cold resume，并通过官方源码 + 本地 mock model smoke
+- [x] EV Browser 设置修复：English / 简体中文切换、可关闭书签 New Tab、背景图应用与实时同步
+- [x] Browser Control P0/P1：普通 DOM 操作无 CDP、高级能力按需 attach 且同 tab 并发合并；完整 typed 页面交互、iframe、BrowserRun，以及 window/tab/group/download/history/session/zoom 工作区操作（spec: browser-control-p0-p1）
 - [x] SiteRecipe P2：review-token 审批、精确域名/路径、typed adapter、本地 0600 存储、`x.mute-words` 与 `x.read-grok-conversation`（spec: site-recipe-p2）
-- [x] BrowserSession P1：Agent-owned 非聚焦 Chrome window、owned/borrowed tab、显式 adopt、安全 release、Host 内存 ownership（spec: browser-session-p1）
+- [x] BrowserSession P1：每个 Session 新建非聚焦 Chrome window 和单一 EV tab group，只允许 owned tabs，禁止 adopt/borrowed tab，安全 release 与 Host 内存 ownership（spec: browser-session-p1）
 - [x] BrowserRun P0：Host 本地顺序/循环/重试、语义目标重新定位、最终汇总输出；不开放 eval（spec: browser-run-p0）
 - [x] CLI-first EV Browser：Desktop 可选、extension TOFU 配对、全局 `ev-browser` Skill、typed 书签查询/整理、写操作前自动 JSON 备份、非破坏式恢复
 - [x] P3 远程接入+移动端（2026-08-09）：R1 localhost+私网多绑（禁 0.0.0.0）+ token 强制、R2 ev token 分级（observer 只读）、R3 /m 独立移动端（React，选任务/对话/切模型）、R4 双 URL+手机实测步骤
