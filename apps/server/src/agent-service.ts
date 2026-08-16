@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import { getAgentDir, ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { RuntimeId } from '@ev/contracts';
-import type { TaskDetail, TaskInspection, TaskSummary, ThinkingLevel, TraceEvent } from '@ev/contracts/domain';
+import type {
+  TaskDetail,
+  TaskInspection,
+  TaskSummary,
+  ThinkingLevel,
+  TraceEvent,
+} from '@ev/contracts/domain';
+import { RuntimeSessionUnavailableError } from './runtime/runtime-adapter';
 import type { RuntimeRegistry } from './runtime/runtime-registry';
 import Store from './store';
 import {
@@ -224,7 +231,12 @@ export class AgentService {
       await session.ensure();
       return session.getState();
     } catch (error) {
-      if (!(error instanceof WorkspaceUnavailableError)) throw error;
+      if (
+        !(error instanceof WorkspaceUnavailableError) &&
+        !(error instanceof RuntimeSessionUnavailableError)
+      ) {
+        throw error;
+      }
       task.status = 'error';
       task.error = error.message;
       return { ...task, messages: [], trace: this.store.get('traces')[task.id] ?? [] };
@@ -317,9 +329,16 @@ export class AgentService {
   }
 
   async dispose(): Promise<void> {
-    await Promise.allSettled([...this.sessions.values()].map(session => session.release()));
+    const releaseResults = await Promise.allSettled(
+      [...this.sessions.values()].map(session => session.release())
+    );
     this.sessions.clear();
-    await this.runtimes.dispose();
+    const failures = releaseResults.flatMap(result =>
+      result.status === 'rejected' ? [result.reason] : []
+    );
+    if (failures.length > 0) {
+      throw new AggregateError(failures, 'Unable to release every Task session');
+    }
   }
 
   private sessionFor(task: TaskSummary): TaskSession {

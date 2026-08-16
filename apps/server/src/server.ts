@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { homedir, networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,11 +24,8 @@ import { createAppearanceStore } from './appearance-store';
 import { createBrowserBridgeStore } from './browser-bridge-store';
 import { ensureEvCliLauncher } from './cli-launcher';
 import { buildHandlers } from './handlers';
+import { createEvKernel, type EvKernel } from './kernel/ev-kernel';
 import * as lifecycle from './lifecycle';
-import { ClaudeFamilyAdapter, CLAUDE_CODE_FLAVOR, QODER_FLAVOR } from './runtime/claude-family';
-import { CodexAppServerAdapter } from './runtime/codex-app-server-adapter';
-import { PiRpcAdapter } from './runtime/pi-rpc-adapter';
-import { RuntimeRegistry } from './runtime/runtime-registry';
 import { ManagementService } from './management-service';
 
 /**
@@ -40,6 +37,42 @@ import { ManagementService } from './management-service';
 interface AbstractSocket {
   send(data: string): void;
 }
+
+interface ServerStartupResources {
+  kernel?: EvKernel;
+  agents?: AgentService;
+  browserBridge?: BrowserBridgeService;
+  browserControlServer?: BrowserControlServer;
+  webSocketServer?: WebSocketServer;
+  httpServers: Server[];
+}
+
+function listenHttpServer(server: Server, port: number, host: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error): void => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = (): void => {
+      server.off('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, host);
+  });
+}
+
+function closeHttpServer(server: Server): Promise<void> {
+  return new Promise(resolve => {
+    if (!server.listening) {
+      resolve();
+      return;
+    }
+    server.close(() => resolve());
+  });
+}
+
 const sockets = new Set<AbstractSocket>();
 
 function broadcast(channel: string, payload: unknown): void {
@@ -60,9 +93,7 @@ function readOrCreateToken(): string {
 /** P3 remote access: ~/.ev/remote.json {enabled} switch, default false. */
 function readRemoteEnabled(): boolean {
   try {
-    return Boolean(
-      JSON.parse(readFileSync(join(evDataDir(), 'remote.json'), 'utf8'))?.enabled
-    );
+    return Boolean(JSON.parse(readFileSync(join(evDataDir(), 'remote.json'), 'utf8'))?.enabled);
   } catch {
     return false;
   }
@@ -203,7 +234,7 @@ function makeDispatcher(token: string, handlers: unknown) {
   };
 }
 
-async function main(): Promise<void> {
+async function main(resources: ServerStartupResources): Promise<void> {
   if (lifecycle.runningServerInfo()) {
     console.error('EV server already running (see ~/.ev/server.json)');
     process.exit(1);
@@ -238,17 +269,14 @@ async function main(): Promise<void> {
   }
   const browserSkill = join(here, '../../../skills/ev-browser');
 
-  const runtimes = new RuntimeRegistry([
-    new PiRpcAdapter(),
-    new CodexAppServerAdapter(),
-    new ClaudeFamilyAdapter(CLAUDE_CODE_FLAVOR),
-    new ClaudeFamilyAdapter(QODER_FLAVOR),
-  ]);
-  const agents = await AgentService.create(runtimes, {
+  const kernel = await createEvKernel();
+  resources.kernel = kernel;
+  const agents = await AgentService.create(kernel.runtimes, {
     defaultWorkspace,
     legacyDefaultWorkspaces: [home],
     bundledSkillPaths: [browserSkill],
   });
+  resources.agents = agents;
   const management = new ManagementService(agents, defaultWorkspace, createAppearanceStore());
   const browserBridge = new BrowserBridgeService({
     store: createBrowserBridgeStore(),
@@ -256,6 +284,7 @@ async function main(): Promise<void> {
     // approval click; identity is pinned after the first pairing.
     pairingMode: 'automatic',
   });
+  resources.browserBridge = browserBridge;
   try {
     await browserBridge.start();
   } catch {
@@ -270,6 +299,7 @@ async function main(): Promise<void> {
     new BrowserCommandExecutor(browserBridge, mediaDownloads),
     { runtimeDirectory: browserRuntimeDirectory }
   );
+  resources.browserControlServer = browserControlServer;
   try {
     await browserControlServer.start();
   } catch (error) {
@@ -297,8 +327,16 @@ async function main(): Promise<void> {
   };
 
   const wss = new WebSocketServer({ noServer: true });
+  resources.webSocketServer = wss;
+  const httpServers = resources.httpServers;
+  let shuttingDown = false;
   const buildHttpServer = (): ReturnType<typeof createServer> => {
     const srv = createServer((req: IncomingMessage, res: ServerResponse) => {
+      if (shuttingDown) {
+        res.writeHead(503, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'server is shutting down' }));
+        return;
+      }
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
       if (req.method === 'OPTIONS') {
         res.writeHead(204, corsHeaders(req));
@@ -326,6 +364,10 @@ async function main(): Promise<void> {
       });
     });
     srv.on('upgrade', (req, socket, head) => {
+      if (shuttingDown) {
+        socket.destroy();
+        return;
+      }
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
       const wsToken = url.searchParams.get('token') ?? '';
       if (url.pathname !== '/ws' || !tokenTier(token, wsToken)) {
@@ -337,10 +379,11 @@ async function main(): Promise<void> {
         ws.on('close', () => sockets.delete(ws as unknown as AbstractSocket));
       });
     });
+    httpServers.push(srv);
     return srv;
   };
   const httpServer = buildHttpServer();
-  httpServer.listen(port, '127.0.0.1');
+  await listenHttpServer(httpServer, port, '127.0.0.1');
   // R1: with remote enabled, additionally bind every private interface
   // (LAN+Tailscale); never 0.0.0.0/public. Non-loopback gets the same mandatory
   // token as loopback (Bearer check on every /api call).
@@ -351,7 +394,7 @@ async function main(): Promise<void> {
     lanIps = found.lan;
     tailscaleIp = found.tailscale[0] ?? null;
     for (const ip of [...lanIps, ...found.tailscale]) {
-      buildHttpServer().listen(port, ip);
+      await listenHttpServer(buildHttpServer(), port, ip);
       void fetch(`http://${ip}:${port}/health`)
         .then(result =>
           console.log(
@@ -382,11 +425,80 @@ async function main(): Promise<void> {
   );
 
   const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     lifecycle.clearServerInfo();
-    process.exit(0);
+    const forcedExit = setTimeout(() => process.exit(1), 30_000);
+    forcedExit.unref();
+    void (async () => {
+      for (const client of wss.clients) client.terminate();
+      await Promise.allSettled([
+        ...httpServers.map(server => closeHttpServer(server)),
+        browserControlServer.stop(),
+        browserBridge.stop(),
+      ]);
+      const failures: unknown[] = [];
+      try {
+        await agents.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+      try {
+        await kernel.dispose();
+      } catch (error) {
+        failures.push(error);
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, 'Unable to dispose every EV Server resource');
+      }
+    })().then(
+      () => {
+        clearTimeout(forcedExit);
+        process.exit(0);
+      },
+      error => {
+        process.stderr.write(
+          `[EV] Unable to dispose every runtime during shutdown: ${error instanceof Error ? error.message : String(error)}\n`
+        );
+        clearTimeout(forcedExit);
+        process.exit(1);
+      }
+    );
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
-void main();
+async function runServer(): Promise<void> {
+  const resources: ServerStartupResources = { httpServers: [] };
+  try {
+    await main(resources);
+  } catch (startupError) {
+    const failures: unknown[] = [startupError];
+    for (const client of resources.webSocketServer?.clients ?? []) client.terminate();
+    const networkResults = await Promise.allSettled([
+      ...resources.httpServers.map(server => closeHttpServer(server)),
+      resources.browserControlServer?.stop(),
+      resources.browserBridge?.stop(),
+    ]);
+    failures.push(
+      ...networkResults.flatMap(result => (result.status === 'rejected' ? [result.reason] : []))
+    );
+    try {
+      await resources.agents?.dispose();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await resources.kernel?.dispose();
+    } catch (error) {
+      failures.push(error);
+    }
+    throw new AggregateError(failures, 'EV Server startup failed');
+  }
+}
+
+void runServer().then(undefined, error => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+});

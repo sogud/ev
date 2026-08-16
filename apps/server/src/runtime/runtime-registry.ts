@@ -1,30 +1,76 @@
-import type { RuntimeDescriptor, RuntimeId } from '@ev/contracts';
+import { RuntimeIdSchema, type RuntimeDescriptor, type RuntimeId } from '@ev/contracts';
+import { type Context, Service } from 'cordis';
 import type { AgentRuntimeAdapter } from './runtime-adapter';
 
-export class RuntimeRegistry {
-  private readonly adapters: ReadonlyMap<RuntimeId, AgentRuntimeAdapter>;
+declare module 'cordis' {
+  interface Context {
+    runtimes: RuntimeRegistry;
+  }
+}
 
-  constructor(adapters: AgentRuntimeAdapter[]) {
-    const indexed = new Map<RuntimeId, AgentRuntimeAdapter>();
-    for (const adapter of adapters) {
-      if (indexed.has(adapter.id)) throw new Error(`Duplicate runtime adapter: ${adapter.id}`);
-      indexed.set(adapter.id, adapter);
+interface RuntimeRegistration {
+  adapter: AgentRuntimeAdapter;
+  dispose: () => Promise<void>;
+}
+
+export class RuntimeRegistry extends Service {
+  static provide = 'runtimes';
+
+  private readonly registrations = new Map<RuntimeId, RuntimeRegistration>();
+
+  constructor(ctx: Context) {
+    super(ctx, 'runtimes');
+  }
+
+  register(adapter: AgentRuntimeAdapter): () => Promise<void> {
+    if (this.registrations.has(adapter.id)) {
+      throw new Error(`Duplicate runtime adapter: ${adapter.id}`);
     }
-    if (!indexed.has('pi')) throw new Error('Pi runtime adapter is required');
-    this.adapters = indexed;
+    const registration = { adapter } as RuntimeRegistration;
+    registration.dispose = this.ctx.effect(() => {
+      if (this.registrations.has(adapter.id)) {
+        throw new Error(`Duplicate runtime adapter: ${adapter.id}`);
+      }
+      this.registrations.set(adapter.id, registration);
+      return async () => {
+        if (this.registrations.get(adapter.id) !== registration) return;
+        this.registrations.delete(adapter.id);
+        await adapter.dispose?.();
+      };
+    }, `register runtime ${adapter.id}`);
+    return registration.dispose;
+  }
+
+  assertRequired(...ids: RuntimeId[]): void {
+    for (const id of ids) {
+      if (!this.registrations.has(id)) throw new Error(`${id} runtime adapter is required`);
+    }
   }
 
   require(id: RuntimeId): AgentRuntimeAdapter {
-    const adapter = this.adapters.get(id);
-    if (!adapter) throw new Error(`Runtime is not registered: ${id}`);
-    return adapter;
+    const registration = this.registrations.get(id);
+    if (!registration) throw new Error(`Runtime is not registered: ${id}`);
+    return registration.adapter;
   }
 
   async describeAll(): Promise<RuntimeDescriptor[]> {
-    return Promise.all([...this.adapters.values()].map(adapter => adapter.describe()));
+    return Promise.all(
+      RuntimeIdSchema.options.flatMap(id => {
+        const registration = this.registrations.get(id);
+        return registration ? [registration.adapter.describe()] : [];
+      })
+    );
   }
 
   async dispose(): Promise<void> {
-    await Promise.all([...this.adapters.values()].map(adapter => adapter.dispose?.()));
+    const results = await Promise.allSettled(
+      [...this.registrations.values()].map(registration => registration.dispose())
+    );
+    const failures = results.flatMap(result =>
+      result.status === 'rejected' ? [result.reason] : []
+    );
+    if (failures.length > 0) {
+      throw new AggregateError(failures, 'Unable to dispose every Runtime adapter');
+    }
   }
 }
