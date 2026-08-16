@@ -50,8 +50,14 @@ function isPidAlive(pid: number): boolean {
 
 function serverEntry(): string {
   if (process.env.EV_SERVER_ENTRY) return process.env.EV_SERVER_ENTRY;
-  // packaged/built artifact first (pure Node); ensureServer builds it when missing.
-  return join(dirname(fileURLToPath(import.meta.url)), '../../desktop/dist-server/server.mjs');
+  // In-repo dev artifact first (pnpm --dir apps/server run build refreshes it);
+  // packaged CLI installs ship their own copy next to ev.js.
+  const repoEntry = join(
+    dirname(fileURLToPath(import.meta.url)),
+    '../../desktop/dist-server/server.mjs'
+  );
+  if (existsSync(repoEntry)) return repoEntry;
+  return join(dirname(fileURLToPath(import.meta.url)), 'server/server.mjs');
 }
 
 function ensureEntryBuilt(entry: string): void {
@@ -199,7 +205,19 @@ export async function runServerCli(argv: string[]): Promise<number> {
       out({ stopped: true });
       return 0;
     }
-    throw new CliError('usage: ev server start|stop|status');
+    if (command === 'restart') {
+      const info = readServerInfo();
+      if (info && isPidAlive(info.pid)) {
+        process.kill(info.pid, 'SIGTERM');
+        for (let i = 0; i < 50 && isPidAlive(info.pid); i++) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      const started = await ensureServer();
+      out({ running: true, port: started.port, pid: started.pid });
+      return 0;
+    }
+    throw new CliError('usage: ev server start|stop|restart|status');
   }
 
   if (group === 'remote') {

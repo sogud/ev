@@ -59,7 +59,7 @@ function usage(): string {
     '  ev status                     LAN/Tailscale URLs + masked-token hint',
     '  ev remote on|off|status',
     '  ev token create --tier observer|operator | list | revoke <id>',
-    '  ev server start|stop|status / ev task … / ev runtime …',
+    '  ev server start|stop|restart|status / ev task … / ev runtime …',
     '',
     'examples:',
     '  ev browser oneShot --payload \'{"url":"https://example.com","command":{"action":"page.snapshot","mode":"interactive"}}\'',
