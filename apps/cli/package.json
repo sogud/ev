@@ -19,7 +19,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "mkdir -p dist && esbuild src/cli.ts --bundle --platform=node --format=esm --banner:js='import { createRequire as __evCjsRequire } from \"node:module\"; const require = __evCjsRequire(import.meta.url);' --outfile=dist/ev.js && chmod +x dist/ev.js && pnpm run build:server",
+    "build": "mkdir -p dist && esbuild src/cli.ts --bundle --platform=node --format=esm --banner:js='import { createRequire as __evCjsRequire } from \"node:module\"; const require = __evCjsRequire(import.meta.url);' --outfile=dist/ev.js && chmod +x dist/ev.js && pnpm run build:server && node scripts/install-global.mjs",
     "build:server": "esbuild ../server/src/server.ts --bundle --platform=node --format=esm --external:better-sqlite3 --banner:js='import { createRequire as __evCjsRequire } from \"node:module\"; const require = __evCjsRequire(import.meta.url);' --outfile=dist/server/server.mjs && node ../server/scripts/ship-native.mjs dist/server/node_modules",
     "build:standalone": "node --experimental-strip-types scripts/build-standalone.ts",
     "package": "pnpm run build && pnpm run build:standalone && npm pack --pack-destination dist",
