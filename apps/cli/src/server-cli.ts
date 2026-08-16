@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 
@@ -83,12 +83,48 @@ async function healthOk(info: ServerInfo): Promise<boolean> {
   }
 }
 
+/** Server stdout/stderr sink: <evDataDir>/logs/server.log with a single 5MB rotation. */
+function serverLogPath(): string {
+  return join(evDataDir(), 'logs', 'server.log');
+}
+
+function openServerLog(): number {
+  const path = serverLogPath();
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  try {
+    if (statSync(path).size > 5 * 1024 * 1024) renameSync(path, `${path}.1`);
+  } catch {
+    // no previous log
+  }
+  return openSync(path, 'a');
+}
+
+/** Graceful stop: SIGTERM first, SIGKILL after the 5s grace window. */
+async function stopServerPid(pid: number): Promise<void> {
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    return;
+  }
+  for (let i = 0; i < 50 && isPidAlive(pid); i++) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (isPidAlive(pid)) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+}
+
 async function ensureServer(): Promise<ServerInfo> {
   const existing = readServerInfo();
   if (existing && isPidAlive(existing.pid) && (await healthOk(existing))) return existing;
   const entry = serverEntry();
   ensureEntryBuilt(entry);
-  const child = spawn('node', [entry], { detached: true, stdio: 'ignore' });
+  const logFd = openServerLog();
+  const child = spawn('node', [entry], { detached: true, stdio: ['ignore', logFd, logFd] });
   child.unref();
   for (let i = 0; i < 30; i++) {
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -201,23 +237,30 @@ export async function runServerCli(argv: string[]): Promise<number> {
         out({ running: false });
         return 0;
       }
-      process.kill(info.pid, 'SIGTERM');
+      await stopServerPid(info.pid);
       out({ stopped: true });
       return 0;
     }
     if (command === 'restart') {
       const info = readServerInfo();
-      if (info && isPidAlive(info.pid)) {
-        process.kill(info.pid, 'SIGTERM');
-        for (let i = 0; i < 50 && isPidAlive(info.pid); i++) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      }
+      if (info && isPidAlive(info.pid)) await stopServerPid(info.pid);
       const started = await ensureServer();
       out({ running: true, port: started.port, pid: started.pid });
       return 0;
     }
-    throw new CliError('usage: ev server start|stop|restart|status');
+    if (command === 'logs') {
+      const lines = Math.max(1, Number(rest[0] ?? 50) || 50);
+      let text = '';
+      try {
+        text = readFileSync(serverLogPath(), 'utf8');
+      } catch {
+        out({ error: 'no server log yet' });
+        return 0;
+      }
+      process.stdout.write(text.split('\n').slice(-lines).join('\n') + '\n');
+      return 0;
+    }
+    throw new CliError('usage: ev server start|stop|restart|status|logs [lines]');
   }
 
   if (group === 'remote') {

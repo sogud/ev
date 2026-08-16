@@ -51,7 +51,7 @@ pnpm install
 pnpm run dev:desktop
 pnpm run dev:web
 pnpm run dev:extension
-ev server start|stop|restart|status
+ev server start|stop|restart|status|logs
 pnpm run verify
 pnpm run typecheck
 pnpm run test
