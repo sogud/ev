@@ -37,8 +37,32 @@ function readParams(preferHash: boolean): { port: string; token: string } {
 
 function build(kind: Transport['kind'], preferHash: boolean): Transport {
   const { port, token } = readParams(preferHash);
-  const client = createEvClient({ baseUrl: `http://127.0.0.1:${port}`, token });
+  const client = createEvClient({
+    baseUrl: `http://127.0.0.1:${port}`,
+    token,
+    device: deviceIdentity(kind),
+  });
   return { kind, client, dispose: () => client.close() };
+}
+
+/**
+ * Stable per-browser-profile device id (localStorage) so refreshes keep the
+ * same identity; the server's presence list shows one row per device.
+ */
+function deviceIdentity(kind: Transport['kind']): { id: string; name: string; kind: string } {
+  let id: string;
+  try {
+    const key = 'ev-device-id';
+    id = window.localStorage.getItem(key) ?? '';
+    if (!id) {
+      id = crypto.randomUUID();
+      window.localStorage.setItem(key, id);
+    }
+  } catch {
+    id = `session-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  const label = kind === 'electron' ? 'Desktop' : 'Web';
+  return { id, kind, name: `${label} · ${id.slice(0, 4)}` };
 }
 
 /** Desktop transport: params come from the URL hash injected by Electron main. */

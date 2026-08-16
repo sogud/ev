@@ -2252,3 +2252,49 @@ textarea {
     justify-content: center;
   }
 }
+
+/* Devices settings page (device presence list) */
+.device-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ev-color-border-subtle);
+  border-radius: 10px;
+  background: var(--ev-color-bg-surface);
+}
+
+.device-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ev-color-text-tertiary);
+  flex: none;
+}
+
+.device-dot.online {
+  background: var(--ev-color-status-success);
+  box-shadow: 0 0 6px var(--ev-color-status-success);
+}
+
+.device-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.device-kind {
+  font-size: 12px;
+  color: var(--ev-color-text-secondary);
+}
+
+.device-seen {
+  margin-left: auto;
+  font-size: 12px;
+}

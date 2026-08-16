@@ -50,6 +50,21 @@
     "empty": "还没有任务",
     "noWorkspace": "未选择目录"
   },
+  "devices": {
+    "title": "设备",
+    "desc": "接入此 EV server 的客户端与在线状态。",
+    "loading": "加载中…",
+    "empty": "暂无设备记录",
+    "online": "在线",
+    "kindDesktop": "桌面端",
+    "kindWeb": "网页端",
+    "kindCli": "命令行",
+    "kindUnknown": "未知",
+    "now": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  },
   "composer": {
     "placeholder": "让 EV 处理一件事…",
     "inputAria": "输入消息",

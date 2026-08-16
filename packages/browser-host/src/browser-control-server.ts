@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { chmod, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import net, { type Server, type Socket } from 'node:net';
 import path from 'node:path';
 import {
@@ -228,10 +228,15 @@ export class BrowserControlServer {
   }
 
   private async removeRuntimeFiles(snapshot: BrowserControlServerSnapshot): Promise<void> {
+    // The discovery file is shared by every host on this run dir: only remove it
+    // when it still points at us, never when another live host re-registered.
+    const ownsDiscovery = await readFile(snapshot.discoveryPath, 'utf8')
+      .then(raw => (JSON.parse(raw) as { pid?: number }).pid === process.pid)
+      .catch(() => false);
     await Promise.all([
       process.platform === 'win32' ? Promise.resolve() : rm(snapshot.socketPath, { force: true }),
       rm(snapshot.tokenPath, { force: true }),
-      rm(snapshot.discoveryPath, { force: true }),
+      ownsDiscovery ? rm(snapshot.discoveryPath, { force: true }) : Promise.resolve(),
     ]);
   }
 }

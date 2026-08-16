@@ -50,6 +50,21 @@
     "empty": "No tasks yet",
     "noWorkspace": "No directory selected"
   },
+  "devices": {
+    "title": "Devices",
+    "desc": "Clients connected to this EV server and their online status.",
+    "loading": "Loading…",
+    "empty": "No devices yet",
+    "online": "Online",
+    "kindDesktop": "Desktop",
+    "kindWeb": "Web",
+    "kindCli": "CLI",
+    "kindUnknown": "Unknown",
+    "now": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
   "composer": {
     "placeholder": "Give EV something to do…",
     "inputAria": "Message input",

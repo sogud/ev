@@ -16,6 +16,17 @@ import type {
 } from './domain';
 import type { RuntimeDescriptor, RuntimeId } from './runtime';
 
+/** A client shell connected to the server; presence is driven by live WS sessions. */
+export interface DevicePresence {
+  /** Stable per client install (persisted client-side). */
+  id: string;
+  name: string;
+  kind: 'desktop' | 'web' | 'cli' | 'unknown';
+  online: boolean;
+  connectedAt: number | null;
+  lastSeenAt: number;
+}
+
 /** Permission tiers (required by P3 remote access, implemented since day one): observer = read-only + approvals, operator = full control. */
 export type PermissionLevel = 'observer' | 'operator';
 
@@ -90,6 +101,10 @@ export const ipcRegistry = {
   workspace: {
     gitBranch: call<[string], string | null>('workspace:gitBranch', 'observer'),
     openInEditor: call<[string], void>('workspace:openInEditor', 'operator'),
+  },
+  devices: {
+    list: call<[], DevicePresence[]>('devices:list', 'observer'),
+    onUpdate: event<DevicePresence[]>('devices:update'),
   },
 };
 

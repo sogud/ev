@@ -14,6 +14,7 @@ import {
 import {
   findCallToken,
   parseHttpRoute,
+  type DevicePresence,
   type EvWireMessage,
   type IssuedToken,
   type PermissionLevel,
@@ -78,6 +79,68 @@ const sockets = new Set<AbstractSocket>();
 function broadcast(channel: string, payload: unknown): void {
   const message = JSON.stringify({ channel, payload } satisfies EvWireMessage);
   for (const ws of sockets) ws.send(message);
+}
+
+// ---- device presence (client-pairing-and-presence-v1, presence slice) ----
+// Driven by live WS sessions: online = at least one open WS from that device id;
+// offline entries stick around so the list shows "recently seen" devices.
+
+interface DeviceState extends DevicePresence {
+  wsCount: number;
+}
+
+const DEVICE_SEEN_LIMIT_MS = 7 * 24 * 3600 * 1000;
+const deviceStates = new Map<string, DeviceState>();
+
+function normalizeDeviceKind(kind: string): DevicePresence['kind'] {
+  return kind === 'desktop' || kind === 'web' || kind === 'cli' ? kind : 'unknown';
+}
+
+function deviceSnapshot(): DevicePresence[] {
+  return [...deviceStates.values()]
+    .map(({ wsCount: _wsCount, ...presence }) => presence)
+    .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+}
+
+function broadcastDevices(): void {
+  broadcast('devices:update', deviceSnapshot());
+}
+
+function pruneStaleDevices(): void {
+  const cutoff = Date.now() - DEVICE_SEEN_LIMIT_MS;
+  for (const [id, state] of deviceStates) {
+    if (state.wsCount === 0 && state.lastSeenAt < cutoff) deviceStates.delete(id);
+  }
+}
+
+function trackDeviceOpen(id: string, name: string, kind: string): void {
+  pruneStaleDevices();
+  const state = deviceStates.get(id) ?? {
+    id,
+    name,
+    kind: normalizeDeviceKind(kind),
+    online: false,
+    connectedAt: null,
+    lastSeenAt: 0,
+    wsCount: 0,
+  };
+  state.name = name;
+  state.kind = normalizeDeviceKind(kind);
+  state.wsCount += 1;
+  state.online = true;
+  state.connectedAt ??= Date.now();
+  state.lastSeenAt = Date.now();
+  deviceStates.set(id, state);
+  broadcastDevices();
+}
+
+function trackDeviceClose(id: string): void {
+  const state = deviceStates.get(id);
+  if (!state) return;
+  state.wsCount = Math.max(0, state.wsCount - 1);
+  if (state.wsCount === 0) state.online = false;
+  state.lastSeenAt = Date.now();
+  broadcastDevices();
 }
 
 function readOrCreateToken(): string {
@@ -290,7 +353,7 @@ async function main(resources: ServerStartupResources): Promise<void> {
   } catch {
     // clients keep working without browser integration.
   }
-  const browserRuntimeDirectory = join(home, '.ev', 'run');
+  const browserRuntimeDirectory = join(evDataDir(), 'run');
   await stopStandaloneBrowserHost(browserRuntimeDirectory);
   const mediaDownloads = new MediaDownloadService({
     downloadDirectory: join(home, 'Downloads', 'EV'),
@@ -306,7 +369,13 @@ async function main(resources: ServerStartupResources): Promise<void> {
     console.error('[EV Browser Control] Unable to start local CLI socket:', error);
   }
 
-  const handlers = buildHandlers({ agents, management, browserBridge, broadcast });
+  const handlers = buildHandlers({
+    agents,
+    management,
+    browserBridge,
+    broadcast,
+    listDevices: deviceSnapshot,
+  });
   agents.setListener(task => broadcast('tasks:update', task));
   browserBridge.subscribe(snapshot => broadcast('browserBridge:update', snapshot));
 
@@ -376,7 +445,18 @@ async function main(resources: ServerStartupResources): Promise<void> {
       }
       wss.handleUpgrade(req, socket, head, ws => {
         sockets.add(ws as unknown as AbstractSocket);
-        ws.on('close', () => sockets.delete(ws as unknown as AbstractSocket));
+        const deviceId = url.searchParams.get('device');
+        if (deviceId) {
+          trackDeviceOpen(
+            deviceId,
+            url.searchParams.get('deviceName') ?? 'Unknown',
+            url.searchParams.get('deviceKind') ?? 'unknown'
+          );
+        }
+        ws.on('close', () => {
+          sockets.delete(ws as unknown as AbstractSocket);
+          if (deviceId) trackDeviceClose(deviceId);
+        });
       });
     });
     httpServers.push(srv);

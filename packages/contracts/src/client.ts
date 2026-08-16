@@ -9,6 +9,8 @@ import { ipcRegistry, isIpcToken, type CallToken } from './registry';
 export interface EvClientOptions {
   baseUrl: string; // e.g. http://127.0.0.1:7877
   token: string;
+  /** Self-identification for the server's device presence list. */
+  device?: { id: string; name: string; kind: string };
 }
 
 export type EvClient = AgentDesktopAPI & {
@@ -48,7 +50,12 @@ export function createEvClient(options: EvClientOptions): EvClient {
   const connect = (): Promise<WebSocket> => {
     if (socket) return Promise.resolve(socket);
     if (socketPromise) return socketPromise;
-    const url = options.baseUrl.replace(/^http/, 'ws') + '/ws?token=' + options.token;
+    const deviceQuery = options.device
+      ? `&device=${encodeURIComponent(options.device.id)}` +
+        `&deviceName=${encodeURIComponent(options.device.name)}` +
+        `&deviceKind=${encodeURIComponent(options.device.kind)}`
+      : '';
+    const url = options.baseUrl.replace(/^http/, 'ws') + '/ws?token=' + options.token + deviceQuery;
     socketPromise = new Promise<WebSocket>((resolve, reject) => {
       const ws = new WebSocket(url);
       ws.onopen = () => {

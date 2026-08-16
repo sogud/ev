@@ -1,15 +1,16 @@
 import { Dialog } from '@base-ui/react/dialog';
-import { Cable, ChevronRight, Cpu, FolderOpen, Settings, X } from 'lucide-react';
+import { Cable, ChevronRight, Cpu, FolderOpen, MonitorSmartphone, Settings, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { i18n } from '../i18n';
 import type { RuntimeDescriptor } from '../shared/types';
 import { useAppStore } from '../store/useAppStore';
 import { BrowserBridgeSettings } from './settings/BrowserBridgeSettings';
+import { DeviceSettings } from './settings/DeviceSettings';
 import { GeneralSettings } from './settings/GeneralSettings';
 import { ResourceSettings } from './settings/ResourceSettings';
 
-type Tab = 'browser' | 'general' | 'runtimes';
+type Tab = 'browser' | 'devices' | 'general' | 'runtimes';
 
 /*
  * Runtimes page = compact row list + drawer detail:
@@ -221,6 +222,7 @@ export function SettingsModal({ onClose }: { onClose(): void }): React.JSX.Eleme
             {navButton('general', <Settings size={16} />, t('settings.general'))}
             {navButton('runtimes', <Cpu size={16} />, 'Runtime')}
             {navButton('browser', <Cable size={16} />, 'Browser')}
+            {navButton('devices', <MonitorSmartphone size={16} />, t('devices.title'))}
           </aside>
           <div className='settings-content'>
             <Dialog.Close
@@ -232,6 +234,7 @@ export function SettingsModal({ onClose }: { onClose(): void }): React.JSX.Eleme
             {tab === 'general' && <GeneralSettings />}
             {tab === 'runtimes' && <RuntimesPage />}
             {tab === 'browser' && <BrowserBridgeSettings />}
+            {tab === 'devices' && <DeviceSettings />}
           </div>
         </Dialog.Popup>
       </Dialog.Portal>

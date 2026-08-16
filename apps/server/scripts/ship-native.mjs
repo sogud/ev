@@ -7,7 +7,11 @@ import { fileURLToPath } from 'node:url';
 // 使打包 entry 在任意 node 运行时下可解析（打包产物旁没有 workspace node_modules）。
 const req = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
-const out = join(here, '../../desktop/dist-server/node_modules');
+// Optional target (apps/cli ships natives next to its bundled server copy);
+// default keeps the desktop dist-server layout.
+const out = process.argv[2]
+  ? join(process.cwd(), process.argv[2])
+  : join(here, '../../desktop/dist-server/node_modules');
 mkdirSync(out, { recursive: true });
 
 const ship = (pkg, dir) => {
