@@ -1,5 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 
@@ -131,7 +139,7 @@ async function ensureServer(): Promise<ServerInfo> {
     const info = readServerInfo();
     if (info && isPidAlive(info.pid) && (await healthOk(info))) return info;
   }
-  throw new CliError('EV server start timed out');
+  throw new CliError(`EV server start timed out after 15s (diagnose: ev server logs)`);
 }
 
 async function client(): Promise<EvClient> {
