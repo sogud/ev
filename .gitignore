@@ -11,6 +11,7 @@ package-lock.json
 # ===========================================
 # Build Outputs & Artifacts
 # ===========================================
+build/
 dist/
 dist-electron/
 .output/
