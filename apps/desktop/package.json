@@ -34,7 +34,7 @@
     "@vitejs/plugin-react": "5.2.0",
     "@vitest/coverage-v8": "4.1.10",
     "autoprefixer": "10.4.20",
-    "electron": "39.8.10",
+    "electron": "43.4.0",
     "electron-builder": "26.15.3",
     "electron-builder-squirrel-windows": "26.15.3",
     "electron-vite": "5.0.0",
