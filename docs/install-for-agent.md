@@ -17,11 +17,22 @@
 资产直链格式：
 `https://github.com/sogud/ev/releases/download/agent-kit-v0.1.0/<文件名>`
 
-## 第 1 步：环境检查
+## 第 1 步：环境检查与安装 Node.js
 
-- Node.js ≥ 20（`node --version`）。没有就指导用户安装（官网下载或 brew）。
-- Chrome 或 Edge 已安装。
-- macOS/Linux/Windows 均可。
+用户几乎肯定没有 Node.js，**由你负责装好，不要让用户自己折腾**：
+
+1. `node --version`：已存在且 ≥ 20 就跳过。
+2. 没有则按系统自动安装：
+   - macOS：优先 `brew install node`；没有 brew 就下载官方 pkg
+     （`curl -Lo /tmp/node.pkg https://nodejs.org/dist/v22.14.0/node-v22.14.0.pkg`，
+     然后 `sudo installer -pkg /tmp/node.pkg -target /`，需要用户输入开机密码，
+     提前告诉他）。
+   - Windows：`winget install OpenJS.NodeJS.LTS`；装完重开终端再验证。
+   - Linux：发行版包管理器装 nodejs + npm。
+3. 装完重新 `node --version` 和 `npm --version` 验证，都成功才进下一步。
+4. 确认 Chrome（或 Edge）已安装；没有就提示用户先装浏览器再继续。
+
+macOS/Linux/Windows 均可。
 
 ## 第 2 步：安装 EV CLI
 
@@ -42,29 +53,44 @@ mkdir -p ~/.ev && unzip -o ev-browser-skill-0.1.0.zip -d ~/.ev/skills
 ```
 
 然后按当前 agent 平台链接技能：
+- Codex（主要用户）：`ln -s ~/.ev/skills/ev-browser ~/.codex/skills/ev-browser`
+  （若目标项目有 `.codex/skills/` 约定则链到项目内）
 - pi：`ln -s ~/.ev/skills/ev-browser ~/.pi/agent/skills/ev-browser`
 - Claude Code：`ln -s ~/.ev/skills/ev-browser ~/.claude/skills/ev-browser`
-- 其他平台：把 `~/.ev/skills/ev-browser/SKILL.md` 的内容告知你自己，并在本次会话遵循它
+- 其他平台或不支持自动加载技能：先完整读取
+  `~/.ev/skills/ev-browser/SKILL.md` 再开始工作
 
 **从现在起，所有浏览器操作遵循该 SKILL.md 的规则**（只用 `browser.session.*` /
-`browser.oneShot`，不碰用户已有标签页）。
+`browser.oneShot`，不碰用户已有标签页）。每次新会话开始做浏览器任务前，
+若技能未自动加载，先重读一遍 SKILL.md。
 
 ## 第 4 步：安装浏览器扩展（唯一需要用户动手的步骤）
 
-你来下载和解压，用户只需在浏览器里点几下：
+扩展装在用户自己的 Chrome/Edge 里，以"加载已解压扩展"方式从本地目录加载。
+下载、解压、打开设置页都由你做，用户只负责最后三次点击。
+
+你先准备好一切：
 
 ```bash
 curl -LO https://github.com/sogud/ev/releases/download/agent-kit-v0.1.0/evbrowser-extension-0.1.0-chrome.zip
 mkdir -p ~/.ev/extension && unzip -o evbrowser-extension-0.1.0-chrome.zip -d ~/.ev/extension
+ls ~/.ev/extension/manifest.json   # 必须存在，否则解压有问题
 ```
 
-然后清楚地告诉用户（一次只给一步，等他确认）：
-1. 打开 `chrome://extensions`（Edge 用户打开 `edge://extensions`）
-2. 打开右上角"开发者模式"
-3. 点"加载已解压的扩展程序"，选择 `~/.ev/extension` 目录
-4. 看到 "EV Browser" 扩展出现即成功
+能帮用户直接打开扩展管理页就打开（macOS 例：
+`open -a "Google Chrome" chrome://extensions`），然后清楚地告诉用户
+（一次只给一步，等他确认再做下一步）：
 
-提醒用户：这个目录不能删除或移动，否则扩展失效。
+1. 现在应该看到"扩展程序"页面；找到右上角的**"开发者模式"**开关，打开它。
+2. 页面左上角会出现三个按钮，点**"加载已解压的扩展程序"**
+   （Edge 里叫"加载解压缩的扩展"）。
+3. 在弹出的文件选择框里，进入并选择这个文件夹：`~/.ev/extension`
+   （把完整路径告诉用户，macOS 可用 Cmd+Shift+G 粘贴路径；
+   Windows 对应 `C:\Users\<用户名>\.ev\extension`）。
+4. 确认后，扩展列表里出现 **"EV Browser"** 即成功。
+
+提醒用户：`~/.ev/extension` 这个文件夹就是扩展本体，**不能删除、不能移动**，
+否则扩展失效；浏览器重启后如果提示重新加载，点一下即可。
 
 ## 第 5 步：验证
 
