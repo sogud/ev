@@ -69,6 +69,7 @@
 - [x] Cordis Runtime tracer：`apps/server` 精确锁定 upstream Cordis，RuntimeRegistry 成为 Service，五个 Runtime 由静态 plugins 挂载；单 Fiber unload 与 packaged Server DSH smoke 通过（spec: server-plugin-architecture-v1，ADR-0001）
 - [x] Experimental DSH Runtime：官方 stdio JSON-RPC、每 Task 独立进程、流式 assistant/thinking/tool/subagent 投影、明确禁用 cold resume，并通过官方源码 + 本地 mock model smoke
 - [x] EV Browser 设置修复：English / 简体中文切换、可关闭书签 New Tab、背景图应用与实时同步
+- [x] WebMCP 桥 + 操作可视化：页面通过 `navigator.modelContext.registerTool` 注册工具，`page.webmcp.listTools/callTool` 经 session/oneShot 调用（JSON 错误封装、超时）；元素操作前独立 overlay 高亮，设置开关默认开启（spec: webmcp-and-action-visualization）
 - [x] Browser Control P0/P1：普通 DOM 操作无 CDP、高级能力按需 attach 且同 tab 并发合并；完整 typed 页面交互、iframe、BrowserRun，以及 window/tab/group/download/history/session/zoom 工作区操作（spec: browser-control-p0-p1）
 - [x] SiteRecipe P2：review-token 审批、精确域名/路径、typed adapter、本地 0600 存储、`x.mute-words` 与 `x.read-grok-conversation`（spec: site-recipe-p2）
 - [x] BrowserSession P1：每个 Session 新建非聚焦 Chrome window 和单一 EV tab group，只允许 owned tabs，禁止 adopt/borrowed tab，安全 release 与 Host 内存 ownership（spec: browser-session-p1）
