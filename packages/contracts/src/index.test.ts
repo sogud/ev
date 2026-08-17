@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest';
 import {
   BrowserCommandSchema,
   BrowserControlRequestSchema,
+  BrowserWebMcpCallResultSchema,
+  BrowserWebMcpListResultSchema,
   BrowserControlResponseSchema,
   BrowserDownloadDispatchSchema,
   BrowserDownloadStatusSchema,
@@ -160,6 +162,117 @@ describe('EV contracts', () => {
     expect(BrowserCommandSchema.safeParse({ action: 'page.scroll' }).success).toBe(false);
     expect(
       BrowserCommandSchema.safeParse({ action: 'page.pointer', type: 'move', x: -1, y: 0 }).success
+    ).toBe(false);
+  });
+
+  test('validates WebMCP bridge commands and JSON result envelopes', () => {
+    const commands = [
+      { action: 'page.webmcp.listTools' },
+      { action: 'page.webmcp.listTools', tabId: 12 },
+      { action: 'page.webmcp.callTool', name: 'search_products' },
+      {
+        action: 'page.webmcp.callTool',
+        tabId: 12,
+        name: 'search_products.query',
+        args: { query: 'keyboard', limit: 5 },
+        timeoutMs: 5_000,
+      },
+    ];
+    commands.forEach(command => expect(BrowserCommandSchema.safeParse(command).success).toBe(true));
+
+    expect(
+      BrowserCommandSchema.safeParse({ action: 'page.webmcp.callTool', name: '' }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({ action: 'page.webmcp.callTool', name: 'bad name!' }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({ action: 'page.webmcp.callTool', name: 'x'.repeat(129) })
+        .success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({ action: 'page.webmcp.callTool', name: 'tool', timeoutMs: 99 })
+        .success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'page.webmcp.callTool',
+        name: 'tool',
+        timeoutMs: 60_001,
+      }).success
+    ).toBe(false);
+
+    const sessionId = '3f88e635-1ba1-4e8c-91fd-83d682959f8a';
+    for (const command of [
+      {
+        action: 'browser.session.command',
+        sessionId,
+        command: { action: 'page.webmcp.listTools' },
+      },
+      {
+        action: 'browser.session.command',
+        sessionId,
+        command: { action: 'page.webmcp.callTool', name: 'tool', args: { value: 1 } },
+      },
+      {
+        action: 'browser.oneShot',
+        url: 'https://example.com',
+        command: { action: 'page.webmcp.listTools' },
+      },
+    ]) {
+      expect(BrowserCommandSchema.safeParse(command).success).toBe(true);
+    }
+
+    expect(
+      BrowserWebMcpListResultSchema.safeParse({
+        tabId: 12,
+        tools: [
+          { name: 'search_products', description: 'Search the catalog' },
+          {
+            name: 'add_to_cart',
+            inputSchema: { type: 'object', properties: { sku: { type: 'string' } } },
+          },
+        ],
+      }).success
+    ).toBe(true);
+    expect(
+      BrowserWebMcpListResultSchema.safeParse({
+        tabId: 12,
+        tools: [{ name: 'tool', unexpected: true }],
+      }).success
+    ).toBe(false);
+
+    expect(
+      BrowserWebMcpCallResultSchema.safeParse({
+        tabId: 12,
+        name: 'search_products',
+        ok: true,
+        result: { items: [{ sku: 'kb-1' }] },
+      }).success
+    ).toBe(true);
+    expect(
+      BrowserWebMcpCallResultSchema.safeParse({
+        tabId: 12,
+        name: 'search_products',
+        ok: false,
+        error: 'Timed out waiting for the page tool',
+        errorCode: 'timeout',
+      }).success
+    ).toBe(true);
+    expect(
+      BrowserWebMcpCallResultSchema.safeParse({ tabId: 12, name: 'tool', ok: true }).success
+    ).toBe(false);
+    expect(
+      BrowserWebMcpCallResultSchema.safeParse({ tabId: 12, name: 'tool', ok: false }).success
+    ).toBe(false);
+    expect(
+      BrowserWebMcpCallResultSchema.safeParse({
+        tabId: 12,
+        name: 'tool',
+        ok: false,
+        error: 'boom',
+        errorCode: 'not-a-code',
+      }).success
     ).toBe(false);
   });
 

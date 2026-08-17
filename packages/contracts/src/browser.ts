@@ -30,6 +30,13 @@ const WebUrlSchema = z
   );
 
 const SelectorSchema = z.string().trim().min(1).max(2048);
+const WebMcpToolNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9._-]+$/, 'WebMCP tool names use letters, digits, dot, dash, underscore');
+const WebMcpToolArgsSchema = z.record(z.string().max(512), z.unknown());
 const MediaRefSchema = z.string().regex(/^@m[1-9]\d*$/);
 const BoundedLimitSchema = z.number().int().min(1).max(1_000);
 const BookmarkIdSchema = z.string().trim().min(1).max(128);
@@ -395,6 +402,17 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   }),
   z.object({ action: z.literal('page.release'), tabId: TabIdSchema.optional() }),
   z.object({
+    action: z.literal('page.webmcp.listTools'),
+    tabId: TabIdSchema.optional(),
+  }),
+  z.object({
+    action: z.literal('page.webmcp.callTool'),
+    tabId: TabIdSchema.optional(),
+    name: WebMcpToolNameSchema,
+    args: WebMcpToolArgsSchema.optional(),
+    timeoutMs: z.number().int().min(100).max(60_000).optional(),
+  }),
+  z.object({
     action: z.literal('bookmarks.list'),
     maxNodes: BookmarkLimitSchema.optional(),
   }),
@@ -552,6 +570,68 @@ export const BrowserPageContextResultSchema = z.object({
 });
 
 export type BrowserPageContextResult = z.infer<typeof BrowserPageContextResultSchema>;
+
+/** A tool that a page registered through the WebMCP bridge (`navigator.modelContext`). */
+export const BrowserWebMcpToolSchema = z
+  .object({
+    name: WebMcpToolNameSchema,
+    description: z.string().max(4_096).optional(),
+    inputSchema: z.record(z.string().max(512), z.unknown()).optional(),
+  })
+  .strict();
+
+export type BrowserWebMcpTool = z.infer<typeof BrowserWebMcpToolSchema>;
+
+export const BrowserWebMcpListResultSchema = z.object({
+  tabId: TabIdSchema,
+  tools: z.array(BrowserWebMcpToolSchema).max(128),
+});
+
+export type BrowserWebMcpListResult = z.infer<typeof BrowserWebMcpListResultSchema>;
+
+export const BrowserWebMcpErrorCodeSchema = z.enum([
+  'bridge-unavailable',
+  'not-found',
+  'timeout',
+  'execution',
+  'serialization',
+  'invalid-response',
+]);
+
+export type BrowserWebMcpErrorCode = z.infer<typeof BrowserWebMcpErrorCodeSchema>;
+
+/**
+ * WebMCP tool invocation always resolves to a JSON envelope: tool output and
+ * failures (missing tool, timeout, page-side exceptions) are both serialized.
+ */
+export const BrowserWebMcpCallResultSchema = z
+  .object({
+    tabId: TabIdSchema,
+    name: WebMcpToolNameSchema,
+    ok: z.boolean(),
+    result: z.unknown().optional(),
+    error: z.string().max(10_000).optional(),
+    errorCode: BrowserWebMcpErrorCodeSchema.optional(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (result.ok && result.result === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['result'],
+        message: 'Successful WebMCP calls require a result value',
+      });
+    }
+    if (!result.ok && result.error === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['error'],
+        message: 'Failed WebMCP calls require an error message',
+      });
+    }
+  });
+
+export type BrowserWebMcpCallResult = z.infer<typeof BrowserWebMcpCallResultSchema>;
 
 export const BrowserSemanticTargetSchema = z
   .object({
