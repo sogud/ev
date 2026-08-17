@@ -1,8 +1,8 @@
 # Spec — Server/客户端拆分 + 多端接入 v1
 
-> 来源：2026-08-08 与用户的架构定案（参考 bb 架构与 herdr 模式）。
+> 来源：2026-08-08 架构定案（参考常驻 server + 客户端 attach 的通用模式）。
 > 产品定位延续：EV 是各种 Agent + 各种工具的 UI 表达层；本 spec 解决"表达层长在哪个进程上"。
-> 参考：get-bb/bb `docs/system-overview.md`（server/daemon/契约边界）、herdr（常驻 server + 客户端 attach）。
+> 关注点：server/daemon/契约边界、常驻 server + 客户端 attach。
 
 ## Problem Statement
 

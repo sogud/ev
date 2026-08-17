@@ -13,17 +13,13 @@ EV is a personal, local-first Agent product organized as a lightweight pnpm mono
 Pi owns model execution, providers, sessions, Skills, and Extensions. EV owns the user experience,
 tasks, traces, runtimes, browser integration, and local access control.
 
-## AgentSpace context
+## Workspace embedding
 
-- This repository is a specialist execution entry: start the agent from the EV directory so these
-  product rules and the repository Git boundary apply naturally.
-- When checked out under AgentSpace, `../../harness context --json` must resolve this directory as
-  the `ev` repo-project; the root workspace remains the control plane for general and cross-project
-  work.
-- AgentSpace may start an EV agent through Herdr with this repository as its cwd. The parent agent
-  should pass only the task and necessary cross-project context; this file remains the EV authority.
-- The shared stable user profile is `../../USER.md` when that parent workspace is present. EV remains
-  usable as a standalone clone when it is absent.
+- EV works as a standalone clone. When checked out inside a larger multi-repo workspace, this file
+  remains the authority for EV-specific rules; the parent workspace owns only cross-project
+  coordination.
+- Agents working on EV should start from this directory so these rules and the repository Git
+  boundary apply naturally.
 
 ## Working rules
 
@@ -67,16 +63,19 @@ builds for every affected workspace.
 
 ## UI verification operations
 
-- 通用页面打开/截图优先用 EV 自己的浏览器能力(`ev browser oneShot` / `session.command`),顺带 dogfood 浏览器链路;agent-browser 只在 EV 不可用时兜底。
-- 开发期 UI 调试优先在 web 形态(`pnpm dev:web` + 浏览器)进行,桌面端只做同步验证
-  (2026-08-16 用户定案:浏览器能同时 debug 与调 UI,优于 Electron 链路)。
-- Electron CDP + `agent-browser` on port 9333; 9222 is the user's Chrome, never touch it.
-- Assert UI with `agent-browser eval` text assertions; do not read full-size screenshots
-  (root `AGENTS.md` red line).
+- Prefer EV's own browser capabilities (`ev browser oneShot` / `session.command`) for opening pages
+  and taking screenshots; third-party browser automation tools are only a fallback when EV is
+  unavailable.
+- During development, prefer the web form (`pnpm dev:web` + a browser) for UI debugging; use the
+  desktop app for parity checks only.
+- When driving Chrome via CDP, never attach to the user's running Chrome profile; use a dedicated
+  EV-owned window.
+- Assert UI with DOM/text assertions instead of reading full-size screenshots into the model
+  context.
 - After clicking a history task, wait 5-6s before asserting: runtime cold start exceeds 1s and a
   transient empty state is not a render bug.
-- If CDP snapshot refs go stale, click by stable DOM text via eval instead of retrying stale refs.
-- On cleanup, only kill `dist/Electron.app` instances this session started.
+- If CDP snapshot refs go stale, click by stable DOM text instead of retrying stale refs.
+- On cleanup, only terminate app instances started by the current session.
 
 ## Git safety
 
@@ -86,8 +85,8 @@ builds for every affected workspace.
 
 ## 测试与验证红线
 
-- UI 验证禁止启动 Electron：renderer 是纯 Web 客户端，一律用 agent-browser 自带浏览器
-  测 server 服务的 Web 形态（`/?port&token`），视口用 `agent-browser set viewport`。
+- UI 验证禁止启动 Electron：renderer 是纯 Web 客户端，一律用浏览器自动化工具
+  测 server 服务的 Web 形态（`/?port&token`）。
 - 任何自动化测试必须 `EV_HOME` 临时目录隔离，结束（含失败）把临时目录移入
   `~/.Trash`，永不读写用户真实 `~/.ev`。
 - 铁律：不 `rm -rf` 任何目录/文件；删除一律移入垃圾桶（`~/.Trash`）。
