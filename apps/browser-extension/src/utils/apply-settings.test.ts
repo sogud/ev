@@ -44,6 +44,7 @@ function createStyleStub() {
 const imageSettings: Options = {
   language: 'system',
   showNewTabBookmarks: true,
+  actionHighlight: true,
   theme: 'auto',
   sortBy: 'name',
   iconColor: { bookmark: '#737373', folder: '#737373' },

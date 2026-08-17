@@ -17,6 +17,7 @@ interface SettingsContextType {
 const SETTINGS_KEYS: Array<keyof Options> = [
   'language',
   'showNewTabBookmarks',
+  'actionHighlight',
   'theme',
   'sortBy',
   'iconColor',

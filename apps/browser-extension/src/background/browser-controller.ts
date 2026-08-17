@@ -2,11 +2,18 @@ import {
   BrowserDownloadDispatchSchema,
   BrowserDownloadStatusSchema,
   BrowserMediaResultSchema,
+  BrowserWebMcpCallResultSchema,
+  BrowserWebMcpListResultSchema,
   type BrowserAtomicCommand,
   type BookmarkBackupNode,
   type BrowserMediaItem,
   type BrowserPageCommand,
 } from '@ev/contracts';
+
+import { cdpHighlightDeclaration } from '../content/action-highlight';
+import { WEBMCP_DEFAULT_TIMEOUT_MS } from '../webmcp/protocol';
+import { highlightBeforeAction, isActionHighlightEnabled } from './action-highlight';
+import { callPageWebMcpTool, listPageWebMcpTools } from './webmcp-bridge';
 
 const CDP_VERSION = '1.3';
 const MAX_EVENT_RECORDS = 500;
@@ -41,6 +48,7 @@ const DOM_PAGE_ACTIONS = [
   'page.screenshot',
   'page.release',
 ] as const;
+const WEBMCP_ACTIONS = ['page.webmcp.listTools', 'page.webmcp.callTool'] as const;
 const CDP_PAGE_ACTIONS = [
   'page.drag',
   'page.hover',
@@ -872,6 +880,7 @@ class CdpBrowserController {
             ...new Set([
               ...BROWSER_SHELL_ACTIONS,
               ...BOOKMARK_ACTIONS,
+              ...WEBMCP_ACTIONS,
               ...(this.scriptingApi ? DOM_PAGE_ACTIONS : []),
               ...(this.debuggerApi ? [...DOM_PAGE_ACTIONS, ...CDP_PAGE_ACTIONS] : []),
             ]),
@@ -1336,6 +1345,7 @@ class CdpBrowserController {
         ? this.domSelector(tabId, command.selector)
         : undefined;
     if (command.action === 'page.click' && selector) {
+      await highlightBeforeAction(tabId, selector, 'click');
       return {
         tabId,
         selector: command.selector,
@@ -1343,6 +1353,7 @@ class CdpBrowserController {
       };
     }
     if (command.action === 'page.type' && selector) {
+      await highlightBeforeAction(tabId, selector, 'type');
       return {
         tabId,
         selector: command.selector,
@@ -1355,6 +1366,7 @@ class CdpBrowserController {
       };
     }
     if (command.action === 'page.setChecked' && selector) {
+      await highlightBeforeAction(tabId, selector, 'check');
       return {
         tabId,
         selector: command.selector,
@@ -1366,6 +1378,7 @@ class CdpBrowserController {
       };
     }
     if (command.action === 'page.select' && selector) {
+      await highlightBeforeAction(tabId, selector, 'select');
       return {
         tabId,
         selector: command.selector,
@@ -1377,6 +1390,7 @@ class CdpBrowserController {
       };
     }
     if (command.action === 'page.focus' && selector) {
+      await highlightBeforeAction(tabId, selector, 'focus');
       return {
         tabId,
         selector: command.selector,
@@ -1398,6 +1412,7 @@ class CdpBrowserController {
       const resolvedSelector = command.selector
         ? this.domSelector(tabId, command.selector)
         : undefined;
+      if (resolvedSelector) await highlightBeforeAction(tabId, resolvedSelector, 'scroll');
       return {
         tabId,
         ...((await this.runDomOperation(tabId, {
@@ -1433,10 +1448,30 @@ class CdpBrowserController {
   private async executePageCommand(command: BrowserPageCommand): Promise<unknown> {
     const tabId = command.tabId ?? (await activeTabId());
     await resolveTab(tabId);
+    if (command.action === 'page.webmcp.listTools') return this.webMcpListTools(tabId);
+    if (command.action === 'page.webmcp.callTool') return this.webMcpCallTool(tabId, command);
     if (this.canExecuteWithoutDebugger(command)) {
       return this.executeWithoutDebugger(tabId, command);
     }
     return this.withAdvancedLease(tabId, () => this.executeAttached(tabId, command));
+  }
+
+  private async webMcpListTools(tabId: number): Promise<unknown> {
+    const tools = await listPageWebMcpTools(tabId);
+    return BrowserWebMcpListResultSchema.parse({ tabId, tools });
+  }
+
+  private async webMcpCallTool(
+    tabId: number,
+    command: Extract<BrowserPageCommand, { action: 'page.webmcp.callTool' }>
+  ): Promise<unknown> {
+    const outcome = await callPageWebMcpTool(
+      tabId,
+      command.name,
+      command.args ?? {},
+      command.timeoutMs ?? WEBMCP_DEFAULT_TIMEOUT_MS
+    );
+    return BrowserWebMcpCallResultSchema.parse({ tabId, name: command.name, ...outcome });
   }
 
   private async executeAttached(tabId: number, command: BrowserPageCommand): Promise<unknown> {
@@ -1470,10 +1505,11 @@ class CdpBrowserController {
           command.frameId
         );
       case 'page.click': {
-        const backendNodeId = await this.resolveBackendNode(
+        const backendNodeId = await this.resolveAndHighlight(
           tabId,
           command.selector,
-          command.frameId
+          command.frameId,
+          'click'
         );
         await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
         const point = await this.nodeCenter(tabId, backendNodeId);
@@ -1516,10 +1552,11 @@ class CdpBrowserController {
         };
       }
       case 'page.type': {
-        const backendNodeId = await this.resolveBackendNode(
+        const backendNodeId = await this.resolveAndHighlight(
           tabId,
           command.selector,
-          command.frameId
+          command.frameId,
+          'type'
         );
         await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
         await this.send(tabId, 'DOM.focus', { backendNodeId });
@@ -1528,10 +1565,11 @@ class CdpBrowserController {
         return { tabId, typed: true, selector: command.selector, textLength: command.text.length };
       }
       case 'page.setChecked': {
-        const backendNodeId = await this.resolveBackendNode(
+        const backendNodeId = await this.resolveAndHighlight(
           tabId,
           command.selector,
-          command.frameId
+          command.frameId,
+          'check'
         );
         const state = await this.callFunctionOn<{ checkable: boolean; checked: boolean }>(
           tabId,
@@ -1552,10 +1590,11 @@ class CdpBrowserController {
         };
       }
       case 'page.select': {
-        const backendNodeId = await this.resolveBackendNode(
+        const backendNodeId = await this.resolveAndHighlight(
           tabId,
           command.selector,
-          command.frameId
+          command.frameId,
+          'select'
         );
         const result = await this.callFunctionOn<{ selectedValues: string[] }>(
           tabId,
@@ -1576,15 +1615,17 @@ class CdpBrowserController {
         return { tabId, selector: command.selector, ...result };
       }
       case 'page.drag': {
-        const sourceNodeId = await this.resolveBackendNode(
+        const sourceNodeId = await this.resolveAndHighlight(
           tabId,
           command.sourceSelector,
-          command.frameId
+          command.frameId,
+          'drag'
         );
-        const targetNodeId = await this.resolveBackendNode(
+        const targetNodeId = await this.resolveAndHighlight(
           tabId,
           command.targetSelector,
-          command.frameId
+          command.frameId,
+          'drag'
         );
         const from = await this.nodeCenter(tabId, sourceNodeId);
         const to = await this.nodeCenter(tabId, targetNodeId);
@@ -1619,10 +1660,11 @@ class CdpBrowserController {
         };
       }
       case 'page.focus': {
-        const backendNodeId = await this.resolveBackendNode(
+        const backendNodeId = await this.resolveAndHighlight(
           tabId,
           command.selector,
-          command.frameId
+          command.frameId,
+          'focus'
         );
         await this.send(tabId, 'DOM.focus', { backendNodeId });
         return { tabId, focused: true, selector: command.selector };
@@ -1660,10 +1702,11 @@ class CdpBrowserController {
         return { tabId, selector: command.selector, ...result };
       }
       case 'page.hover': {
-        const backendNodeId = await this.resolveBackendNode(
+        const backendNodeId = await this.resolveAndHighlight(
           tabId,
           command.selector,
-          command.frameId
+          command.frameId,
+          'hover'
         );
         await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
         const { x, y } = await this.nodeCenter(tabId, backendNodeId);
@@ -1718,10 +1761,11 @@ class CdpBrowserController {
         let x = 0;
         let y = 0;
         if (command.selector) {
-          const backendNodeId = await this.resolveBackendNode(
+          const backendNodeId = await this.resolveAndHighlight(
             tabId,
             command.selector,
-            command.frameId
+            command.frameId,
+            'scroll'
           );
           await this.send(tabId, 'DOM.scrollIntoViewIfNeeded', { backendNodeId });
           ({ x, y } = await this.nodeCenter(tabId, backendNodeId));
@@ -2137,6 +2181,36 @@ class CdpBrowserController {
     };
   }
 
+  /**
+   * Resolve the target node and, when action visualization is enabled, show
+   * the short-lived highlight on it before the caller performs the action.
+   */
+  private async resolveAndHighlight(
+    tabId: number,
+    requestedSelector: string,
+    frameId: string | undefined,
+    label: string
+  ): Promise<number> {
+    const backendNodeId = await this.resolveBackendNode(tabId, requestedSelector, frameId);
+    await this.highlightResolvedNode(tabId, backendNodeId, frameId, label);
+    return backendNodeId;
+  }
+
+  private async highlightResolvedNode(
+    tabId: number,
+    backendNodeId: number,
+    frameId: string | undefined,
+    label: string
+  ): Promise<void> {
+    if (frameId) return;
+    if (!(await isActionHighlightEnabled())) return;
+    try {
+      await this.callFunctionOn(tabId, backendNodeId, cdpHighlightDeclaration(), [label]);
+    } catch {
+      // Highlights are cosmetic; never fail the surrounding action.
+    }
+  }
+
   private async resolveBackendNode(
     tabId: number,
     requestedSelector: string,
@@ -2511,7 +2585,11 @@ function getController(): CdpBrowserController {
 
 export async function executeBrowserCommand(command: BrowserAtomicCommand): Promise<unknown> {
   const debuggerApi = (chrome as unknown as { debugger?: typeof chrome.debugger }).debugger;
-  if (!debuggerApi && command.action.startsWith('page.')) {
+  if (
+    !debuggerApi &&
+    command.action.startsWith('page.') &&
+    !command.action.startsWith('page.webmcp.')
+  ) {
     throw new Error('Chrome CDP control is unavailable in this browser');
   }
   return getController().execute(command);

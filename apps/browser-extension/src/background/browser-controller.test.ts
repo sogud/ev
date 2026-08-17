@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { resetActionHighlightForTests } from './action-highlight';
 import { executeBrowserCommand, resetBrowserControllerForTests } from './browser-controller';
 
 interface DebuggerCall {
@@ -13,6 +14,7 @@ describe('CDP browser controller', () => {
   const tabCreatedListeners = new Set<(tab: chrome.tabs.Tab) => void>();
   const downloadCreatedListeners = new Set<(item: chrome.downloads.DownloadItem) => void>();
   const permissionContains = vi.fn(async () => true);
+  const pageBridge = vi.fn();
 
   beforeEach(() => {
     calls.length = 0;
@@ -22,6 +24,9 @@ describe('CDP browser controller', () => {
     downloadCreatedListeners.clear();
     permissionContains.mockReset();
     permissionContains.mockResolvedValue(true);
+    pageBridge.mockReset();
+    // Highlights default to disabled in the shared mock; individual tests opt in.
+    pageBridge.mockResolvedValue({ tools: [] });
     globalThis.chrome = {
       tabs: {
         query: vi.fn(async (query?: chrome.tabs.QueryInfo) =>
@@ -109,6 +114,7 @@ describe('CDP browser controller', () => {
         ungroup: vi.fn(async () => undefined),
         getZoom: vi.fn(async () => 1),
         setZoom: vi.fn(async () => undefined),
+        sendMessage: pageBridge,
         onCreated: {
           addListener: vi.fn(listener => tabCreatedListeners.add(listener)),
           removeListener: vi.fn(listener => tabCreatedListeners.delete(listener)),
@@ -152,6 +158,16 @@ describe('CDP browser controller', () => {
       },
       permissions: {
         contains: permissionContains,
+      },
+      storage: {
+        sync: {
+          get: vi.fn(async () => ({ actionHighlight: false })),
+          set: vi.fn(async () => undefined),
+        },
+        onChanged: {
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+        },
       },
       bookmarks: {
         getTree: vi.fn(async () => [
@@ -380,6 +396,7 @@ describe('CDP browser controller', () => {
       },
     } as unknown as typeof chrome;
     resetBrowserControllerForTests();
+    resetActionHighlightForTests();
   });
 
   test('coalesces concurrent debugger attachment for one tab', async () => {
@@ -1213,9 +1230,130 @@ describe('CDP browser controller', () => {
     expect(capabilities.actions).toContain('page.setChecked');
     expect(capabilities.actions).toContain('windows.list');
     expect(capabilities.actions).toContain('history.search');
+    expect(capabilities.actions).toContain('page.webmcp.listTools');
+    expect(capabilities.actions).toContain('page.webmcp.callTool');
 
     await executeBrowserCommand({ action: 'page.snapshot', tabId: 7 });
     await executeBrowserCommand({ action: 'page.release', tabId: 7 });
     expect(chrome.debugger.detach).toHaveBeenCalledWith({ tabId: 7 });
+  });
+
+  test('lists and calls page WebMCP tools through the content-script bridge', async () => {
+    pageBridge.mockImplementation(async (_tabId: number, message: { type?: string }) => {
+      if (message.type === 'ev-webmcp.listTools') {
+        return { tools: [{ name: 'search_products', description: 'Search the catalog' }] };
+      }
+      if (message.type === 'ev-webmcp.callTool') {
+        return { ok: true, result: { items: ['kb-1'] } };
+      }
+      return undefined;
+    });
+
+    await expect(
+      executeBrowserCommand({ action: 'page.webmcp.listTools', tabId: 7 })
+    ).resolves.toEqual({
+      tabId: 7,
+      tools: [{ name: 'search_products', description: 'Search the catalog' }],
+    });
+    await expect(
+      executeBrowserCommand({
+        action: 'page.webmcp.callTool',
+        tabId: 7,
+        name: 'search_products',
+        args: { query: 'keyboard' },
+        timeoutMs: 5_000,
+      })
+    ).resolves.toEqual({
+      tabId: 7,
+      name: 'search_products',
+      ok: true,
+      result: { items: ['kb-1'] },
+    });
+    expect(pageBridge).toHaveBeenCalledWith(7, {
+      type: 'ev-webmcp.callTool',
+      name: 'search_products',
+      args: { query: 'keyboard' },
+      timeoutMs: 5_000,
+    });
+    expect(chrome.debugger.attach).not.toHaveBeenCalled();
+  });
+
+  test('wraps WebMCP bridge failures into JSON error envelopes', async () => {
+    pageBridge.mockRejectedValue(
+      new Error('Could not establish connection. Receiving end does not exist.')
+    );
+
+    await expect(
+      executeBrowserCommand({ action: 'page.webmcp.listTools', tabId: 7 })
+    ).rejects.toThrow(/page bridge is unavailable/);
+    await expect(
+      executeBrowserCommand({ action: 'page.webmcp.callTool', tabId: 7, name: 'search_products' })
+    ).resolves.toMatchObject({
+      tabId: 7,
+      name: 'search_products',
+      ok: false,
+      errorCode: 'bridge-unavailable',
+    });
+  });
+
+  test('requests an action highlight before fixed DOM element operations when enabled', async () => {
+    vi.mocked(chrome.storage.sync.get).mockResolvedValue({ actionHighlight: true } as never);
+    const executeScript = vi.fn(async () => [
+      { frameId: 0, result: { clicked: true, x: 10, y: 20 } },
+    ]);
+    (
+      globalThis.chrome as unknown as { scripting: { executeScript: typeof executeScript } }
+    ).scripting = { executeScript };
+    resetBrowserControllerForTests();
+    resetActionHighlightForTests();
+
+    await executeBrowserCommand({ action: 'page.click', tabId: 7, selector: '#save' });
+
+    expect(pageBridge).toHaveBeenCalledWith(7, {
+      type: 'ev-action.highlight',
+      selector: '#save',
+      label: 'click',
+    });
+    expect(executeScript).toHaveBeenCalledTimes(1);
+  });
+
+  test('skips action highlights when the setting is disabled and survives bridge failures', async () => {
+    pageBridge.mockRejectedValue(new Error('bridge down'));
+    const executeScript = vi.fn(async () => [
+      { frameId: 0, result: { clicked: true, x: 10, y: 20 } },
+    ]);
+    (
+      globalThis.chrome as unknown as { scripting: { executeScript: typeof executeScript } }
+    ).scripting = { executeScript };
+    resetBrowserControllerForTests();
+    resetActionHighlightForTests();
+
+    // Storage mock defaults to actionHighlight: false, so no request is made...
+    await executeBrowserCommand({ action: 'page.click', tabId: 7, selector: '#save' });
+    expect(pageBridge).not.toHaveBeenCalled();
+
+    // ...and even with the switch enabled a failing bridge never breaks the action.
+    vi.mocked(chrome.storage.sync.get).mockResolvedValue({ actionHighlight: true } as never);
+    resetActionHighlightForTests();
+    await expect(
+      executeBrowserCommand({ action: 'page.click', tabId: 7, selector: '#save' })
+    ).resolves.toMatchObject({ clicked: true });
+    expect(pageBridge).toHaveBeenCalledTimes(1);
+  });
+
+  test('highlights CDP element actions through the shared renderer declaration', async () => {
+    vi.mocked(chrome.storage.sync.get).mockResolvedValue({ actionHighlight: true } as never);
+    resetActionHighlightForTests();
+
+    await executeBrowserCommand({ action: 'page.snapshot', tabId: 7 });
+    await executeBrowserCommand({ action: 'page.click', tabId: 7, selector: '@e1' });
+
+    expect(calls).toContainEqual({
+      method: 'Runtime.callFunctionOn',
+      params: expect.objectContaining({
+        functionDeclaration: expect.stringContaining('evActionHighlight'),
+        arguments: [{ value: 'click' }],
+      }),
+    });
   });
 });

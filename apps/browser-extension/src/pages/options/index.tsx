@@ -300,6 +300,20 @@ export const OptionsPage = () => {
                 <span className='ev-status-pill'>{t('browser.options.capabilityEnabled')}</span>
               </div>
 
+              <label className='ev-setting-row'>
+                <span className='ev-setting-copy'>
+                  <strong>{t('browser.options.actionHighlight')}</strong>
+                  <small>{t('browser.options.actionHighlightDesc')}</small>
+                </span>
+                <input
+                  type='checkbox'
+                  checked={options.actionHighlight}
+                  onChange={event =>
+                    setOptions({ ...options, actionHighlight: event.target.checked })
+                  }
+                />
+              </label>
+
               <div className='ev-setting-row'>
                 <span className='ev-setting-copy'>
                   <strong className='flex items-center gap-2'>

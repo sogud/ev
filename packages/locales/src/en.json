@@ -252,6 +252,8 @@
       "bridgeEnableDesc": "Always on; address and token are managed automatically by the extension and desktop",
       "pageActions": "Page actions",
       "pageActionsDesc": "Always on; ordinary actions use fixed DOM control and advanced diagnostics use bounded CDP",
+      "actionHighlight": "Action highlight",
+      "actionHighlightDesc": "Briefly outline the target element and show the action name before EV clicks, types, or scrolls to it",
       "mediaDownloads": "Download management",
       "mediaDownloadsDesc": "Always on; media discovery uses bounded CDP; DRM content is not supported",
       "capabilityEnabled": "Enabled",

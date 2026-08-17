@@ -252,6 +252,8 @@
       "bridgeEnableDesc": "始终开启；地址和 token 由扩展与桌面端自动管理",
       "pageActions": "页面操作",
       "pageActionsDesc": "始终开启；普通操作使用固定 DOM 控制，高级诊断使用受限 CDP",
+      "actionHighlight": "操作高亮",
+      "actionHighlightDesc": "EV 执行点击、输入、滚动到元素等操作前，短暂描边目标元素并显示动作名",
       "mediaDownloads": "下载管理",
       "mediaDownloadsDesc": "始终开启；媒体发现使用受限 CDP；不支持 DRM 内容",
       "capabilityEnabled": "已开启",

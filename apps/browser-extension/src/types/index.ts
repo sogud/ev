@@ -21,6 +21,8 @@ export interface BookmarkFolder {
 export interface Options {
   language: 'system' | 'en' | 'zh';
   showNewTabBookmarks: boolean;
+  // Action visualization: briefly highlight elements before EV acts on them.
+  actionHighlight: boolean;
   theme: 'light' | 'dark' | 'auto';
   sortBy: 'date' | 'name' | 'url';
   // Icon color settings.
@@ -45,6 +47,7 @@ export interface Options {
 export const DEFAULT_OPTIONS: Options = {
   language: 'system',
   showNewTabBookmarks: true,
+  actionHighlight: true,
   theme: 'auto',
   sortBy: 'name',
   iconColor: {
