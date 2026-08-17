@@ -314,6 +314,29 @@ describe('BrowserSessionManager', () => {
     });
   });
 
+  it('routes WebMCP page commands through the session to owned tabs only', async () => {
+    const browser = createFakeBrowser();
+    const manager = new BrowserSessionManager(browser.execute, sessionIds());
+    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+
+    await expect(
+      manager.execute({
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'page.webmcp.listTools' },
+      })
+    ).resolves.toMatchObject({ sessionId: SESSION_ONE, tabId: 11 });
+    expect(browser.execute).toHaveBeenCalledWith({ action: 'page.webmcp.listTools', tabId: 11 });
+
+    await expect(
+      manager.execute({
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'page.webmcp.callTool', name: 'search_products', tabId: 42 },
+      })
+    ).rejects.toThrow(/does not own tab 42/);
+  });
+
   it('creates and releases a one-shot session around one scoped command', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
