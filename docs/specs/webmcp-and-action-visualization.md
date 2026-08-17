@@ -28,12 +28,12 @@ pre-existing implementation untouched):
 
 ```js
 const dispose = navigator.modelContext.registerTool({
-  name: 'search_products',            // required, [a-zA-Z0-9._-]{1,128}
-  description: 'Search the catalog',  // optional, <= 4096 chars
-  inputSchema: { type: 'object' },    // optional JSON object
+  name: 'search_products', // required, [a-zA-Z0-9._-]{1,128}
+  description: 'Search the catalog', // optional, <= 4096 chars
+  inputSchema: { type: 'object' }, // optional JSON object
   execute: async args => ({ items: [] }),
 });
-dispose();                             // or navigator.modelContext.unregisterTool(name)
+dispose(); // or navigator.modelContext.unregisterTool(name)
 ```
 
 `execute` callbacks never leave the page. Only JSON-safe tool metadata crosses

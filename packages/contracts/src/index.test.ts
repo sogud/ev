@@ -191,8 +191,11 @@ describe('EV contracts', () => {
         .success
     ).toBe(false);
     expect(
-      BrowserCommandSchema.safeParse({ action: 'page.webmcp.callTool', name: 'tool', timeoutMs: 99 })
-        .success
+      BrowserCommandSchema.safeParse({
+        action: 'page.webmcp.callTool',
+        name: 'tool',
+        timeoutMs: 99,
+      }).success
     ).toBe(false);
     expect(
       BrowserCommandSchema.safeParse({
