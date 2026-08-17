@@ -7,25 +7,28 @@ interface DownloadItem {
   href: string;
 }
 
-// TODO: 真实下载分发上线后替换占位链接
+const RELEASE_URL = 'https://github.com/sogud/ev/releases/tag/agent-kit-v0.1.0';
+const ASSET_URL = 'https://github.com/sogud/ev/releases/download/agent-kit-v0.1.0';
+const INSTALL_GUIDE_URL = 'https://raw.githubusercontent.com/sogud/ev/master/docs/install-for-agent.md';
+
 const downloads: DownloadItem[] = [
   {
     name: 'Desktop',
-    detail: 'macOS 桌面 App · Apple Silicon',
-    action: '下载 Desktop',
-    href: '#',
+    detail: 'macOS 桌面 App · 打包中，先到 Releases 页查看进度',
+    action: '查看 Releases',
+    href: 'https://github.com/sogud/ev/releases',
   },
   {
     name: 'Browser Extension',
-    detail: 'Chrome Manifest V3 扩展',
-    action: '获取扩展',
-    href: '#',
+    detail: 'Chrome Manifest V3 扩展 · 开发者模式加载',
+    action: '下载扩展',
+    href: `${ASSET_URL}/evbrowser-extension-0.1.0-chrome.zip`,
   },
   {
     name: 'CLI',
-    detail: 'ev 命令行 · Node.js ≥ 22.19',
-    action: '安装 CLI',
-    href: '#',
+    detail: 'ev 命令行 · 单文件可执行，无需 Node.js（Apple Silicon）',
+    action: '安装指南',
+    href: INSTALL_GUIDE_URL,
   },
 ];
 
@@ -72,11 +75,10 @@ export default function HomePage() {
           App、浏览器扩展与 CLI 共享同一个本地服务，数据始终留在你的机器上。
         </p>
         <div className='mt-10 flex flex-wrap items-center justify-center gap-3'>
-          {/* TODO: 真实下载分发上线后替换占位链接 */}
           <Link
-            href='#'
+            href={RELEASE_URL}
             className='rounded-lg bg-ink px-5 py-2.5 text-sm font-medium text-canvas transition-opacity hover:opacity-85'>
-            下载 EV Desktop
+            下载 EV
           </Link>
           <Link
             href='/docs'
@@ -95,9 +97,8 @@ export default function HomePage() {
               className='flex flex-col rounded-xl border border-line bg-surface p-5'>
               <h2 className='text-sm font-semibold'>{item.name}</h2>
               <p className='mt-1 flex-1 text-sm text-ink-tertiary'>{item.detail}</p>
-              {/* TODO: 真实下载分发上线后替换占位链接 */}
               <Link
-                href='#'
+                href={item.href}
                 className='mt-4 inline-flex w-fit rounded-md border border-line px-3.5 py-1.5 text-sm text-ink transition-colors hover:bg-raised'>
                 {item.action}
               </Link>

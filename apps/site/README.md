@@ -6,6 +6,13 @@ EV 官网：下载入口、功能介绍与技术文档。
 （fumadocs-core/ui 15.8.5 + fumadocs-mdx 12.0.3）。深色主题，颜色变量对照
 `packages/design-tokens/theme.css`（只读参考，构建不依赖仓内其他包）。
 
+本站不在根 pnpm workspace 内（`pnpm-workspace.yaml` 已排除 `apps/site`），
+使用独立 lockfile。安装依赖必须加 `--ignore-workspace`：
+
+```bash
+pnpm install --ignore-workspace
+```
+
 ## 命令
 
 ```bash
