@@ -3,13 +3,14 @@ import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
+import type { DatabaseSync } from 'node:sqlite';
 
 /**
- * KV driver: better-sqlite3 preferred, JSON fallback. The native binding is
- * loaded lazily so an ABI mismatch (e.g. ELECTRON_RUN_AS_NODE fallback with a
- * system-node-built binding) degrades to the JSON backend instead of crashing
- * the server; JSON files use the legacy layout and migrate back to sqlite on
- * the next healthy start.
+ * KV driver priority: node:sqlite (builtin, zero native deps) -> better-sqlite3
+ * -> JSON fallback. The native binding is loaded lazily so an ABI mismatch
+ * (e.g. ELECTRON_RUN_AS_NODE fallback with a system-node-built binding)
+ * degrades to the next backend instead of crashing the server; JSON files use
+ * the legacy layout and migrate back to sqlite on the next healthy start.
  * Deliberately unnormalized: one KV table (store/key/value); entities such as
  * tasks are stored as JSON blobs.
  */
@@ -36,6 +37,42 @@ const SQL = {
 // is catchable; also keeps the externalized module resolvable next to the bundle.
 function loadSqlite(): typeof Database {
   return createRequire(import.meta.url)('better-sqlite3');
+}
+
+// node:sqlite is builtin since Node 22.5 (unflagged in later lines); the
+// require throws ERR_UNKNOWN_BUILTIN_MODULE on older runtimes, which the
+// backend chain catches and answers with better-sqlite3.
+function loadNodeSqlite(): typeof DatabaseSync {
+  return createRequire(import.meta.url)('node:sqlite').DatabaseSync;
+}
+
+class NodeSqliteKv implements KvBackend {
+  private readonly db: InstanceType<typeof DatabaseSync>;
+
+  constructor(path: string) {
+    const DatabaseCtor = loadNodeSqlite();
+    this.db = new DatabaseCtor(path);
+    this.db.exec(SQL.createTable);
+    this.db.exec(SQL.wal);
+  }
+
+  get(store: string, key: string): string | null {
+    const row = this.db.prepare(SQL.get).get(store, key) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  set(store: string, key: string, value: string): void {
+    this.db.prepare(SQL.set).run(store, key, value, Date.now());
+  }
+
+  count(store: string): number {
+    const row = this.db.prepare(SQL.count).get(store) as { n: number } | undefined;
+    return Number(row?.n ?? 0);
+  }
+
+  close(): void {
+    this.db.close();
+  }
 }
 
 class SqliteKv implements KvBackend {
@@ -132,6 +169,7 @@ export class JsonKv implements KvBackend {
 }
 
 let backend: KvBackend | null = null;
+let backendName = '';
 
 export function getBackend(): KvBackend {
   if (backend) return backend;
@@ -139,17 +177,28 @@ export function getBackend(): KvBackend {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (process.env.EV_JSON_STORE === '1') {
     backend = new JsonKv(dir);
+    backendName = 'json (forced by EV_JSON_STORE)';
   } else {
+    const dbPath = join(dir, 'ev.db');
     try {
-      backend = new SqliteKv(join(dir, 'ev.db'));
-    } catch (error) {
-      console.error(
-        `[EV] sqlite unavailable (${error instanceof Error ? error.message : String(error)}); ` +
-          'falling back to the JSON store'
-      );
-      backend = new JsonKv(dir);
+      backend = new NodeSqliteKv(dbPath);
+      backendName = 'node:sqlite';
+    } catch (nodeError) {
+      try {
+        backend = new SqliteKv(dbPath);
+        backendName = 'better-sqlite3';
+      } catch (error) {
+        console.error(
+          `[EV] sqlite unavailable (node:sqlite: ${nodeError instanceof Error ? nodeError.message : String(nodeError)}; ` +
+            `better-sqlite3: ${error instanceof Error ? error.message : String(error)}); ` +
+            'falling back to the JSON store'
+        );
+        backend = new JsonKv(dir);
+        backendName = 'json (fallback)';
+      }
     }
   }
+  console.log(`[EV] KV backend: ${backendName}`);
   migrateLegacyJson(backend);
   return backend;
 }
