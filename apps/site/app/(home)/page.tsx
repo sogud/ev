@@ -9,53 +9,54 @@ interface DownloadItem {
 
 const RELEASE_URL = 'https://github.com/sogud/ev/releases/tag/agent-kit-v0.1.0';
 const ASSET_URL = 'https://github.com/sogud/ev/releases/download/agent-kit-v0.1.0';
-const INSTALL_GUIDE_URL = 'https://raw.githubusercontent.com/sogud/ev/master/docs/install-for-agent.md';
+const INSTALL_GUIDE_URL =
+  'https://raw.githubusercontent.com/sogud/ev/master/docs/install-for-agent.md';
 
 const downloads: DownloadItem[] = [
   {
-    name: 'Desktop',
-    detail: 'macOS 桌面 App · 打包中，先到 Releases 页查看进度',
-    action: '查看 Releases',
-    href: 'https://github.com/sogud/ev/releases',
+    name: 'Agent Kit (recommended)',
+    detail: 'CLI + browser extension + agent skill. Hand your AI the install guide and it sets itself up.',
+    action: 'Install guide',
+    href: INSTALL_GUIDE_URL,
   },
   {
     name: 'Browser Extension',
-    detail: 'Chrome Manifest V3 扩展 · 开发者模式加载',
-    action: '下载扩展',
+    detail: 'Chrome Manifest V3 extension. Load it via Developer Mode, or let your agent do it.',
+    action: 'Download extension',
     href: `${ASSET_URL}/evbrowser-extension-0.1.0-chrome.zip`,
   },
   {
-    name: 'CLI',
-    detail: 'ev 命令行 · 单文件可执行，无需 Node.js（Apple Silicon）',
-    action: '安装指南',
-    href: INSTALL_GUIDE_URL,
+    name: 'Desktop',
+    detail: 'macOS desktop app — packaging in progress. Track it on the Releases page.',
+    action: 'View releases',
+    href: 'https://github.com/sogud/ev/releases',
   },
 ];
 
 const features = [
   {
-    title: '一个收件箱，管所有 Runtime',
-    body: 'Pi / Codex / Claude Code / Qoder 按任务切换。认证保持各 Runtime 原生，EV 从不存储凭据。',
+    title: 'One inbox for every runtime',
+    body: 'Switch between Pi, Codex, Claude Code and Qoder per task. Auth stays native to each runtime — EV never stores credentials.',
   },
   {
-    title: '本地优先架构',
-    body: '无头本地服务只监听 127.0.0.1；桌面 App、CLI 与手机 Web 都是同一契约的薄客户端。',
+    title: 'Local-first architecture',
+    body: 'A headless local service listening only on 127.0.0.1. Desktop, CLI, web and mobile are thin clients of one contract.',
   },
   {
-    title: '手机访问，不经过云',
-    body: '可选绑定 LAN / Tailscale 地址，observer / operator 两级 token，Agent 跟着你走到沙发。',
+    title: 'Phone access, no cloud',
+    body: 'Optionally bind to your LAN or Tailscale address with observer / operator token tiers. Your agent follows you to the couch.',
   },
   {
-    title: '诚实的可观测性',
-    body: '实时对话流、每轮 Trace、工作区 diff Inspector——不是 opaque 的「agent did things」。',
+    title: 'Honest observability',
+    body: 'Live transcripts, per-turn traces and a workspace diff inspector — not an opaque “agent did things”.',
   },
   {
-    title: '浏览器桥接',
-    body: '配对扩展后，每个页面操作都跑在 Agent 自己的 BrowserSession 窗口里，绝不碰你现有的标签页。',
+    title: 'Browser bridge',
+    body: 'Once paired with the extension, every page action runs in the agent’s own BrowserSession window. Your existing tabs are never touched.',
   },
   {
-    title: 'CLI 随行',
-    body: 'ev 命令行随应用打包，管理任务、Runtime、token 与浏览器会话，桌面不开也能自托管服务。',
+    title: 'WebMCP ready',
+    body: 'Pages can register native tools for your agent via navigator.modelContext — structured actions instead of brittle DOM clicking.',
   },
 ];
 
@@ -68,24 +69,29 @@ export default function HomePage() {
           Enhanced Vigilance · Apache-2.0
         </p>
         <h1 className='max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl'>
-          本地优先的<span className='text-brand'>个人 Agent 工作台</span>
+          The local-first <span className='text-brand'>agent workspace</span> for your existing
+          coding runtimes
         </h1>
         <p className='mt-6 max-w-2xl text-balance text-base leading-relaxed text-ink-secondary'>
-          把你已有的编码 Runtime——Pi、Codex、Claude Code、Qoder——放进一个冷静、透明的界面。 桌面
-          App、浏览器扩展与 CLI 共享同一个本地服务，数据始终留在你的机器上。
+          Put the coding runtimes you already use — Pi, Codex, Claude Code, Qoder — behind one
+          calm, transparent interface. Desktop app, browser extension and CLI share a single local
+          service; your data never leaves your machine.
         </p>
         <div className='mt-10 flex flex-wrap items-center justify-center gap-3'>
           <Link
-            href={RELEASE_URL}
+            href={INSTALL_GUIDE_URL}
             className='rounded-lg bg-ink px-5 py-2.5 text-sm font-medium text-canvas transition-opacity hover:opacity-85'>
-            下载 EV
+            Get the Agent Kit
           </Link>
           <Link
             href='/docs'
             className='rounded-lg border border-line bg-surface px-5 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-raised'>
-            阅读文档
+            Read the docs
           </Link>
         </div>
+        <p className='mt-4 text-xs text-ink-tertiary'>
+          中文用户：把安装指南链接发给你正在用的 AI，它会替你装好一切。
+        </p>
       </section>
 
       {/* Downloads */}
@@ -109,7 +115,7 @@ export default function HomePage() {
 
       {/* Features */}
       <section className='mx-auto w-full max-w-5xl px-6 pb-24'>
-        <h2 className='mb-8 text-center text-2xl font-semibold'>为什么是 EV</h2>
+        <h2 className='mb-8 text-center text-2xl font-semibold'>Why EV</h2>
         <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-3'>
           {features.map(feature => (
             <div
@@ -122,13 +128,13 @@ export default function HomePage() {
         </div>
         <div className='mt-10 text-center'>
           <Link href='/features' className='text-sm text-brand hover:underline'>
-            了解完整功能 →
+            See all features →
           </Link>
         </div>
       </section>
 
       <footer className='border-t border-line-subtle py-8 text-center text-xs text-ink-tertiary'>
-        EV — Enhanced Vigilance · 本地优先，数据留在你的机器上
+        EV — Enhanced Vigilance · Local-first. Your data stays on your machine.
       </footer>
     </div>
   );
