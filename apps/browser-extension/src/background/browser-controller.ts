@@ -1289,12 +1289,19 @@ class CdpBrowserController {
     }
     if (command.action === 'page.screenshot') {
       const tab = await chrome.tabs.get(tabId);
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: command.format ?? 'png',
-        ...(command.format === 'jpeg' ? { quality: command.quality ?? 90 } : {}),
-      });
-      const data = dataUrl.slice(dataUrl.indexOf(',') + 1);
-      return { tabId, format: command.format ?? 'png', data, fullPage: false };
+      try {
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+          format: command.format ?? 'png',
+          ...(command.format === 'jpeg' ? { quality: command.quality ?? 90 } : {}),
+        });
+        const data = dataUrl.slice(dataUrl.indexOf(',') + 1);
+        return { tabId, format: command.format ?? 'png', data, fullPage: false };
+      } catch {
+        // captureVisibleTab requires <all_urls>/activeTab, which EV does not
+        // request; fall back to the CDP path for EV-owned tabs.
+        await this.ensureAttached(tabId);
+        return this.screenshot(tabId, command.format ?? 'png', command.quality ?? 90, false);
+      }
     }
     if (command.action === 'page.history') {
       this.refsByTab.delete(tabId);
