@@ -83,6 +83,17 @@ export const RuntimeEventSchema = z.discriminatedUnion('type', [
     status: z.enum(['running', 'done', 'error']),
     timestamp: z.number().int().nonnegative(),
     durationMs: z.number().int().nonnegative().optional(),
+    tokensIn: z.number().int().nonnegative().optional(),
+    tokensOut: z.number().int().nonnegative().optional(),
+    input: z
+      .string()
+      .max(16 * 1024 * 1024)
+      .optional(),
+    output: z
+      .string()
+      .max(16 * 1024 * 1024)
+      .optional(),
+    ttftMs: z.number().int().nonnegative().optional(),
   }),
 ]);
 export type RuntimeEvent = z.infer<typeof RuntimeEventSchema>;

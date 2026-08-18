@@ -56,6 +56,15 @@ export interface TraceEvent {
   status: 'running' | 'done' | 'error';
   timestamp: number;
   durationMs?: number;
+  /** Token usage reported by the runtime; absent when the runtime cannot provide it. */
+  tokensIn?: number;
+  tokensOut?: number;
+  /** Tool input / model request payload; producers truncate oversized text. */
+  input?: string;
+  /** Tool output / model response payload; producers truncate oversized text. */
+  output?: string;
+  /** Time to first token (ms) for model events; absent when unknown. */
+  ttftMs?: number;
 }
 
 export interface WorkspaceChanges {

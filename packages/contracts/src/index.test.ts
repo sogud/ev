@@ -880,6 +880,58 @@ describe('EV contracts', () => {
     );
   });
 
+  test('trace events accept optional trajectory fields and reject invalid values', () => {
+    expect(
+      RuntimeEventSchema.safeParse({
+        type: 'trace',
+        id: 'model-1',
+        traceType: 'model',
+        title: 'pi run',
+        status: 'done',
+        timestamp: 1000,
+        durationMs: 4200,
+        tokensIn: 1200,
+        tokensOut: 340,
+        ttftMs: 800,
+        input: 'summarize this',
+        output: 'summary text',
+      }).success
+    ).toBe(true);
+    expect(
+      RuntimeEventSchema.safeParse({
+        type: 'trace',
+        id: 'tool-1',
+        traceType: 'tool',
+        title: 'edit',
+        status: 'running',
+        timestamp: 1000,
+        input: '{"path":"a.ts"}',
+      }).success
+    ).toBe(true);
+    // all new fields stay optional: legacy events still parse.
+    expect(
+      RuntimeEventSchema.safeParse({
+        type: 'trace',
+        id: 'tool-2',
+        traceType: 'tool',
+        title: 'edit',
+        status: 'running',
+        timestamp: 1000,
+      }).success
+    ).toBe(true);
+    expect(
+      RuntimeEventSchema.safeParse({
+        type: 'trace',
+        id: 'model-2',
+        traceType: 'model',
+        title: 'pi run',
+        status: 'done',
+        timestamp: 1000,
+        tokensIn: -1,
+      }).success
+    ).toBe(false);
+  });
+
   test('validates extension pairing messages at the Desktop boundary', () => {
     expect(
       ExtensionToDesktopMessageSchema.safeParse({
