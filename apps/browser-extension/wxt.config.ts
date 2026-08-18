@@ -7,6 +7,7 @@ export default defineConfig({
     description: 'Local-first bookmarks and browser context for EV.',
     version: '1.0.0',
     permissions: [
+      'alarms',
       'bookmarks',
       'downloads',
       ...(browser === 'chrome' ? (['debugger', 'downloads.open'] as const) : []),

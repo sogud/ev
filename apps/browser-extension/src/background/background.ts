@@ -1,7 +1,20 @@
 import { DesktopBridge } from './desktop-bridge';
 
+const BRIDGE_KEEPALIVE_ALARM = 'ev-bridge-keepalive';
+
 const desktopBridge = new DesktopBridge();
 void desktopBridge.start();
+
+// MV3 suspends an idle service worker, which kills the bridge's reconnect
+// timers along with it. A periodic alarm wakes the worker so the bridge can
+// recover its Host connection without the user clicking the extension.
+chrome.alarms.create(BRIDGE_KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== BRIDGE_KEEPALIVE_ALARM) return;
+  if (desktopBridge.getStatus() === 'disconnected') {
+    desktopBridge.reconnect();
+  }
+});
 
 chrome.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
   if (!request || typeof request !== 'object') return false;
