@@ -419,6 +419,20 @@
     color: var(--ev-color-text-tertiary);
     font-size: var(--ev-font-size-xs);
   }
+  .ev-text-input {
+    min-width: 220px;
+    padding: 7px 10px;
+    border: 1px solid var(--ev-color-border-default);
+    border-radius: var(--ev-radius-md);
+    background: var(--ev-color-bg-input);
+    color: var(--ev-color-text-primary);
+    font-size: var(--ev-font-size-sm);
+  }
+  .ev-text-input:focus {
+    outline: 1px solid var(--ev-color-border-focus);
+    outline-offset: 1px;
+    box-shadow: var(--ev-focus-ring);
+  }
   .ev-settings-footer {
     display: flex;
     align-items: center;

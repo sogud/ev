@@ -1,4 +1,5 @@
 import {
+  BridgeConfigSchema,
   DesktopToExtensionMessageSchema,
   EV_PROTOCOL_VERSION,
   type BridgeConfig,
@@ -99,7 +100,16 @@ export class DesktopBridge {
       chrome.storage.local.get(PAIRING_TOKEN_KEY),
     ]);
     const rawConfig = storedConfig[DESKTOP_BRIDGE_CONFIG_KEY];
-    const enabledConfig: BridgeConfig = { enabled: true };
+    const rawEndpoint =
+      rawConfig && typeof rawConfig === 'object' && 'endpoint' in rawConfig
+        ? rawConfig.endpoint
+        : undefined;
+    const parsedEndpoint =
+      typeof rawEndpoint === 'string'
+        ? BridgeConfigSchema.safeParse({ enabled: true, endpoint: rawEndpoint })
+        : null;
+    const endpoint = parsedEndpoint?.success ? parsedEndpoint.data.endpoint : undefined;
+    const enabledConfig: BridgeConfig = { enabled: true, ...(endpoint ? { endpoint } : {}) };
     this.config = enabledConfig;
 
     const legacyToken =
@@ -117,7 +127,8 @@ export class DesktopBridge {
       rawConfig === null ||
       !('enabled' in rawConfig) ||
       rawConfig.enabled !== true ||
-      Object.keys(rawConfig).some(key => key !== 'enabled');
+      Object.keys(rawConfig).some(key => key !== 'enabled' && key !== 'endpoint') ||
+      ('endpoint' in (rawConfig ?? {}) && rawConfig?.endpoint !== endpoint);
     if (configNeedsMigration || migratedToken) {
       await chrome.storage.local.set({
         ...(configNeedsMigration ? { [DESKTOP_BRIDGE_CONFIG_KEY]: enabledConfig } : {}),
@@ -130,7 +141,7 @@ export class DesktopBridge {
   private connect(): void {
     if (this.stopped || !this.config || this.socket) return;
 
-    const socket = new WebSocket(DEFAULT_DESKTOP_BRIDGE_ENDPOINT);
+    const socket = new WebSocket(this.config.endpoint ?? DEFAULT_DESKTOP_BRIDGE_ENDPOINT);
     this.socket = socket;
 
     socket.addEventListener('open', () => {

@@ -5,9 +5,13 @@ import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import cliPackage from '../package.json' with { type: 'json' };
-import {
+import
+ {
+  DEFAULT_BROWSER_PROFILE,
   ensureStandaloneHost,
   evHomeDirectory,
+  listBrowserProfiles,
+  normalizeBrowserProfile,
   runStandaloneHost,
   standaloneDiscoveryPath,
   stopStandaloneHost,
@@ -43,6 +47,7 @@ interface ParsedArguments {
   timeoutMs: number;
   compact: boolean;
   outputPath?: string;
+  profile: string;
 }
 
 class UsageError extends Error {}
@@ -52,6 +57,8 @@ function usage(): string {
     'usage:',
     '  ev browser <action> [--payload <json> | --payload-file <path>]',
     '                    [--timeout <seconds>] [--output <path>] [--compact]',
+    '                    [--profile <name>]   per-browser Host profile (default: default)',
+    '  ev browser profile list         show Host profiles and their paired browsers',
     '  ev browser check',
     '  ev browser oneShot --payload \'{"url":"https://example.com","command":{"action":"page.snapshot"}}\'',
     '  ev browser session.create --payload \'{"url":"https://example.com"}\'',
@@ -62,8 +69,9 @@ function usage(): string {
     '  ev server start|stop|restart|status|logs / ev task … / ev runtime …',
     '',
     'examples:',
+    '  ev browser host [serve|stop] / ev browser profile list',
     '  ev browser oneShot --payload \'{"url":"https://example.com","command":{"action":"page.snapshot","mode":"interactive"}}\'',
-    '  ev browser session.create --payload \'{"url":"https://example.com"}\'',
+    '  ev browser session.create --payload \'{"url":"https://example.com"}\' --profile edge',
     '  ev browser session.command --payload \'{"sessionId":"UUID","command":{"action":"page.snapshot"}}\'',
     '  ev browser history.search --payload \'{"text":"EV","maxResults":20}\'',
     '  ev browser downloads.status --payload \'{"downloadId":"chrome:42"}\'',
@@ -84,6 +92,14 @@ function normalizeBrowserAction(action: string): string {
   return action;
 }
 
+function extractHostProfile(argv: string[]): string {
+  const index = argv.indexOf('--profile');
+  if (index === -1) return DEFAULT_BROWSER_PROFILE;
+  const value = argv[index + 1];
+  if (!value) throw new UsageError('--profile is missing its name');
+  return normalizeBrowserProfile(value);
+}
+
 async function parseArguments(argv: string[]): Promise<ParsedArguments> {
   if (argv[0] !== 'browser') throw new UsageError('only ev browser commands are supported here');
   const action = argv[1];
@@ -94,9 +110,16 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
   let timeoutMs = DEFAULT_TIMEOUT_MS;
   let compact = false;
   let outputPath: string | undefined;
+  let profile = DEFAULT_BROWSER_PROFILE;
 
   for (let index = 2; index < argv.length; index += 1) {
     const argument = argv[index];
+    if (argument === '--profile') {
+      const value = argv[++index];
+      if (!value) throw new UsageError('--profile is missing its name');
+      profile = normalizeBrowserProfile(value);
+      continue;
+    }
     if (argument === '--payload') {
       const value = argv[++index];
       if (!value) throw new UsageError('--payload is missing its JSON argument');
@@ -156,6 +179,7 @@ async function parseArguments(argv: string[]): Promise<ParsedArguments> {
     timeoutMs,
     compact,
     outputPath,
+    profile,
   };
 }
 
@@ -186,12 +210,12 @@ async function validateLocalFiles(command: BrowserCommand): Promise<void> {
   }
 }
 
-function discoveryPath(): string {
-  return process.env.EV_BROWSER_CONTROL_FILE?.trim() || standaloneDiscoveryPath();
+function discoveryPath(profile: string = DEFAULT_BROWSER_PROFILE): string {
+  return process.env.EV_BROWSER_CONTROL_FILE?.trim() || standaloneDiscoveryPath(profile);
 }
 
-async function readDiscovery(): Promise<DiscoveryFile & { token: string }> {
-  const filePath = discoveryPath();
+async function readDiscovery(profile: string = DEFAULT_BROWSER_PROFILE): Promise<DiscoveryFile & { token: string }> {
+  const filePath = discoveryPath(profile);
   let decoded: unknown;
   try {
     decoded = JSON.parse(await readFile(filePath, 'utf8'));
@@ -218,8 +242,12 @@ async function readDiscovery(): Promise<DiscoveryFile & { token: string }> {
   };
 }
 
-async function invoke(command: BrowserCommand, timeoutMs: number): Promise<unknown> {
-  const discovery = await readDiscovery();
+async function invoke(
+  command: BrowserCommand,
+  timeoutMs: number,
+  profile: string = DEFAULT_BROWSER_PROFILE
+): Promise<unknown> {
+  const discovery = await readDiscovery(profile);
   const requestId = randomUUID();
   const request = {
     protocolVersion: EV_PROTOCOL_VERSION,
@@ -288,8 +316,11 @@ async function writeBookmarkBackup(data: unknown, outputPath: string): Promise<s
   return resolved;
 }
 
-async function createAutomaticBookmarkBackup(timeoutMs: number): Promise<string> {
-  const backup = await invoke({ action: 'bookmarks.export' }, timeoutMs);
+async function createAutomaticBookmarkBackup(
+  timeoutMs: number,
+  profile: string = DEFAULT_BROWSER_PROFILE
+): Promise<string> {
+  const backup = await invoke({ action: 'bookmarks.export' }, timeoutMs, profile);
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `${timestamp}-${randomUUID()}.json`;
   return writeBookmarkBackup(
@@ -345,17 +376,25 @@ export async function run(argv: string[]): Promise<number> {
     if (argv.length === 0) throw new UsageError(usage());
     if (isServerCliCommand(argv)) return await runServerCli(argv);
     if (argv[0] === 'browser' && argv[1] === 'host') {
+      const hostProfile = extractHostProfile(argv);
       if (argv[2] === 'stop') {
-        const stopped = await stopStandaloneHost();
+        const stopped = await stopStandaloneHost(hostProfile);
+        const suffix = hostProfile === DEFAULT_BROWSER_PROFILE ? '' : ` (profile: ${hostProfile})`;
         process.stdout.write(
-          `${stopped ? 'Standalone Browser Host stopped' : 'No standalone Browser Host is running'}\n`
+          `${stopped ? 'Standalone Browser Host stopped' : 'No standalone Browser Host is running'}${suffix}\n`
         );
         return 0;
       }
       if (argv[2] && argv[2] !== 'serve' && argv[2] !== '--background') {
-        throw new UsageError('usage: ev browser host [serve|stop]');
+        throw new UsageError('usage: ev browser host [serve|stop] [--profile <name>]');
       }
-      await runStandaloneHost();
+      await runStandaloneHost(hostProfile);
+      return 0;
+    }
+    if (argv[0] === 'browser' && argv[1] === 'profile') {
+      if (argv[2] !== 'list') throw new UsageError('usage: ev browser profile list');
+      const infos = await listBrowserProfiles();
+      process.stdout.write(`${JSON.stringify({ profiles: infos }, null, 2)}\n`);
       return 0;
     }
     const parsed = await parseArguments(argv);
@@ -372,13 +411,13 @@ export async function run(argv: string[]): Promise<number> {
       );
     }
     await validateLocalFiles(commandResult.data);
-    if (!process.env.EV_BROWSER_CONTROL_FILE?.trim()) await ensureStandaloneHost();
+    if (!process.env.EV_BROWSER_CONTROL_FILE?.trim()) await ensureStandaloneHost(parsed.profile);
     const backupPath = MUTATING_BOOKMARK_ACTIONS.has(commandResult.data.action)
-      ? await createAutomaticBookmarkBackup(parsed.timeoutMs)
+      ? await createAutomaticBookmarkBackup(parsed.timeoutMs, parsed.profile)
       : undefined;
     let data: unknown;
     try {
-      data = await invoke(commandResult.data, parsed.timeoutMs);
+      data = await invoke(commandResult.data, parsed.timeoutMs, parsed.profile);
     } catch (error) {
       if (backupPath && error instanceof Error) {
         error.message = `${error.message} (bookmark backup: ${backupPath})`;

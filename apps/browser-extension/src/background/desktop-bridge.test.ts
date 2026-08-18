@@ -120,23 +120,40 @@ describe('DesktopBridge automatic pairing', () => {
     bridge.stop();
   });
 
-  test('migrates a legacy inline token and removes obsolete endpoint fields', async () => {
+  test('migrates a legacy inline token and keeps a valid endpoint field', async () => {
     localStorage.ev_desktop_bridge = {
       enabled: true,
-      endpoint: 'ws://127.0.0.1:43121/browser',
+      endpoint: 'ws://127.0.0.1:43122/browser',
       pairingToken: 'legacy-pairing-token',
     };
     const bridge = new DesktopBridge();
 
     await bridge.start();
-    expect(localStorage.ev_desktop_bridge).toEqual({ enabled: true });
+    expect(localStorage.ev_desktop_bridge).toEqual({
+      enabled: true,
+      endpoint: 'ws://127.0.0.1:43122/browser',
+    });
     expect(localStorage.ev_desktop_bridge_token).toBe('legacy-pairing-token');
+    expect(sockets[0]?.url).toBe('ws://127.0.0.1:43122/browser');
     sockets[0].open();
     await vi.waitFor(() =>
       expect(sockets[0].sent).toContainEqual(
         expect.objectContaining({ type: 'bridge.hello', pairingToken: 'legacy-pairing-token' })
       )
     );
+    bridge.stop();
+  });
+
+  test('drops an invalid endpoint field and falls back to the default', async () => {
+    localStorage.ev_desktop_bridge = {
+      enabled: true,
+      endpoint: 'wss://remote.example/browser',
+    };
+    const bridge = new DesktopBridge();
+
+    await bridge.start();
+    expect(localStorage.ev_desktop_bridge).toEqual({ enabled: true });
+    expect(sockets[0]?.url).toBe(DEFAULT_DESKTOP_BRIDGE_ENDPOINT);
     bridge.stop();
   });
 

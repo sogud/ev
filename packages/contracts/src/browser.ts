@@ -1318,6 +1318,17 @@ export type DesktopToExtensionMessage = z.infer<typeof DesktopToExtensionMessage
 
 export const BridgeConfigSchema = z.object({
   enabled: z.boolean(),
+  // Optional bridge WebSocket endpoint override. Lets each browser (Chrome,
+  // Edge, ...) point at its own EV Host profile port; defaults to
+  // ws://127.0.0.1:43121/browser when absent.
+  endpoint: z
+    .string()
+    .trim()
+    .url()
+    .refine(value => value.startsWith('ws://127.0.0.1:') || value.startsWith('ws://localhost:'), {
+      message: 'bridge endpoint must be a local ws:// URL',
+    })
+    .optional(),
 });
 
 export type BridgeConfig = z.infer<typeof BridgeConfigSchema>;

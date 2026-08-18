@@ -15,6 +15,7 @@ import { DEFAULT_OPTIONS, type Options as OptionsType } from '../../types';
 import { Cable, Download, Image as ImageIcon, Palette, Settings, Trash2 } from 'lucide-react';
 import { applyLanguagePreference, i18n } from '../../i18n';
 import { applyCustomSettings, applyThemePreference } from '../../utils/apply-settings';
+import { DESKTOP_BRIDGE_CONFIG_KEY } from '../../shared/desktop-bridge-config';
 import {
   readBackgroundImageFile,
   readSavedBackgroundImage,
@@ -42,6 +43,7 @@ export const OptionsPage = () => {
   const { t } = useTranslation();
   const [options, setOptions] = useState<OptionsType>(DEFAULT_OPTIONS);
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>('connecting');
+  const [bridgeEndpoint, setBridgeEndpoint] = useState('');
   const [backgroundImage, setBackgroundImage] = useState<SavedBackgroundImage | null>(null);
   const [status, setStatus] = useState('');
   const backgroundFileRef = useRef<HTMLInputElement>(null);
@@ -66,12 +68,17 @@ export const OptionsPage = () => {
       chrome.storage.sync.get(DEFAULT_OPTIONS),
       chrome.runtime.sendMessage({ action: 'bridge.status' }),
       readSavedBackgroundImage(),
-    ]).then(([appearance, bridgeState, savedBackground]) => {
+      chrome.storage.local.get(DESKTOP_BRIDGE_CONFIG_KEY),
+    ]).then(([appearance, bridgeState, savedBackground, bridgeConfig]) => {
       setOptions(appearance as OptionsType);
       if (bridgeState?.success && isBridgeStatus(bridgeState.status)) {
         setBridgeStatus(bridgeState.status);
       }
       setBackgroundImage(savedBackground);
+      const stored = bridgeConfig[DESKTOP_BRIDGE_CONFIG_KEY];
+      if (stored && typeof stored === 'object' && typeof stored.endpoint === 'string') {
+        setBridgeEndpoint(stored.endpoint);
+      }
     });
   }, []);
 
@@ -142,6 +149,32 @@ export const OptionsPage = () => {
     applyCustomSettings(options);
     setStatus(t('browser.options.saved'));
     window.setTimeout(() => setStatus(''), 2000);
+  };
+
+  const saveBridgeEndpoint = async () => {
+    const trimmed = bridgeEndpoint.trim();
+    const isLocalWs =
+      trimmed === '' ||
+      /^(ws:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?(\/\S*)?$/.test(trimmed);
+    if (!isLocalWs) {
+      setStatus(t('browser.options.bridgeEndpointInvalid'));
+      return;
+    }
+    const stored = await chrome.storage.local.get(DESKTOP_BRIDGE_CONFIG_KEY);
+    const existing =
+      stored[DESKTOP_BRIDGE_CONFIG_KEY] && typeof stored[DESKTOP_BRIDGE_CONFIG_KEY] === 'object'
+        ? stored[DESKTOP_BRIDGE_CONFIG_KEY]
+        : { enabled: true };
+    const next = { ...existing, enabled: true };
+    if (trimmed === '') {
+      delete next.endpoint;
+    } else {
+      next.endpoint = trimmed.startsWith('ws://') ? trimmed : `ws://${trimmed}`;
+    }
+    await chrome.storage.local.set({ [DESKTOP_BRIDGE_CONFIG_KEY]: next });
+    setStatus(t('browser.options.saved'));
+    window.setTimeout(() => setStatus(''), 2000);
+    void refreshBridgeStatus();
   };
 
   return (
@@ -290,6 +323,26 @@ export const OptionsPage = () => {
                   <small>{t('browser.options.bridgeEnableDesc')}</small>
                 </span>
                 <span className='ev-status-pill'>{t('browser.options.capabilityEnabled')}</span>
+              </div>
+
+              <div className='ev-setting-row'>
+                <div className='ev-setting-copy'>
+                  <strong>{t('browser.options.bridgeEndpoint')}</strong>
+                  <small>{t('browser.options.bridgeEndpointDesc')}</small>
+                </div>
+                <div className='ev-background-controls'>
+                  <input
+                    type='text'
+                    className='ev-text-input'
+                    value={bridgeEndpoint}
+                    placeholder={t('browser.options.bridgeEndpointPlaceholder')}
+                    onChange={event => setBridgeEndpoint(event.target.value)}
+                    aria-label={t('browser.options.bridgeEndpoint')}
+                  />
+                  <Button variant='outline' size='sm' onClick={() => void saveBridgeEndpoint()}>
+                    {t('browser.options.saveSettings')}
+                  </Button>
+                </div>
               </div>
 
               <div className='ev-setting-row'>
