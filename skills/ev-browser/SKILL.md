@@ -282,3 +282,27 @@ Only delete the exact item/range the user requested:
 - Never create a second group or ungroup/pin EV session tabs.
 - Do not upload/download unless the user explicitly requested that file operation.
 - Do not implement CDP hiding, fingerprint changes, fake human trajectories, CAPTCHA/2FA bypass, or anti-bot evasion.
+
+## Troubleshooting
+
+**`unsupported browser action or invalid parameters`** — almost always one of:
+
+1. **A page action was sent top-level.** `page.click`, `page.type`, `page.snapshot`, etc. are never top-level actions. Wrap them:
+   - One step, then done: `ev browser oneShot --payload '{"url":"<url>","command":{"action":"page.click","selector":"..."}}'`
+   - Multi-step work: create a session first, then `ev browser session.command --payload '{"sessionId":"<id>","command":{"action":"page.type","selector":"...","text":"..."}}'`
+2. **The action name lost its `page.` prefix.** Use `page.click`, not `click`.
+3. **Missing required fields.** `page.type` needs `selector` and `text`; `page.click` needs `selector` or a snapshot ref.
+
+The CLI now echoes the failing field and a corrected example in the error itself — read it before retrying.
+
+**Correct pattern for a search form** (read → act → read):
+
+```bash
+ev browser oneShot --payload '{"url":"https://example.com","command":{"action":"page.snapshot","mode":"interactive"}}' --compact
+ev browser session.create --payload '{"url":"https://example.com"}'
+ev browser session.command --payload '{"sessionId":"<id>","command":{"action":"page.type","selector":"<search box selector>","text":"query"}}'
+ev browser session.command --payload '{"sessionId":"<id>","command":{"action":"page.click","selector":"<search button selector>"}}'
+ev browser session.command --payload '{"sessionId":"<id>","command":{"action":"page.snapshot","mode":"interactive"}}'
+```
+
+**`BROWSER_DISCONNECTED: EV Browser is not connected`** — the extension is not connected to the Host. Check `ev browser check`; if the extension was recently installed or the computer slept, click the EV Browser icon or use its options page "Request reconnect". The extension auto-recovers within a minute via its keepalive alarm.

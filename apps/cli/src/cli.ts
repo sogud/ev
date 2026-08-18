@@ -195,6 +195,29 @@ function requiresBrowserSession(action: BrowserCommand['action']): boolean {
   );
 }
 
+// Page actions are only valid inside browser.oneShot / browser.session.command.
+// Agents routinely try them top-level or without the page. prefix; give them
+// the exact correction instead of a dead-end error.
+const PAGE_ACTION_HINTS: Record<string, string> = {
+  snapshot: 'page.snapshot returns element refs; use them for follow-up actions',
+  click: 'page.click takes {selector} or a snapshot ref',
+  type: 'page.type takes {selector, text, clearFirst?}',
+};
+
+function pageActionHint(action: string): string | null {
+  const bare = action.startsWith('page.') ? action.slice('page.'.length) : action;
+  if (!(bare in PAGE_ACTION_HINTS) && !/^[a-zA-Z][a-zA-Z.]*$/.test(bare)) return null;
+  const example = PAGE_ACTION_HINTS[bare]
+    ? ` (${PAGE_ACTION_HINTS[bare]})`
+    : '';
+  return [
+    `"${action}" is a page action; page actions never run top-level${example}.`,
+    `One-shot form: ev browser oneShot --payload '{"url":"<url>","command":{"action":"page.${bare}", ...}}'.`,
+    `Session form: ev browser session.command --payload '{"sessionId":"<id>","command":{"action":"page.${bare}", ...}}'.`,
+    `Discover elements first with {"action":"page.snapshot","mode":"interactive"}.`,
+  ].join(' ');
+}
+
 async function validateLocalFiles(command: BrowserCommand): Promise<void> {
   const scopedCommand =
     command.action === 'browser.oneShot' || command.action === 'browser.session.command'
@@ -403,11 +426,19 @@ export async function run(argv: string[]): Promise<number> {
       ...parsed.payload,
     });
     if (!commandResult.success) {
-      throw new UsageError('unsupported browser action or invalid parameters');
+      const issues = commandResult.error.issues
+        .slice(0, 4)
+        .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+        .join('; ');
+      const hint = pageActionHint(parsed.action);
+      throw new UsageError(
+        `unsupported browser action or invalid parameters — ${issues}${hint ? ` | ${hint}` : ''}`
+      );
     }
     if (requiresBrowserSession(commandResult.data.action)) {
+      const hint = pageActionHint(commandResult.data.action);
       throw new UsageError(
-        'browser workspace actions require session.command or oneShot; direct user tabs are never used'
+        `browser workspace actions require session.command or oneShot; direct user tabs are never used${hint ? ` | ${hint}` : ''}`
       );
     }
     await validateLocalFiles(commandResult.data);
