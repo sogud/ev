@@ -108,7 +108,20 @@
     "notGit": "The current directory is not a Git repository.",
     "workspaceChanges": "Workspace changes",
     "noChanges": "No uncommitted changes.",
-    "noDiff": "No unstaged diff for this file (untracked or already staged)."
+    "noDiff": "No unstaged diff for this file (untracked or already staged).",
+    "trajectoryTurn": "Turn {{n}}",
+    "trajectorySetup": "Setup",
+    "trajectoryColType": "type",
+    "trajectoryColTitle": "title",
+    "trajectoryColStatus": "",
+    "trajectoryColDuration": "duration",
+    "trajectoryColTokens": "tokens",
+    "trajectoryTokens": "Tokens",
+    "trajectoryFirstToken": "First token",
+    "trajectoryDuration": "Duration",
+    "trajectoryStarted": "Started",
+    "trajectoryInput": "Input",
+    "trajectoryOutput": "Output"
   },
   "runtimes": {
     "loggedIn": "Signed in{{suffix}}",

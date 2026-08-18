@@ -108,7 +108,20 @@
     "notGit": "当前目录不是 Git 仓库。",
     "workspaceChanges": "工作区变更",
     "noChanges": "没有未提交变更。",
-    "noDiff": "该文件暂无未暂存 diff（可能未跟踪或已暂存）。"
+    "noDiff": "该文件暂无未暂存 diff（可能未跟踪或已暂存）。",
+    "trajectoryTurn": "轮次 {{n}}",
+    "trajectorySetup": "准备",
+    "trajectoryColType": "类型",
+    "trajectoryColTitle": "标题",
+    "trajectoryColStatus": "",
+    "trajectoryColDuration": "耗时",
+    "trajectoryColTokens": "token",
+    "trajectoryTokens": "Token 用量",
+    "trajectoryFirstToken": "首 token",
+    "trajectoryDuration": "耗时",
+    "trajectoryStarted": "开始时间",
+    "trajectoryInput": "输入",
+    "trajectoryOutput": "输出"
   },
   "runtimes": {
     "loggedIn": "已登录{{suffix}}",

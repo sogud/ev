@@ -1,8 +1,14 @@
 import { useTranslation } from 'react-i18next';
 import { Check, CircleAlert, GitCompare, LoaderCircle, RefreshCw, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { TaskInspection, TraceEvent } from '../shared/types';
 import { splitDiffByFile } from '../diff-split';
+import {
+  buildTrajectory,
+  formatDuration,
+  formatTimestamp,
+  tokensLabel,
+} from '../trajectory-view-model';
 
 type InspectorTab = 'trace' | 'changes';
 
@@ -78,39 +84,113 @@ export function InspectorPanel({
           {error}
         </div>
       )}
-      {tab === 'trace' ? <TraceList trace={trace} /> : <Changes inspection={inspection} />}
+      {tab === 'trace' ? <TrajectoryTable trace={trace} /> : <Changes inspection={inspection} />}
     </aside>
   );
 }
 
-function TraceList({ trace }: { trace: TraceEvent[] }): React.JSX.Element {
+/**
+ * Trajectory table (DSH-trajectory P1): turn-grouped event rows; clicking a
+ * row opens the inspector below it. Running rows show no fabricated
+ * duration/token values — undefined fields render as "–".
+ */
+function TrajectoryTable({ trace }: { trace: TraceEvent[] }): React.JSX.Element {
   const { t } = useTranslation();
+  const view = useMemo(() => buildTrajectory(trace), [trace]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   if (trace.length === 0) return <div className='inspector-empty'>{t('inspector.empty')}</div>;
   return (
-    <div className='trace-list'>
-      {trace.map(event => (
-        <details className={`trace-row ${event.status}`} key={event.id}>
-          <summary>
-            <span className='trace-icon'>
-              {event.status === 'running' ? (
-                <LoaderCircle className='spin' size={13} />
-              ) : event.status === 'error' ? (
-                <CircleAlert size={13} />
-              ) : (
-                <Check size={13} />
-              )}
-            </span>
-            <span>
-              <strong>{event.title}</strong>
-              <small>
-                {event.type}
-                {event.durationMs ? ` · ${event.durationMs}ms` : ''}
-              </small>
-            </span>
-          </summary>
-          {event.detail && <pre>{event.detail}</pre>}
-        </details>
+    <div className='trajectory-table'>
+      <div className='trajectory-head' aria-hidden='true'>
+        <span />
+        <span>{t('inspector.trajectoryColType')}</span>
+        <span>{t('inspector.trajectoryColTitle')}</span>
+        <span>{t('inspector.trajectoryColStatus')}</span>
+        <span>{t('inspector.trajectoryColDuration')}</span>
+        <span>{t('inspector.trajectoryColTokens')}</span>
+      </div>
+      {view.turns.map(turn => (
+        <Fragment key={turn.id}>
+          <div className='trajectory-turn-divider'>
+            {turn.kind === 'setup'
+              ? t('inspector.trajectorySetup')
+              : t('inspector.trajectoryTurn', { n: turn.index })}
+          </div>
+          {turn.rows.map(({ event: rowEvent, index }) => {
+            const selected = selectedId === rowEvent.id;
+            return (
+              <div className='trajectory-item' key={rowEvent.id}>
+                <button
+                  type='button'
+                  className={`trajectory-row ${rowEvent.status}${selected ? ' selected' : ''}`}
+                  aria-expanded={selected}
+                  onClick={() => setSelectedId(selected ? null : rowEvent.id)}>
+                  <span className='trajectory-index'>{index}</span>
+                  <span className='trajectory-type'>{rowEvent.type}</span>
+                  <span className='trajectory-title'>{rowEvent.title}</span>
+                  <span className='trajectory-status'>
+                    {rowEvent.status === 'running' ? (
+                      <LoaderCircle className='spin' size={12} />
+                    ) : rowEvent.status === 'error' ? (
+                      <CircleAlert size={12} />
+                    ) : (
+                      <Check size={12} />
+                    )}
+                  </span>
+                  <span className='trajectory-duration'>
+                    {rowEvent.status === 'running' ? '' : formatDuration(rowEvent.durationMs) ?? '–'}
+                  </span>
+                  <span className='trajectory-tokens'>{tokensLabel(rowEvent) ?? '–'}</span>
+                </button>
+                {selected && <RowInspector event={rowEvent} />}
+              </div>
+            );
+          })}
+        </Fragment>
       ))}
+    </div>
+  );
+}
+
+/** Expanded row inspector: payloads, token usage, timing. Missing fields stay hidden. */
+function RowInspector({ event }: { event: TraceEvent }): React.JSX.Element {
+  const { t } = useTranslation();
+  const tokens = tokensLabel(event);
+  return (
+    <div className='trajectory-inspector'>
+      <dl className='trajectory-kv'>
+        <dt>{t('inspector.trajectoryTokens')}</dt>
+        <dd>{tokens ?? '–'}</dd>
+        {event.ttftMs !== undefined && (
+          <>
+            <dt>{t('inspector.trajectoryFirstToken')}</dt>
+            <dd>{formatDuration(event.ttftMs) ?? '–'}</dd>
+          </>
+        )}
+        {event.status !== 'running' && event.durationMs !== undefined && (
+          <>
+            <dt>{t('inspector.trajectoryDuration')}</dt>
+            <dd>{formatDuration(event.durationMs) ?? '–'}</dd>
+          </>
+        )}
+        <dt>{t('inspector.trajectoryStarted')}</dt>
+        <dd>{formatTimestamp(event.timestamp)}</dd>
+      </dl>
+      {event.input !== undefined && (
+        <div className='trajectory-payload'>
+          <h4>{t('inspector.trajectoryInput')}</h4>
+          <pre>{event.input}</pre>
+        </div>
+      )}
+      {event.output !== undefined && (
+        <div className='trajectory-payload'>
+          <h4>{t('inspector.trajectoryOutput')}</h4>
+          <pre>{event.output}</pre>
+        </div>
+      )}
+      {event.input === undefined && event.output === undefined && event.detail && (
+        <pre>{event.detail}</pre>
+      )}
     </div>
   );
 }
