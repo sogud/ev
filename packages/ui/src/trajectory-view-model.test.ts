@@ -90,9 +90,9 @@ describe('trajectory formatters', () => {
 
   it('builds a token label only when at least one side is known', () => {
     expect(tokensLabel(event({ id: 'a', type: 'model' }))).toBeNull();
-    expect(
-      tokensLabel(event({ id: 'b', type: 'model', tokensIn: 1200, tokensOut: 40 }))
-    ).toBe('1.2k → 40');
+    expect(tokensLabel(event({ id: 'b', type: 'model', tokensIn: 1200, tokensOut: 40 }))).toBe(
+      '1.2k → 40'
+    );
     expect(tokensLabel(event({ id: 'c', type: 'model', tokensOut: 40 }))).toBe('? → 40');
   });
 });

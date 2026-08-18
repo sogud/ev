@@ -2,7 +2,11 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { listClaudeFamilySessions, mapClaudeFamilyRecord, QODER_FLAVOR } from '../runtime/claude-family';
+import {
+  listClaudeFamilySessions,
+  mapClaudeFamilyRecord,
+  QODER_FLAVOR,
+} from '../runtime/claude-family';
 
 describe('mapClaudeFamilyRecord', () => {
   it('maps assistant text and tool_use blocks, adding a tool trace with input', () => {

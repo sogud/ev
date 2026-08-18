@@ -38,9 +38,7 @@ function asTokenCount(value: unknown): number | undefined {
  * pi `{input, output}`, Anthropic `{input_tokens, output_tokens}`,
  * OpenAI-style `{prompt_tokens, completion_tokens}`. Absent/invalid -> undefined.
  */
-export function tokenCounts(
-  usage: unknown
-): { tokensIn?: number; tokensOut?: number } {
+export function tokenCounts(usage: unknown): { tokensIn?: number; tokensOut?: number } {
   if (!isRecord(usage)) return {};
   const tokensIn = asTokenCount(usage.input ?? usage.input_tokens ?? usage.prompt_tokens);
   const tokensOut = asTokenCount(usage.output ?? usage.output_tokens ?? usage.completion_tokens);

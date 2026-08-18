@@ -294,9 +294,7 @@ export class PiRpcSession implements RuntimeSession {
     for (const listener of this.listeners) listener(event);
   }
 
-  private recordTrace(
-    event: Omit<Extract<RuntimeEvent, { type: 'trace' }>, 'type'>
-  ): void {
+  private recordTrace(event: Omit<Extract<RuntimeEvent, { type: 'trace' }>, 'type'>): void {
     const parsed = RuntimeEventSchema.parse({ type: 'trace', ...event });
     for (const listener of this.listeners) listener(parsed);
   }

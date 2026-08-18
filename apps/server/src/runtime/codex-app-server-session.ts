@@ -299,5 +299,4 @@ export class CodexAppServerSession implements RuntimeSession {
     });
     for (const listener of this.listeners) listener(event);
   }
-
 }

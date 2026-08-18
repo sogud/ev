@@ -138,7 +138,9 @@ function TrajectoryTable({ trace }: { trace: TraceEvent[] }): React.JSX.Element 
                     )}
                   </span>
                   <span className='trajectory-duration'>
-                    {rowEvent.status === 'running' ? '' : formatDuration(rowEvent.durationMs) ?? '–'}
+                    {rowEvent.status === 'running'
+                      ? ''
+                      : (formatDuration(rowEvent.durationMs) ?? '–')}
                   </span>
                   <span className='trajectory-tokens'>{tokensLabel(rowEvent) ?? '–'}</span>
                 </button>
