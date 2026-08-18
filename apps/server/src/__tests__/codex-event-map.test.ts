@@ -102,24 +102,49 @@ describe('mapCodexItem table-driven mapping (every item kind)', () => {
       name: 'commandExecution running',
       item: { id: 'c1', type: 'commandExecution', command: 'ls' },
       completed: false,
-      expect: events =>
+      expect: events => {
         expect(events[0]).toMatchObject({
           role: 'tool',
           toolName: 'command',
           toolStatus: 'running',
-        }),
+        });
+        expect(events[1]).toMatchObject({
+          type: 'trace',
+          id: 'c1',
+          traceType: 'tool',
+          status: 'running',
+          input: 'ls',
+        });
+      },
     },
     {
       name: 'commandExecution completed',
       item: { id: 'c1', type: 'commandExecution', command: 'ls', status: 'completed' },
       completed: true,
-      expect: events => expect(events[0]).toMatchObject({ toolStatus: 'done' }),
+      expect: events => {
+        expect(events[0]).toMatchObject({ toolStatus: 'done' });
+        expect(events[1]).toMatchObject({ type: 'trace', status: 'done', input: 'ls' });
+      },
     },
     {
-      name: 'commandExecution failed',
-      item: { id: 'c1', type: 'commandExecution', command: 'ls', status: 'failed' },
+      name: 'commandExecution failed carries aggregated output',
+      item: {
+        id: 'c1',
+        type: 'commandExecution',
+        command: 'ls',
+        status: 'failed',
+        aggregatedOutput: 'no such file',
+      },
       completed: true,
-      expect: events => expect(events[0]).toMatchObject({ toolStatus: 'error' }),
+      expect: events => {
+        expect(events[0]).toMatchObject({ toolStatus: 'error' });
+        expect(events[1]).toMatchObject({
+          type: 'trace',
+          status: 'error',
+          input: 'ls',
+          output: 'no such file',
+        });
+      },
     },
     {
       name: 'fileChange carries toolName and done/running',
@@ -133,18 +158,27 @@ describe('mapCodexItem table-driven mapping (every item kind)', () => {
         }),
     },
     {
-      name: 'mcpToolCall running',
-      item: { id: 'm1', type: 'mcpToolCall' },
+      name: 'mcpToolCall running carries arguments as trace input',
+      item: { id: 'm1', type: 'mcpToolCall', name: 'search', arguments: { q: 'x' } },
       completed: false,
-      expect: events =>
-        expect(events[0]).toMatchObject({ toolName: 'mcpToolCall', toolStatus: 'running' }),
+      expect: events => {
+        expect(events[0]).toMatchObject({ toolName: 'mcpToolCall', toolStatus: 'running' });
+        expect(events[1]).toMatchObject({
+          type: 'trace',
+          title: 'search',
+          status: 'running',
+          input: JSON.stringify({ q: 'x' }, null, 2),
+        });
+      },
     },
     {
-      name: 'dynamicToolCall done',
-      item: { id: 'd1', type: 'dynamicToolCall' },
+      name: 'dynamicToolCall done carries result as trace output',
+      item: { id: 'd1', type: 'dynamicToolCall', result: 'ok' },
       completed: true,
-      expect: events =>
-        expect(events[0]).toMatchObject({ toolName: 'dynamicToolCall', toolStatus: 'done' }),
+      expect: events => {
+        expect(events[0]).toMatchObject({ toolName: 'dynamicToolCall', toolStatus: 'done' });
+        expect(events[1]).toMatchObject({ type: 'trace', status: 'done', output: 'ok' });
+      },
     },
     {
       name: 'unknown kind maps to nothing',

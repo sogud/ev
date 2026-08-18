@@ -293,6 +293,85 @@ describe('TaskSession RuntimeEvent projection', () => {
       timestamp: 10,
     });
   });
+
+  it('merges model trace events into the active run row with aggregated tokens', async () => {
+    const { session, pi } = makeSession();
+    sessions.push(session);
+    await session.ensure();
+
+    pi.sessions[0].emit({ type: 'status', status: 'running' });
+    pi.sessions[0].emit({
+      type: 'trace',
+      id: 'pi-model-usage-1',
+      traceType: 'model',
+      title: 'pi model',
+      status: 'running',
+      timestamp: 100,
+      tokensIn: 120,
+      tokensOut: 30,
+      ttftMs: 400,
+    });
+    pi.sessions[0].emit({
+      type: 'trace',
+      id: 'pi-model-usage-2',
+      traceType: 'model',
+      title: 'pi model',
+      status: 'running',
+      timestamp: 200,
+      tokensIn: 80,
+      ttftMs: 250,
+    });
+
+    const trace = session.getState().trace;
+    // one run row, not duplicate per-message model rows.
+    expect(trace).toHaveLength(1);
+    expect(trace[0]).toMatchObject({
+      type: 'model',
+      status: 'running',
+      tokensIn: 200,
+      tokensOut: 30,
+      ttftMs: 250,
+    });
+  });
+
+  it('merges same-id tool traces so start input survives the result event', async () => {
+    const { session, pi } = makeSession();
+    sessions.push(session);
+    await session.ensure();
+
+    pi.sessions[0].emit({
+      type: 'trace',
+      id: 'tool-tc1',
+      traceType: 'tool',
+      title: 'bash',
+      status: 'running',
+      timestamp: 10,
+      input: '{"command":"ls"}',
+    });
+    pi.sessions[0].emit({
+      type: 'trace',
+      id: 'tool-tc1',
+      traceType: 'tool',
+      title: 'bash',
+      status: 'done',
+      timestamp: 20,
+      output: 'file.txt',
+      durationMs: 10,
+    });
+
+    expect(session.getState().trace).toEqual([
+      {
+        id: 'tool-tc1',
+        type: 'tool',
+        title: 'bash',
+        status: 'done',
+        timestamp: 10,
+        input: '{"command":"ls"}',
+        output: 'file.txt',
+        durationMs: 10,
+      },
+    ]);
+  });
 });
 
 describe('TaskSession.switchRuntime', () => {

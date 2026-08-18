@@ -10,6 +10,7 @@ import {
   type DshSessionEvent,
 } from './dsh-protocol';
 import { JsonlRpcTransport } from './jsonl-rpc-transport';
+import { traceText } from './trace-payload';
 import type { RuntimeSession, RuntimeSessionInput, RuntimeSessionState } from './runtime-adapter';
 
 const DSH_PROVIDER = 'deepseek-official';
@@ -387,6 +388,15 @@ export class DshRuntimeSession implements RuntimeSession {
         toolName: name,
         toolStatus: 'running',
       });
+      this.emit({
+        type: 'trace',
+        id: `dsh:tool:${callId}`,
+        traceType: 'tool',
+        title: name,
+        status: 'running',
+        timestamp: event.time,
+        input: traceText(argumentsText),
+      });
       return;
     }
     if (event.type === 'tool/result') {
@@ -402,14 +412,24 @@ export class DshRuntimeSession implements RuntimeSession {
       const callId = requireString(resultBlock.toolCallId, 'tool/result callId');
       const failed = resultBlock.isError === true || data.error !== undefined;
       const content = requireContentText(resultBlock.content, 'tool/result block content');
+      const text = content || (failed ? 'Tool failed' : 'Tool completed');
       this.emit({
         type: 'message',
         id: `dsh:tool:${callId}`,
         role: 'tool',
-        content: content || (failed ? 'Tool failed' : 'Tool completed'),
+        content: text,
         timestamp: event.time,
         toolName: this.toolNames.get(callId) ?? 'tool',
         toolStatus: failed ? 'error' : 'done',
+      });
+      this.emit({
+        type: 'trace',
+        id: `dsh:tool:${callId}`,
+        traceType: 'tool',
+        title: this.toolNames.get(callId) ?? 'tool',
+        status: failed ? 'error' : 'done',
+        timestamp: event.time,
+        output: traceText(text),
       });
       return;
     }

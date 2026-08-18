@@ -2,6 +2,7 @@ import type { RuntimeEvent, RuntimeSessionRef } from '@ev/contracts';
 import { RuntimeEventSchema } from '@ev/contracts';
 import type { ModelRef, ThinkingLevel, TranscriptItem } from '@ev/contracts/domain';
 import { normalizeMessage, normalizeToolEvent } from '../transcript';
+import { tokenCounts, traceText } from './trace-payload';
 import type { JsonlProcessOptions } from './jsonl-process';
 import { JsonlRpcTransport, type RpcResponseMatch } from './jsonl-rpc-transport';
 import type { RuntimeSession, RuntimeSessionInput, RuntimeSessionState } from './runtime-adapter';
@@ -43,6 +44,12 @@ export class PiRpcSession implements RuntimeSession {
   private readonly listeners = new Set<(event: RuntimeEvent) => void>();
   private readonly events = new Map<string, RuntimeEvent>();
   private state: RuntimeSessionState;
+  /** Tool execution start times for durationMs on tool_execution_end. */
+  private readonly toolStartedAt = new Map<string, number>();
+  /** Per-run TTFT tracking: run start and first streamed content. */
+  private runStartedAt: number | null = null;
+  private firstTokenAt: number | null = null;
+  private modelTraceSeq = 0;
   private unsubscribeRecord = (): void => {};
   private unsubscribeExit = (): void => {};
   private disposing = false;
@@ -195,13 +202,19 @@ export class PiRpcSession implements RuntimeSession {
   private handleRecord(value: unknown): void {
     if (!isRecord(value)) return;
     const type = typeof value.type === 'string' ? value.type : '';
-    if (type === 'agent_start' || type === 'auto_retry_start') this.emitStatus('running');
+    if (type === 'agent_start' || type === 'auto_retry_start') {
+      this.runStartedAt = Date.now();
+      this.firstTokenAt = null;
+      this.emitStatus('running');
+    }
     if (type === 'agent_settled') this.emitStatus('idle');
     if (type === 'auto_retry_end' && value.success === false) {
       this.emitStatus('error', String(value.finalError ?? 'Pi retry failed'));
     }
     if (type === 'message_start' || type === 'message_update' || type === 'message_end') {
+      if (type !== 'message_end') this.recordFirstToken();
       for (const item of normalizeMessage(value.message)) this.record(runtimeMessage(item));
+      if (type === 'message_end' && isRecord(value.message)) this.recordModelUsage(value.message);
     }
     if (
       type === 'tool_execution_start' ||
@@ -210,12 +223,82 @@ export class PiRpcSession implements RuntimeSession {
     ) {
       const item = normalizeToolEvent(value);
       if (item) this.record(runtimeMessage(item));
+      this.recordToolTrace(type, value);
     }
+  }
+
+  /** First streamed content of a run -> TTFT trace event (merged into the run row). */
+  private recordFirstToken(): void {
+    if (this.runStartedAt === null || this.firstTokenAt !== null) return;
+    this.firstTokenAt = Date.now();
+    this.recordTrace({
+      id: `pi-model-ttft-${++this.modelTraceSeq}`,
+      traceType: 'model',
+      title: 'pi model',
+      status: 'running',
+      timestamp: this.firstTokenAt,
+      ttftMs: Math.max(0, this.firstTokenAt - this.runStartedAt),
+    });
+  }
+
+  /** message_end carries pi usage ({input, output, cacheRead, cacheWrite}); absent usage emits nothing. */
+  private recordModelUsage(message: UnknownRecord): void {
+    const tokens = tokenCounts(message.usage);
+    if (tokens.tokensIn === undefined && tokens.tokensOut === undefined) return;
+    this.recordTrace({
+      id: `pi-model-usage-${++this.modelTraceSeq}`,
+      traceType: 'model',
+      title: 'pi model',
+      status: 'running',
+      timestamp: Date.now(),
+      ...tokens,
+    });
+  }
+
+  /** Tool lifecycle -> same-id trace rows; task-session merges start input with end output. */
+  private recordToolTrace(type: string, value: UnknownRecord): void {
+    if (typeof value.toolCallId !== 'string') return;
+    const id = `tool-${value.toolCallId}`;
+    const timestamp = Date.now();
+    if (type === 'tool_execution_start') {
+      this.toolStartedAt.set(value.toolCallId, timestamp);
+      this.recordTrace({
+        id,
+        traceType: 'tool',
+        title: typeof value.toolName === 'string' ? value.toolName : 'tool',
+        status: 'running',
+        timestamp,
+        ...(value.args !== undefined ? { input: traceText(value.args) } : {}),
+      });
+      return;
+    }
+    const startedAt = this.toolStartedAt.get(value.toolCallId);
+    const result = value.result ?? value.partialResult;
+    const finished = type === 'tool_execution_end';
+    this.recordTrace({
+      id,
+      traceType: 'tool',
+      title: typeof value.toolName === 'string' ? value.toolName : 'tool',
+      status: finished ? (value.isError === true ? 'error' : 'done') : 'running',
+      timestamp: startedAt ?? timestamp,
+      ...(finished && startedAt !== undefined
+        ? { durationMs: Math.max(0, timestamp - startedAt) }
+        : {}),
+      ...(result !== undefined ? { output: traceText(result) } : {}),
+    });
+    if (finished) this.toolStartedAt.delete(value.toolCallId);
   }
 
   private record(event: RuntimeEvent): void {
     if (event.type === 'message') this.events.set(event.id, event);
     for (const listener of this.listeners) listener(event);
+  }
+
+  private recordTrace(
+    event: Omit<Extract<RuntimeEvent, { type: 'trace' }>, 'type'>
+  ): void {
+    const parsed = RuntimeEventSchema.parse({ type: 'trace', ...event });
+    for (const listener of this.listeners) listener(parsed);
   }
 
   private emitStatus(status: RuntimeSessionState['status'], error?: string): void {

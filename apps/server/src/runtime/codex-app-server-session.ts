@@ -3,6 +3,7 @@ import { RuntimeEventSchema } from '@ev/contracts';
 import type { ThinkingLevel } from '@ev/contracts/domain';
 import type { CodexAppServerClient } from './codex-app-server-client';
 import { boundedText, codexEffort, codexMessage, mapCodexItem } from './codex-event-map';
+import { tokenCounts } from './trace-payload';
 import type { RuntimeSession, RuntimeSessionState } from './runtime-adapter';
 
 type UnknownRecord = Record<string, unknown>;
@@ -20,6 +21,9 @@ export class CodexAppServerSession implements RuntimeSession {
   private state: RuntimeSessionState;
   private activeTurnId: string | null = null;
   private startingTurn: Promise<string> | null = null;
+  /** Per-turn TTFT tracking: turn start and first streamed assistant delta. */
+  private turnStartedAt: number | null = null;
+  private firstTokenAt: number | null = null;
   private modelId?: string;
   private needsResume = false;
   private disposing = false;
@@ -166,6 +170,8 @@ export class CodexAppServerSession implements RuntimeSession {
     if (method === 'turn/started') {
       const turn = isRecord(value.turn) ? value.turn : undefined;
       if (turn && typeof turn.id === 'string') this.activeTurnId = turn.id;
+      this.turnStartedAt = Date.now();
+      this.firstTokenAt = null;
       this.emitStatus('running');
       return;
     }
@@ -174,6 +180,9 @@ export class CodexAppServerSession implements RuntimeSession {
       const turnId = turn && typeof turn.id === 'string' ? turn.id : this.activeTurnId;
       const failed = turn?.status === 'failed';
       const error = failed ? new Error(boundedText(turn?.error ?? 'Codex turn failed')) : null;
+      // Turn usage arrives with turn/completed; emit before the status flip so the
+      // merge in task-session still targets the active run row.
+      if (turn && !failed) this.emitTurnUsage(turn);
       if (turnId) {
         this.completedTurns.set(turnId, error);
         const waiter = this.turnWaiters.get(turnId);
@@ -204,6 +213,7 @@ export class CodexAppServerSession implements RuntimeSession {
     }
     if (method === 'item/agentMessage/delta') {
       if (typeof value.itemId !== 'string' || typeof value.delta !== 'string') return;
+      this.recordFirstToken();
       const previous = this.events.get(value.itemId);
       const content = `${previous?.type === 'message' ? previous.content : ''}${value.delta}`;
       this.record(codexMessage(value.itemId, 'assistant', content, Date.now()));
@@ -238,6 +248,39 @@ export class CodexAppServerSession implements RuntimeSession {
   private record(event: RuntimeEvent): void {
     if (event.type === 'message') this.events.set(event.id, event);
     for (const listener of this.listeners) listener(event);
+  }
+
+  /** First assistant delta of the turn -> TTFT (merged into the active run row). */
+  private recordFirstToken(): void {
+    if (this.turnStartedAt === null || this.firstTokenAt !== null) return;
+    this.firstTokenAt = Date.now();
+    this.recordTrace({
+      id: `codex-turn-ttft-${this.state.ref.nativeId}-${this.firstTokenAt}`,
+      traceType: 'model',
+      title: 'codex turn',
+      status: 'running',
+      timestamp: this.firstTokenAt,
+      ttftMs: Math.max(0, this.firstTokenAt - this.turnStartedAt),
+    });
+  }
+
+  /** turn.usage shape varies by codex version; tokenCounts only keeps valid counts. */
+  private emitTurnUsage(turn: UnknownRecord): void {
+    const tokens = tokenCounts(turn.usage);
+    if (tokens.tokensIn === undefined && tokens.tokensOut === undefined) return;
+    this.recordTrace({
+      id: `codex-turn-usage-${this.state.ref.nativeId}-${Date.now()}`,
+      traceType: 'model',
+      title: 'codex turn',
+      status: 'running',
+      timestamp: Date.now(),
+      ...tokens,
+    });
+  }
+
+  private recordTrace(event: Omit<Extract<RuntimeEvent, { type: 'trace' }>, 'type'>): void {
+    const parsed = RuntimeEventSchema.parse({ type: 'trace', ...event });
+    for (const listener of this.listeners) listener(parsed);
   }
 
   private emitStatus(status: RuntimeSessionState['status'], error?: string): void {

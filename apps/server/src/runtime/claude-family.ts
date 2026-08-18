@@ -14,6 +14,7 @@ import {
 import { JsonlProcess } from './jsonl-process';
 import { launchEnvironment, resolveExecutable } from './executable';
 import { probeClaude, probeQoder } from '../auth-probe';
+import { tokenCounts, traceText } from './trace-payload';
 import type { ThinkingLevel } from '@ev/contracts/domain';
 import type {
   AgentRuntimeAdapter,
@@ -58,6 +59,40 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/** Same-id tool trace row; task-session merges tool_use (input) with tool_result (output). */
+function toolTrace(
+  id: string,
+  title: string,
+  status: 'running' | 'done' | 'error',
+  fields: { input?: string; output?: string }
+): RuntimeEvent {
+  return {
+    type: 'trace',
+    id,
+    traceType: 'tool',
+    title,
+    status,
+    timestamp: Date.now(),
+    ...(fields.input !== undefined ? { input: fields.input } : {}),
+    ...(fields.output !== undefined ? { output: fields.output } : {}),
+  };
+}
+
+/** Model usage trace row; merged into the active run row by task-session. */
+function modelUsageTrace(id: string, usage: unknown): RuntimeEvent | null {
+  const tokens = tokenCounts(usage);
+  if (tokens.tokensIn === undefined && tokens.tokensOut === undefined) return null;
+  return {
+    type: 'trace',
+    id,
+    traceType: 'model',
+    title: 'model',
+    status: 'running',
+    timestamp: Date.now(),
+    ...tokens,
+  };
+}
+
 /** Pure function: one stream-json record -> 0..n RuntimeEvents. Unit tests feed records directly. */
 export function mapClaudeFamilyRecord(record: unknown): RuntimeEvent[] {
   if (!isRecord(record)) return [];
@@ -66,7 +101,10 @@ export function mapClaudeFamilyRecord(record: unknown): RuntimeEvent[] {
   const id = asString(record.uuid) ?? asString(record.session_id) ?? `rec-${events.length}`;
 
   if (type === 'assistant' && isRecord(record.message)) {
-    const content = (record.message as Record<string, unknown>).content;
+    const message = record.message as Record<string, unknown>;
+    const content = message.content;
+    const usageTrace = modelUsageTrace(`model-${id}`, message.usage);
+    if (usageTrace) events.push(usageTrace);
     if (Array.isArray(content)) {
       for (const [index, block] of content.entries()) {
         if (!isRecord(block)) continue;
@@ -102,6 +140,11 @@ export function mapClaudeFamilyRecord(record: unknown): RuntimeEvent[] {
             content: JSON.stringify(block.input ?? {}),
             timestamp: Date.now(),
           });
+          events.push(
+            toolTrace(blockId, asString(block.name) ?? 'tool', 'running', {
+              input: traceText(block.input ?? {}),
+            })
+          );
         }
       }
     }
@@ -144,15 +187,22 @@ export function mapClaudeFamilyRecord(record: unknown): RuntimeEvent[] {
                   .map(part => asString(part.text) ?? '')
                   .join('\n')
               : '';
+        const toolUseId = asString(block.tool_use_id) ?? `${id}-${index}`;
+        const failed = block.is_error === true;
         events.push({
           type: 'message',
-          id: asString(block.tool_use_id) ?? `${id}-${index}`,
+          id: toolUseId,
           role: 'tool',
           toolName: 'tool_result',
-          toolStatus: block.is_error === true ? 'error' : 'done',
+          toolStatus: failed ? 'error' : 'done',
           content: text,
           timestamp: Date.now(),
         });
+        events.push(
+          toolTrace(toolUseId, 'tool_result', failed ? 'error' : 'done', {
+            output: traceText(text),
+          })
+        );
       }
     }
   } else if (type === 'result') {
@@ -165,6 +215,9 @@ export function mapClaudeFamilyRecord(record: unknown): RuntimeEvent[] {
         timestamp: Date.now(),
       });
     }
+    // Run-level usage; emitted before the status flip so it merges into the active run row.
+    const resultUsage = modelUsageTrace(`model-result-${id}`, record.usage);
+    if (resultUsage) events.push(resultUsage);
     events.push({ type: 'status', status: record.is_error === true ? 'error' : 'idle' });
   }
   return events;

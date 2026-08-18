@@ -385,15 +385,7 @@ export class TaskSession {
       }
     }
     if (event.type === 'trace') {
-      runtime.trace.set(event.id, {
-        id: event.id,
-        type: event.traceType,
-        title: event.title,
-        ...(event.detail !== undefined ? { detail: event.detail } : {}),
-        status: event.status,
-        timestamp: event.timestamp,
-        ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
-      });
+      this.applyTraceEvent(runtime, event);
     }
     if (event.type === 'status') {
       task.status = event.status;
@@ -426,6 +418,53 @@ export class TaskSession {
     this.persistTask();
     this.persistTrace();
     this.notify();
+  }
+
+  /**
+   * Trace projection with merge semantics:
+   * - model events enrich the synthetic run row, so each round keeps one model
+   *   row carrying aggregated tokens/ttft instead of duplicate per-message rows;
+   * - same-id events (tool start -> tool result) merge field by field, keeping
+   *   the first timestamp so the row keeps its start time.
+   */
+  private applyTraceEvent(
+    runtime: TaskRuntimeState,
+    event: Extract<RuntimeEvent, { type: 'trace' }>
+  ): void {
+    if (event.traceType === 'model' && runtime.activeRunId) {
+      const run = runtime.trace.get(runtime.activeRunId);
+      if (run) {
+        if (event.tokensIn !== undefined) run.tokensIn = (run.tokensIn ?? 0) + event.tokensIn;
+        if (event.tokensOut !== undefined) run.tokensOut = (run.tokensOut ?? 0) + event.tokensOut;
+        if (event.ttftMs !== undefined) {
+          run.ttftMs = Math.min(run.ttftMs ?? event.ttftMs, event.ttftMs);
+        }
+        if (run.input === undefined && event.input !== undefined) run.input = event.input;
+        if (run.output === undefined && event.output !== undefined) run.output = event.output;
+        return;
+      }
+    }
+    const previous = runtime.trace.get(event.id);
+    const row: TraceEvent = previous
+      ? { ...previous }
+      : {
+          id: event.id,
+          type: event.traceType,
+          title: event.title,
+          status: event.status,
+          timestamp: event.timestamp,
+        };
+    row.type = event.traceType;
+    row.title = event.title;
+    row.status = event.status;
+    if (event.detail !== undefined) row.detail = event.detail;
+    if (event.durationMs !== undefined) row.durationMs = event.durationMs;
+    if (event.tokensIn !== undefined) row.tokensIn = event.tokensIn;
+    if (event.tokensOut !== undefined) row.tokensOut = event.tokensOut;
+    if (event.input !== undefined) row.input = event.input;
+    if (event.output !== undefined) row.output = event.output;
+    if (event.ttftMs !== undefined) row.ttftMs = event.ttftMs;
+    runtime.trace.set(event.id, row);
   }
 
   private transcriptFrom(event: Extract<RuntimeEvent, { type: 'message' }>): TranscriptItem {

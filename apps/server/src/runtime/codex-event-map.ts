@@ -58,6 +58,30 @@ type ItemMapper = (
 const toolStatusOf = (item: UnknownRecord, completed: boolean): 'running' | 'done' | 'error' =>
   completed ? (item.status === 'failed' ? 'error' : 'done') : 'running';
 
+/** Same-id tool trace row; task-session merges start (input) and completion (output). */
+function codexToolTrace(
+  id: string,
+  title: string,
+  timestamp: number,
+  status: 'running' | 'done' | 'error',
+  fields: { input?: string; output?: string } = {}
+): RuntimeEvent {
+  return RuntimeEventSchema.parse({
+    type: 'trace',
+    id,
+    traceType: 'tool',
+    title,
+    status,
+    timestamp,
+    ...(fields.input !== undefined ? { input: fields.input } : {}),
+    ...(fields.output !== undefined ? { output: fields.output } : {}),
+  });
+}
+
+function optionalOutput(value: unknown): string | undefined {
+  return value === undefined || value === null ? undefined : boundedText(value);
+}
+
 /**
  * Codex item.type -> RuntimeEvent[] mappers (same pure-seam pattern as
  * claude-family's mapClaudeFamilyRecord). Table-driven so each protocol kind
@@ -78,11 +102,18 @@ const ITEM_MAPPERS: Record<string, ItemMapper> = {
       toolName: 'command',
       toolStatus: toolStatusOf(item, completed),
     }),
+    codexToolTrace(id, 'command', timestamp, toolStatusOf(item, completed), {
+      ...(item.command !== undefined ? { input: boundedText(item.command) } : {}),
+      output: optionalOutput(item.aggregatedOutput),
+    }),
   ],
   fileChange: (item, id, timestamp, completed) => [
     codexMessage(id, 'tool', boundedText(item), timestamp, {
       toolName: 'fileChange',
       toolStatus: completed ? 'done' : 'running',
+    }),
+    codexToolTrace(id, 'fileChange', timestamp, completed ? 'done' : 'running', {
+      input: boundedText(item.changes ?? item),
     }),
   ],
   mcpToolCall: (item, id, timestamp, completed) => [
@@ -90,12 +121,32 @@ const ITEM_MAPPERS: Record<string, ItemMapper> = {
       toolName: 'mcpToolCall',
       toolStatus: completed ? 'done' : 'running',
     }),
+    codexToolTrace(
+      id,
+      typeof item.name === 'string' ? item.name : 'mcpToolCall',
+      timestamp,
+      completed ? (item.status === 'failed' ? 'error' : 'done') : 'running',
+      {
+        ...(item.arguments !== undefined ? { input: boundedText(item.arguments) } : {}),
+        output: optionalOutput(item.result ?? item.output),
+      }
+    ),
   ],
   dynamicToolCall: (item, id, timestamp, completed) => [
     codexMessage(id, 'tool', boundedText(item), timestamp, {
       toolName: 'dynamicToolCall',
       toolStatus: completed ? 'done' : 'running',
     }),
+    codexToolTrace(
+      id,
+      typeof item.name === 'string' ? item.name : 'dynamicToolCall',
+      timestamp,
+      completed ? (item.status === 'failed' ? 'error' : 'done') : 'running',
+      {
+        ...(item.arguments !== undefined ? { input: boundedText(item.arguments) } : {}),
+        output: optionalOutput(item.result ?? item.output),
+      }
+    ),
   ],
 };
 
