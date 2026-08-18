@@ -104,6 +104,19 @@ mkdir -p ~/.ev/skills && unzip -o ev-browser-skill-0.1.0.zip -d ~/.ev/skills
 把输出结果告诉用户。成功则安装完成；失败则按输出提示排查
 （通常是扩展未装好或 Chrome 未运行）。
 
+## 多浏览器（可选，高级）
+
+每个浏览器可以配对到自己独立的 EV Host profile（独立端口、独立配对记录，互不干扰）：
+
+1. 启动 profile Host：`~/.ev/bin/ev browser host serve --profile edge --background`
+   （首次自动分配空闲端口，从 43122 起，自动避开被占用的端口）
+2. 查看各 profile 的端口与配对状态：`~/.ev/bin/ev browser profile list`
+3. 在目标浏览器的 EV Browser 选项页，把"Host 地址"设为
+   `ws://127.0.0.1:<profile端口>/browser` 并保存，扩展会自动重连并配对
+4. agent 执行命令时加 `--profile edge` 即控制该浏览器；不加则用默认 profile
+
+默认 profile（default）无需任何配置，扩展默认连 43121 端口。
+
 ## 安全须知（转述给用户）
 
 - EV 只操作它自己打开的窗口和标签页，不会动用户正在用的页面。

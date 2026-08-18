@@ -53,6 +53,18 @@ ev browser check --compact
 
 A healthy response advertises top-level isolated actions in `actions` and commands allowed inside `session.command` in `sessionActions`.
 
+## Multiple browsers (profiles)
+
+Each browser can pair with its own Host profile (separate port, pairing, and sessions). The default profile needs no flags.
+
+```bash
+ev browser host serve --profile edge --background   # start a per-browser Host (auto-assigned free port)
+ev browser profile list                             # ports, online state, paired origins
+ev browser session.create --payload '{"url":"https://example.com"}' --profile edge
+```
+
+Point the target browser's extension at the profile port via its options page ("Host endpoint" = `ws://127.0.0.1:<port>/browser`); then every command with `--profile edge` drives that browser. Never mix profiles and session IDs: a session belongs to exactly one profile's Host.
+
 ## One-shot operation
 
 Use `oneShot` when one ordinary command is enough. The Host creates a window and group, executes the command, then releases the EV-owned tabs:
