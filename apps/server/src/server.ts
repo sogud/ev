@@ -343,7 +343,8 @@ async function main(resources: ServerStartupResources): Promise<void> {
     defineFleetPlugin({
       broadcast,
       herdrPath: process.env.EV_HERDR_PATH?.trim() || undefined,
-      intervalMs: Number.isFinite(fleetIntervalMs) && fleetIntervalMs > 0 ? fleetIntervalMs : undefined,
+      intervalMs:
+        Number.isFinite(fleetIntervalMs) && fleetIntervalMs > 0 ? fleetIntervalMs : undefined,
     })
   );
   const agents = await AgentService.create(kernel.runtimes, {

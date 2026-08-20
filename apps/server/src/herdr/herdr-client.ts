@@ -1,5 +1,11 @@
 import { execFile } from 'node:child_process';
-import type { FleetAgentStatus, FleetPane, FleetSnapshot, FleetTab, FleetWorkspace } from '@ev/contracts';
+import type {
+  FleetAgentStatus,
+  FleetPane,
+  FleetSnapshot,
+  FleetTab,
+  FleetWorkspace,
+} from '@ev/contracts';
 
 /**
  * Thin wrapper around the local herdr CLI (shell-out + JSON parsing).
@@ -81,9 +87,7 @@ export class HerdrClient {
   /** `agent get <paneId>`; null when the pane has no agent or herdr fails. */
   async getAgent(paneId: string): Promise<HerdrAgentInfo | null> {
     if (!isHerdrId(paneId)) return null;
-    const result = parseEnvelope(
-      await this.run(['agent', 'get', paneId], this.commandTimeoutMs)
-    );
+    const result = parseEnvelope(await this.run(['agent', 'get', paneId], this.commandTimeoutMs));
     const agentRaw = recordField(result, 'agent');
     if (!asRecord(agentRaw)) return null;
     const agent = agentRaw;
@@ -106,7 +110,17 @@ export class HerdrClient {
     if (!isHerdrId(paneId)) return null;
     const bounded = Math.min(Math.max(Math.trunc(lines), 1), MAX_READ_LINES);
     const stdout = await this.run(
-      ['pane', 'read', paneId, '--source', 'recent-unwrapped', '--lines', String(bounded), '--format', 'text'],
+      [
+        'pane',
+        'read',
+        paneId,
+        '--source',
+        'recent-unwrapped',
+        '--lines',
+        String(bounded),
+        '--format',
+        'text',
+      ],
       this.readTimeoutMs
     );
     return stdout === null ? null : stdout.replace(/\s+$/, '');
@@ -138,13 +152,15 @@ export class HerdrClient {
     return {
       workspaceId,
       name: typeof raw.label === 'string' && raw.label.length > 0 ? raw.label : undefined,
-      tabs: tabs.map(tab => ({ tabId: tab.tabId, label: tab.label, panes: panesByTab.get(tab.tabId) ?? [] })),
+      tabs: tabs.map(tab => ({
+        tabId: tab.tabId,
+        label: tab.label,
+        panes: panesByTab.get(tab.tabId) ?? [],
+      })),
     };
   }
 
-  private async listTabs(
-    workspaceId: string
-  ): Promise<Array<{ tabId: string; label?: string }>> {
+  private async listTabs(workspaceId: string): Promise<Array<{ tabId: string; label?: string }>> {
     const result = parseEnvelope(
       await this.run(['tab', 'list', '--workspace', workspaceId], this.commandTimeoutMs)
     );
@@ -159,9 +175,7 @@ export class HerdrClient {
       }));
   }
 
-  private async listPanes(
-    workspaceId: string
-  ): Promise<Array<{ tabId: string; pane: FleetPane }>> {
+  private async listPanes(workspaceId: string): Promise<Array<{ tabId: string; pane: FleetPane }>> {
     const result = parseEnvelope(
       await this.run(['pane', 'list', '--workspace', workspaceId], this.commandTimeoutMs)
     );

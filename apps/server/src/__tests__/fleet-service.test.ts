@@ -4,7 +4,9 @@ import type { FleetSnapshot } from '@ev/contracts';
 import { FLEET_UPDATE_CHANNEL, FleetService, defineFleetPlugin } from '../herdr/fleet-service';
 
 /** Client stub driven by the tests: probe/listFleet behavior is mutable. */
-function fakeClient(initial: { probe: boolean; snapshot: FleetSnapshot | null } = { probe: false, snapshot: null }) {
+function fakeClient(
+  initial: { probe: boolean; snapshot: FleetSnapshot | null } = { probe: false, snapshot: null }
+) {
   const state = { probe: initial.probe, snapshot: initial.snapshot, probeCalls: 0, listCalls: 0 };
   return {
     state,

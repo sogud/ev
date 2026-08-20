@@ -12,26 +12,106 @@ import { HerdrClient } from '../herdr/herdr-client';
  */
 
 const FIXTURE_WORKSPACES = [
-  { workspace_id: 'w1', label: 'alpha', number: 1, focused: true, tab_count: 2, pane_count: 4, agent_status: 'working', active_tab_id: 'w1:t1' },
-  { workspace_id: 'w2', number: 2, focused: false, tab_count: 1, pane_count: 1, agent_status: 'idle', active_tab_id: 'w2:t9' },
+  {
+    workspace_id: 'w1',
+    label: 'alpha',
+    number: 1,
+    focused: true,
+    tab_count: 2,
+    pane_count: 4,
+    agent_status: 'working',
+    active_tab_id: 'w1:t1',
+  },
+  {
+    workspace_id: 'w2',
+    number: 2,
+    focused: false,
+    tab_count: 1,
+    pane_count: 1,
+    agent_status: 'idle',
+    active_tab_id: 'w2:t9',
+  },
 ];
 
 const FIXTURE_TABS: Record<string, unknown[]> = {
   w1: [
-    { tab_id: 'w1:t1', workspace_id: 'w1', label: 'main', number: 1, focused: true, pane_count: 2, agent_status: 'working' },
-    { tab_id: 'w1:t2', workspace_id: 'w1', label: 'side', number: 2, focused: false, pane_count: 2, agent_status: 'idle' },
+    {
+      tab_id: 'w1:t1',
+      workspace_id: 'w1',
+      label: 'main',
+      number: 1,
+      focused: true,
+      pane_count: 2,
+      agent_status: 'working',
+    },
+    {
+      tab_id: 'w1:t2',
+      workspace_id: 'w1',
+      label: 'side',
+      number: 2,
+      focused: false,
+      pane_count: 2,
+      agent_status: 'idle',
+    },
   ],
-  w2: [{ tab_id: 'w2:t9', workspace_id: 'w2', label: 'solo', number: 1, focused: true, pane_count: 1, agent_status: 'idle' }],
+  w2: [
+    {
+      tab_id: 'w2:t9',
+      workspace_id: 'w2',
+      label: 'solo',
+      number: 1,
+      focused: true,
+      pane_count: 1,
+      agent_status: 'idle',
+    },
+  ],
 };
 
 const FIXTURE_PANES: Record<string, unknown[]> = {
   w1: [
-    { pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 'w1:t1', agent: 'pi', agent_status: 'working', cwd: '/tmp/a', terminal_title_stripped: 'π - main' },
-    { pane_id: 'w1:p2', workspace_id: 'w1', tab_id: 'w1:t1', agent: 'codex', agent_status: 'blocked', cwd: '/tmp/b' },
-    { pane_id: 'w1:p3', workspace_id: 'w1', tab_id: 'w1:t2', agent_status: 'unknown', cwd: '/tmp/c' },
-    { pane_id: 'w1:p4', workspace_id: 'w1', tab_id: 'w1:t2', agent: 'qoder', agent_status: 'something-weird', cwd: '/tmp/d' },
+    {
+      pane_id: 'w1:p1',
+      workspace_id: 'w1',
+      tab_id: 'w1:t1',
+      agent: 'pi',
+      agent_status: 'working',
+      cwd: '/tmp/a',
+      terminal_title_stripped: 'π - main',
+    },
+    {
+      pane_id: 'w1:p2',
+      workspace_id: 'w1',
+      tab_id: 'w1:t1',
+      agent: 'codex',
+      agent_status: 'blocked',
+      cwd: '/tmp/b',
+    },
+    {
+      pane_id: 'w1:p3',
+      workspace_id: 'w1',
+      tab_id: 'w1:t2',
+      agent_status: 'unknown',
+      cwd: '/tmp/c',
+    },
+    {
+      pane_id: 'w1:p4',
+      workspace_id: 'w1',
+      tab_id: 'w1:t2',
+      agent: 'qoder',
+      agent_status: 'something-weird',
+      cwd: '/tmp/d',
+    },
   ],
-  w2: [{ pane_id: 'w2:p1', workspace_id: 'w2', tab_id: 'w2:t9', agent: 'pi', agent_status: 'idle', cwd: '/tmp/e' }],
+  w2: [
+    {
+      pane_id: 'w2:p1',
+      workspace_id: 'w2',
+      tab_id: 'w2:t9',
+      agent: 'pi',
+      agent_status: 'idle',
+      cwd: '/tmp/e',
+    },
+  ],
 };
 
 function fakeScript(mode: string): string {
