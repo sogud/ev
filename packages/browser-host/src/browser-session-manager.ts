@@ -172,14 +172,23 @@ export class BrowserSessionManager {
   }
 
   private async list(): Promise<{ sessions: BrowserSessionSnapshot[] }> {
-    const sessions = await Promise.all(
+    const snapshots = await Promise.all(
       [...this.sessions.keys()].map(sessionId =>
-        this.enqueue(sessionId, async () => {
+        this.enqueue(sessionId, async (): Promise<BrowserSessionSnapshot | undefined> => {
           const session = this.requireSession(sessionId);
-          await this.refresh(session);
+          await this.refresh(session, true);
+          if (session.ownedTabIds.size === 0) {
+            // All tabs are gone (user closed the window/tab): drop the dead
+            // session instead of failing the whole listing.
+            this.sessions.delete(session.sessionId);
+            return undefined;
+          }
           return this.snapshot(session);
         })
       )
+    );
+    const sessions = snapshots.filter(
+      (snapshot): snapshot is BrowserSessionSnapshot => snapshot !== undefined
     );
     return BrowserSessionListResultSchema.parse({ sessions });
   }

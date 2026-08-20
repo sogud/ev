@@ -358,6 +358,27 @@ describe('BrowserSessionManager', () => {
     });
   });
 
+  it('listing drops dead sessions whose tabs all disappeared', async () => {
+    const browser = createFakeBrowser();
+    const manager = new BrowserSessionManager(browser.execute, sessionIds());
+
+    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+    // User closes the EV window: every owned tab vanishes outside EV.
+    browser.tabs.delete(11);
+
+    await expect(manager.execute({ action: 'browser.session.list' })).resolves.toEqual({
+      sessions: [],
+    });
+    // The dead session is dropped from the registry, not resurrected by later listings.
+    await expect(
+      manager.execute({
+        action: 'browser.session.command',
+        sessionId: SESSION_ONE,
+        command: { action: 'page.context' },
+      })
+    ).rejects.toThrow(/not found/);
+  });
+
   it('rejects session and tab limits before mutating Chrome', async () => {
     const sessionBrowser = createFakeBrowser();
     const sessionManager = new BrowserSessionManager(sessionBrowser.execute);
