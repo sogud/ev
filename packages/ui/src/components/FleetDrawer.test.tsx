@@ -75,9 +75,12 @@ describe('FleetDrawer', () => {
   });
 
   it('renders the pane header metadata and a close button', () => {
-    const markup = render({ status: 'loading' }, {
-      agent: { name: 'pi-agent', kind: 'pi', status: 'working' },
-    });
+    const markup = render(
+      { status: 'loading' },
+      {
+        agent: { name: 'pi-agent', kind: 'pi', status: 'working' },
+      }
+    );
     expect(markup).toContain('ticket 03');
     expect(markup).toContain('/tmp/ev');
     expect(markup).toContain('pi-agent · pi');

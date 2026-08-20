@@ -72,11 +72,7 @@ export function FleetPanel(): React.JSX.Element {
         }}
       />
       {selectedPane && (
-        <FleetDrawer
-          pane={selectedPane}
-          load={load}
-          onClose={() => setSelectedPaneId(null)}
-        />
+        <FleetDrawer pane={selectedPane} load={load} onClose={() => setSelectedPaneId(null)} />
       )}
     </div>
   );

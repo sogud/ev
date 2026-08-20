@@ -8,9 +8,7 @@ import { useTranslation } from 'react-i18next';
  * pure render so every state is reachable from tests/static markup.
  */
 export type FleetPaneLoad =
-  | { status: 'loading' }
-  | { status: 'ready'; output: string }
-  | { status: 'error'; error: string };
+  { status: 'loading' } | { status: 'ready'; output: string } | { status: 'error'; error: string };
 
 export interface FleetDrawerProps {
   pane: FleetPane;
