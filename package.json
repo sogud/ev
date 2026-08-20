@@ -5,7 +5,7 @@
   "description": "EV local-first agent workspace",
   "packageManager": "pnpm@10.12.2",
   "scripts": {
-    "dev": "pnpm run dev:desktop",
+    "dev": "pnpm run dev:server",
     "dev:desktop": "pnpm --dir apps/cli run build && node apps/cli/dist/ev.js server start && pnpm --dir apps/desktop run dev",
     "dev:extension": "pnpm --dir apps/browser-extension run dev",
     "dev:web": "pnpm --dir apps/cli run build && node apps/cli/dist/ev.js server start && pnpm --dir apps/web run dev",
@@ -27,7 +27,8 @@
     "lint": "eslint .",
     "quality": "knip --no-progress && madge --circular --extensions ts,tsx apps packages",
     "dev:site": "pnpm --dir apps/site run dev",
-    "build:site": "pnpm --dir apps/site run build"
+    "build:site": "pnpm --dir apps/site run build",
+    "dev:server": "pnpm --dir apps/server run build && node apps/desktop/dist-server/server.mjs"
   },
   "license": "Apache-2.0",
   "devDependencies": {
