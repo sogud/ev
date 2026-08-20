@@ -3,23 +3,28 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { FleetSnapshot } from '@ev/contracts';
 import { FLEET_UPDATE_CHANNEL, FleetService, defineFleetPlugin } from '../herdr/fleet-service';
 
-/** Client stub driven by the tests: probe/listFleet/readPane behavior is mutable. */
+/** Client stub driven by the tests: probe/listFleet/readPane/focusPane behavior is mutable. */
 function fakeClient(
   initial: {
     probe: boolean;
     snapshot: FleetSnapshot | null;
     /** Value readPane resolves to; null simulates pane-closed/herdr-down. */
     paneOutput?: string | null;
+    /** Value focusPane resolves to; false simulates pane-closed/herdr-down. */
+    focusOk?: boolean;
   } = { probe: false, snapshot: null }
 ) {
   const state = {
     probe: initial.probe,
     snapshot: initial.snapshot,
     paneOutput: initial.paneOutput ?? null,
+    focusOk: initial.focusOk ?? false,
     probeCalls: 0,
     listCalls: 0,
     readCalls: 0,
+    focusCalls: 0,
     lastReadArgs: null as { paneId: string; lines: number | undefined } | null,
+    lastFocusPaneId: null as string | null,
   };
   return {
     state,
@@ -36,6 +41,11 @@ function fakeClient(
         state.readCalls += 1;
         state.lastReadArgs = { paneId, lines };
         return state.paneOutput;
+      },
+      focusPane: async (paneId: string) => {
+        state.focusCalls += 1;
+        state.lastFocusPaneId = paneId;
+        return state.focusOk;
       },
     },
   };
@@ -192,6 +202,34 @@ describe('FleetService.readPane (on-demand, never polled)', () => {
     expect(fake.state.readCalls).toBe(0);
     await service.readPane('w1:p1');
     expect(fake.state.readCalls).toBe(1);
+  });
+});
+
+describe('FleetService.focusPane (the single fleet write operation)', () => {
+  it('delegates to the client and reports ok on success', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    fake.state.focusOk = true;
+    const result = await service.focusPane('w1:p1');
+    expect(result).toEqual({ ok: true });
+    expect(fake.state.focusCalls).toBe(1);
+    expect(fake.state.lastFocusPaneId).toBe('w1:p1');
+  });
+
+  it('maps a false client result (pane closed / no agent / herdr down) to an explicit error', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    fake.state.focusOk = false;
+    const result = await service.focusPane('w1:p1');
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeTruthy();
+  });
+
+  it('never calls focusPane from the polling loop', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    service.start();
+    await sleep(130);
+    service.stop();
+    expect(fake.state.listCalls).toBeGreaterThanOrEqual(2);
+    expect(fake.state.focusCalls).toBe(0);
   });
 });
 

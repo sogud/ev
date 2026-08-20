@@ -1,4 +1,4 @@
-import type { FleetPaneRead, FleetSnapshot } from '@ev/contracts';
+import type { FleetPaneFocus, FleetPaneRead, FleetSnapshot } from '@ev/contracts';
 import { type Context, Service, type Plugin } from 'cordis';
 import { HerdrClient } from './herdr-client';
 
@@ -35,7 +35,7 @@ export interface FleetServiceOptions {
   probeBackoffMs?: number;
   probeTimeoutMs?: number;
   /** Test hook: substitute the CLI client. */
-  client?: Pick<HerdrClient, 'probe' | 'listFleet' | 'readPane'>;
+  client?: Pick<HerdrClient, 'probe' | 'listFleet' | 'readPane' | 'focusPane'>;
 }
 
 const DEFAULT_INTERVAL_MS = 5_000;
@@ -48,7 +48,7 @@ export class FleetService extends Service {
   static provide = 'fleet';
 
   private readonly options: FleetServiceOptions;
-  private readonly client: Pick<HerdrClient, 'probe' | 'listFleet' | 'readPane'>;
+  private readonly client: Pick<HerdrClient, 'probe' | 'listFleet' | 'readPane' | 'focusPane'>;
   private readonly intervalMs: number;
   private readonly probeBackoffBaseMs: number;
 
@@ -113,6 +113,23 @@ export class FleetService extends Service {
       };
     }
     return { ok: true, output };
+  }
+
+  /**
+   * The fleet's single write operation (`fleet:focusPane`): focus the pane's
+   * agent in Herdr so the human can attach from the original terminal. A
+   * false from the client (pane closed, no focusable agent, herdr down) maps
+   * to an explicit error result so the UI can show a clear message.
+   */
+  async focusPane(paneId: string): Promise<FleetPaneFocus> {
+    const focused = await this.client.focusPane(paneId);
+    if (!focused) {
+      return {
+        ok: false,
+        error: 'Unable to focus pane (pane closed, no focusable agent, or Herdr unreachable).',
+      };
+    }
+    return { ok: true };
   }
 
   private schedule(delayMs: number): void {

@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import type { BrowserBridgeService } from '@ev/browser-host';
 import type {
+  FleetPaneFocus,
   FleetPaneRead,
   FleetSnapshot,
   ipcRegistry,
@@ -22,6 +23,8 @@ export interface ServerDeps {
   fleetSnapshot: () => FleetSnapshot;
   /** On-demand pane output pull for fleet:readPane (never part of polling). */
   fleetReadPane: (paneId: string, lines?: number) => Promise<FleetPaneRead>;
+  /** The fleet's single write operation for fleet:focusPane. */
+  fleetFocusPane: (paneId: string) => Promise<FleetPaneFocus>;
 }
 
 /**
@@ -130,6 +133,7 @@ export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> 
     fleet: {
       get: () => deps.fleetSnapshot(),
       readPane: (paneId, lines) => deps.fleetReadPane(paneId, lines),
+      focusPane: paneId => deps.fleetFocusPane(paneId),
     },
   };
 }
