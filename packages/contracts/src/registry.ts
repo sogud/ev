@@ -14,6 +14,7 @@ import type {
   TaskSummary,
   ThinkingLevel,
 } from './domain';
+import type { FleetSnapshot } from './fleet';
 import type { RuntimeDescriptor, RuntimeId } from './runtime';
 
 /** A client shell connected to the server; presence is driven by live WS sessions. */
@@ -105,6 +106,12 @@ export const ipcRegistry = {
   devices: {
     list: call<[], DevicePresence[]>('devices:list', 'observer'),
     onUpdate: event<DevicePresence[]>('devices:update'),
+  },
+  fleet: {
+    // Herdr fleet view (herdr-fleet-v1): read-only snapshot; live changes
+    // arrive as fleet:update pushes over the shared client-sync WS channel.
+    get: call<[], FleetSnapshot>('fleet:get', 'observer'),
+    onUpdate: event<FleetSnapshot>('fleet:update'),
   },
 };
 

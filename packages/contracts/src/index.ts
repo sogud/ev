@@ -4,6 +4,7 @@ import { EV_PROTOCOL_VERSION } from './protocol';
 
 export { EV_PROTOCOL_VERSION } from './protocol';
 export * from './browser';
+export * from './fleet';
 export * from './runtime';
 export * from './registry';
 
