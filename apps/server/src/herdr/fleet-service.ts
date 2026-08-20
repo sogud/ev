@@ -1,4 +1,4 @@
-import type { FleetSnapshot } from '@ev/contracts';
+import type { FleetPaneRead, FleetSnapshot } from '@ev/contracts';
 import { type Context, Service, type Plugin } from 'cordis';
 import { HerdrClient } from './herdr-client';
 
@@ -35,7 +35,7 @@ export interface FleetServiceOptions {
   probeBackoffMs?: number;
   probeTimeoutMs?: number;
   /** Test hook: substitute the CLI client. */
-  client?: Pick<HerdrClient, 'probe' | 'listFleet'>;
+  client?: Pick<HerdrClient, 'probe' | 'listFleet' | 'readPane'>;
 }
 
 const DEFAULT_INTERVAL_MS = 5_000;
@@ -48,7 +48,7 @@ export class FleetService extends Service {
   static provide = 'fleet';
 
   private readonly options: FleetServiceOptions;
-  private readonly client: Pick<HerdrClient, 'probe' | 'listFleet'>;
+  private readonly client: Pick<HerdrClient, 'probe' | 'listFleet' | 'readPane'>;
   private readonly intervalMs: number;
   private readonly probeBackoffBaseMs: number;
 
@@ -95,6 +95,24 @@ export class FleetService extends Service {
   /** Last known snapshot for on-demand fetches (`fleet:get`). */
   snapshot(): FleetSnapshot {
     return this.lastSnapshot;
+  }
+
+  /**
+   * On-demand pane output pull (`fleet:readPane`). Delegates to
+   * herdr-client.readPane (recent-unwrapped). This is the ONLY place terminal
+   * text is fetched, and it is never called from the poll loop — readPane must
+   * stay off the polling path. A null from the client (pane gone / herdr down /
+   * timeout) maps to an explicit error result so the UI never renders a blank.
+   */
+  async readPane(paneId: string, lines?: number): Promise<FleetPaneRead> {
+    const output = await this.client.readPane(paneId, lines);
+    if (output === null) {
+      return {
+        ok: false,
+        error: 'Unable to read pane output (pane closed or Herdr unreachable).',
+      };
+    }
+    return { ok: true, output };
   }
 
   private schedule(delayMs: number): void {

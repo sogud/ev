@@ -389,6 +389,7 @@ async function main(resources: ServerStartupResources): Promise<void> {
     broadcast,
     listDevices: deviceSnapshot,
     fleetSnapshot: () => kernel.context.fleet.snapshot(),
+    fleetReadPane: (paneId, lines) => kernel.context.fleet.readPane(paneId, lines),
   });
   agents.setListener(task => broadcast('tasks:update', task));
   browserBridge.subscribe(snapshot => broadcast('browserBridge:update', snapshot));

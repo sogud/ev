@@ -1,6 +1,12 @@
 import { execFile } from 'node:child_process';
 import type { BrowserBridgeService } from '@ev/browser-host';
-import type { FleetSnapshot, ipcRegistry, DevicePresence, HandlersOf } from '@ev/contracts';
+import type {
+  FleetPaneRead,
+  FleetSnapshot,
+  ipcRegistry,
+  DevicePresence,
+  HandlersOf,
+} from '@ev/contracts';
 import type { AgentService } from './agent-service';
 import type { ManagementService } from './management-service';
 
@@ -14,6 +20,8 @@ export interface ServerDeps {
   listDevices: () => DevicePresence[];
   /** Last fleet snapshot for fleet:get (Herdr fleet view, herdr-fleet-v1). */
   fleetSnapshot: () => FleetSnapshot;
+  /** On-demand pane output pull for fleet:readPane (never part of polling). */
+  fleetReadPane: (paneId: string, lines?: number) => Promise<FleetPaneRead>;
 }
 
 /**
@@ -121,6 +129,7 @@ export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> 
     },
     fleet: {
       get: () => deps.fleetSnapshot(),
+      readPane: (paneId, lines) => deps.fleetReadPane(paneId, lines),
     },
   };
 }

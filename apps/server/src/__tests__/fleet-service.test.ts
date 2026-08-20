@@ -3,11 +3,24 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { FleetSnapshot } from '@ev/contracts';
 import { FLEET_UPDATE_CHANNEL, FleetService, defineFleetPlugin } from '../herdr/fleet-service';
 
-/** Client stub driven by the tests: probe/listFleet behavior is mutable. */
+/** Client stub driven by the tests: probe/listFleet/readPane behavior is mutable. */
 function fakeClient(
-  initial: { probe: boolean; snapshot: FleetSnapshot | null } = { probe: false, snapshot: null }
+  initial: {
+    probe: boolean;
+    snapshot: FleetSnapshot | null;
+    /** Value readPane resolves to; null simulates pane-closed/herdr-down. */
+    paneOutput?: string | null;
+  } = { probe: false, snapshot: null }
 ) {
-  const state = { probe: initial.probe, snapshot: initial.snapshot, probeCalls: 0, listCalls: 0 };
+  const state = {
+    probe: initial.probe,
+    snapshot: initial.snapshot,
+    paneOutput: initial.paneOutput ?? null,
+    probeCalls: 0,
+    listCalls: 0,
+    readCalls: 0,
+    lastReadArgs: null as { paneId: string; lines: number | undefined } | null,
+  };
   return {
     state,
     client: {
@@ -18,6 +31,11 @@ function fakeClient(
       listFleet: async () => {
         state.listCalls += 1;
         return state.snapshot;
+      },
+      readPane: async (paneId: string, lines?: number) => {
+        state.readCalls += 1;
+        state.lastReadArgs = { paneId, lines };
+        return state.paneOutput;
       },
     },
   };
@@ -128,6 +146,52 @@ describe('FleetService polling and degradation', () => {
   it('snapshot() before any fetch reports unavailable without a fetch timestamp', () => {
     const { service } = createService({ probe: false });
     expect(service.snapshot()).toEqual({ available: false, fetchedAt: 0, workspaces: [] });
+  });
+});
+
+describe('FleetService.readPane (on-demand, never polled)', () => {
+  it('delegates to the client and returns the raw output on success', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    fake.state.paneOutput = 'line1\nline2';
+    const result = await service.readPane('w1:p1', 60);
+    expect(result).toEqual({ ok: true, output: 'line1\nline2' });
+    expect(fake.state.readCalls).toBe(1);
+    expect(fake.state.lastReadArgs).toEqual({ paneId: 'w1:p1', lines: 60 });
+  });
+
+  it('passes through an undefined line count (server default applies downstream)', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    fake.state.paneOutput = 'x';
+    await service.readPane('w1:p1');
+    expect(fake.state.lastReadArgs).toEqual({ paneId: 'w1:p1', lines: undefined });
+  });
+
+  it('treats an empty string as a successful empty pane (not an error)', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    fake.state.paneOutput = '';
+    const result = await service.readPane('w1:p1');
+    expect(result).toEqual({ ok: true, output: '' });
+  });
+
+  it('maps a null client result (pane closed / herdr down) to an explicit error', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    fake.state.paneOutput = null;
+    const result = await service.readPane('w1:p1');
+    expect(result.ok).toBe(false);
+    expect(result.output).toBeUndefined();
+    expect(result.error).toBeTruthy();
+  });
+
+  it('never calls readPane from the polling loop', async () => {
+    const { service, fake } = createService({ probe: true, snapshot: fleetSnapshot(1) });
+    service.start();
+    await sleep(130);
+    service.stop();
+    // Several polls happened, but readPane stays untouched until explicitly invoked.
+    expect(fake.state.listCalls).toBeGreaterThanOrEqual(2);
+    expect(fake.state.readCalls).toBe(0);
+    await service.readPane('w1:p1');
+    expect(fake.state.readCalls).toBe(1);
   });
 });
 
