@@ -14,7 +14,7 @@ import type {
   TaskSummary,
   ThinkingLevel,
 } from './domain';
-import type { FleetSnapshot } from './fleet';
+import type { FleetPaneRead, FleetSnapshot } from './fleet';
 import type { RuntimeDescriptor, RuntimeId } from './runtime';
 
 /** A client shell connected to the server; presence is driven by live WS sessions. */
@@ -111,6 +111,10 @@ export const ipcRegistry = {
     // Herdr fleet view (herdr-fleet-v1): read-only snapshot; live changes
     // arrive as fleet:update pushes over the shared client-sync WS channel.
     get: call<[], FleetSnapshot>('fleet:get', 'observer'),
+    // On-demand pane output pull (never polled): raw recent terminal text,
+    // treated as untrusted display data by the UI. lines is optional (server
+    // default 60); returns a result object so the UI can show a clear error.
+    readPane: call<[string, number?], FleetPaneRead>('fleet:readPane', 'observer'),
     onUpdate: event<FleetSnapshot>('fleet:update'),
   },
 };

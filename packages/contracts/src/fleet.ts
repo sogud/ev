@@ -58,3 +58,20 @@ export const FleetSnapshotSchema = z.object({
 });
 
 export type FleetSnapshot = z.infer<typeof FleetSnapshotSchema>;
+
+/**
+ * On-demand read of one pane's recent raw terminal output
+ * (`fleet:readPane`, herdr-fleet-v1). Fetched lazily on click — never part of
+ * polling — and treated as untrusted display data: the UI renders it as plain
+ * text and never executes or link-parses it. `output` is bounded so a
+ * hostile/oversized CLI read cannot balloon the response payload.
+ */
+export const FleetPaneReadSchema = z.object({
+  ok: z.boolean(),
+  /** Raw terminal text; empty string is a valid "pane has no output" success. */
+  output: z.string().max(4_000_000).optional(),
+  /** Present when ok=false: a short, UI-safe reason (pane closed, herdr down). */
+  error: z.string().max(1024).optional(),
+});
+
+export type FleetPaneRead = z.infer<typeof FleetPaneReadSchema>;
