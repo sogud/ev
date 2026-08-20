@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatPanel } from './components/ChatPanel';
 import { EvMark } from './components/EvMark';
+import { FleetPanel } from './components/FleetPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { Sidebar } from './components/Sidebar';
 import { useViewport } from './hooks/useViewport';
@@ -15,6 +16,8 @@ export default function App(): React.JSX.Element {
   // tree renders in both kinds, only the shell state differs.
   const viewport = useViewport();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Fleet (herdr-fleet-v1 prototype) swaps the main area; picking a task returns to chat.
+  const [view, setView] = useState<'chat' | 'fleet'>('chat');
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -91,21 +94,31 @@ export default function App(): React.JSX.Element {
         selectedId={store.selectedId}
         defaultWorkspace={store.settings.defaultWorkspace}
         runtimes={store.runtimes}
+        activeView={view}
         onSelect={id => {
           setSidebarOpen(false);
+          setView('chat');
           void store.selectTask(id);
         }}
         onCreate={() => {
           setSidebarOpen(false);
+          setView('chat');
           void store.createTask();
         }}
         onRemove={id => void store.removeTask(id)}
+        onOpenFleet={() => {
+          setSidebarOpen(false);
+          setView('fleet');
+        }}
         onSettings={() => store.openSettings(true)}
       />
       {viewport === 'mobile' && sidebarOpen && (
         <div className='sidebar-backdrop' onClick={() => setSidebarOpen(false)} />
       )}
-      <ChatPanel
+      {view === 'fleet' ? (
+        <FleetPanel />
+      ) : (
+        <ChatPanel
         task={store.detail}
         onOpenSidebar={viewport === 'mobile' ? () => setSidebarOpen(true) : undefined}
         providers={store.providers}
@@ -137,7 +150,8 @@ export default function App(): React.JSX.Element {
             store.selectRuntime(id);
           }
         }}
-      />
+        />
+      )}
       {store.settingsOpen && <SettingsModal onClose={() => store.openSettings(false)} />}
       {store.error && (
         <div className='error-toast' role='alert'>

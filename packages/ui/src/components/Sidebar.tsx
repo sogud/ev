@@ -1,4 +1,4 @@
-import { FolderOpen, Plus, Settings, Trash2 } from 'lucide-react';
+import { FolderOpen, LayoutGrid, Plus, Settings, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { i18n } from '../i18n';
@@ -10,9 +10,12 @@ interface SidebarProps {
   selectedId: string | null;
   defaultWorkspace: string | null;
   runtimes: RuntimeDescriptor[];
+  /** Which main-area view is open (herdr-fleet-v1 prototype). */
+  activeView: 'chat' | 'fleet';
   onSelect(id: string): void;
   onCreate(): void;
   onRemove(id: string): void;
+  onOpenFleet(): void;
   onSettings(): void;
 }
 
@@ -83,9 +86,11 @@ export function Sidebar({
   selectedId,
   defaultWorkspace,
   runtimes,
+  activeView,
   onSelect,
   onCreate,
   onRemove,
+  onOpenFleet,
   onSettings,
 }: SidebarProps): React.JSX.Element {
   const { t } = useTranslation();
@@ -155,6 +160,15 @@ export function Sidebar({
           <FolderOpen size={15} />
           <span>{defaultWorkspace?.split('/').pop() ?? t('sidebar.noWorkspace')}</span>
         </div>
+        <button
+          className={activeView === 'fleet' ? 'icon-button fleet-toggle active' : 'icon-button fleet-toggle'}
+          type='button'
+          aria-label={t('fleet.openAria')}
+          aria-pressed={activeView === 'fleet'}
+          data-testid='fleet-open'
+          onClick={onOpenFleet}>
+          <LayoutGrid size={17} />
+        </button>
         <button
           className='icon-button'
           type='button'

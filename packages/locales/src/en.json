@@ -65,6 +65,23 @@
     "hoursAgo": "{{count}}h ago",
     "daysAgo": "{{count}}d ago"
   },
+  "fleet": {
+    "title": "Fleet",
+    "openAria": "Open fleet view",
+    "loading": "Loading fleet…",
+    "unavailable": "Herdr isn't detected on this machine, so there is no fleet to show.",
+    "stale": "data may be outdated",
+    "updated": "updated {{time}}",
+    "workingCount": "{{count}} working",
+    "blockedCount": "{{count}} blocked",
+    "paneCount": "{{count}} panes",
+    "emptyFleet": "Herdr is running but reported no panes.",
+    "statusWorking": "working",
+    "statusBlocked": "blocked",
+    "statusDone": "done",
+    "statusIdle": "idle",
+    "statusUnknown": "unknown"
+  },
   "composer": {
     "placeholder": "Give EV something to do…",
     "inputAria": "Message input",

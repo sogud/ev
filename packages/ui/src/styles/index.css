@@ -2373,3 +2373,185 @@ textarea {
   margin-left: auto;
   font-size: 12px;
 }
+
+/* ---------- Fleet view (herdr-fleet-v1 prototype) ---------- */
+
+.fleet-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ev-color-bg-canvas);
+}
+
+.fleet-header {
+  height: 52px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--ev-color-border-subtle);
+  -webkit-app-region: drag;
+}
+
+.fleet-header > * {
+  -webkit-app-region: no-drag;
+}
+
+.fleet-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ev-color-text-primary);
+}
+
+.fleet-meta {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ev-color-text-quaternary);
+}
+
+.fleet-stale {
+  color: var(--ev-color-status-warning);
+}
+
+.fleet-chip {
+  padding: 1px 8px;
+  border-radius: var(--ev-radius-full);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fleet-chip-blocked {
+  color: var(--ev-color-status-warning);
+  background: var(--ev-color-status-warning-surface);
+}
+
+.fleet-chip-working {
+  color: var(--ev-color-status-info);
+  background: var(--ev-color-status-info-surface);
+}
+
+.fleet-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  font-size: 13px;
+  color: var(--ev-color-text-secondary);
+  text-align: center;
+}
+
+.fleet-tree {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.fleet-workspace-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ev-color-text-secondary);
+}
+
+.fleet-tab {
+  margin-bottom: 12px;
+}
+
+.fleet-tab-label {
+  margin: 0 0 4px 10px;
+  font-size: 11px;
+  color: var(--ev-color-text-quaternary);
+}
+
+.fleet-pane {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--ev-color-border-subtle);
+  border-radius: var(--ev-radius-md);
+  background: var(--ev-color-bg-surface);
+}
+
+.fleet-status-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--ev-radius-full);
+}
+
+.fleet-status-working .fleet-status-dot {
+  background: var(--ev-color-status-info);
+}
+
+/* blocked is the headline: colored dot + tinted row + colored border */
+.fleet-status-blocked {
+  border-color: var(--ev-color-status-warning);
+  background: var(--ev-color-status-warning-surface);
+}
+
+.fleet-status-blocked .fleet-status-dot {
+  background: var(--ev-color-status-warning);
+}
+
+.fleet-status-done .fleet-status-dot {
+  background: var(--ev-color-status-success);
+}
+
+.fleet-status-idle .fleet-status-dot {
+  background: var(--ev-color-icon-tertiary);
+}
+
+.fleet-status-unknown .fleet-status-dot {
+  background: transparent;
+  border: 1.5px dashed var(--ev-color-border-strong);
+}
+
+.fleet-pane-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--ev-color-text-primary);
+}
+
+.fleet-pane-agent {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--ev-color-border-default);
+  border-radius: var(--ev-radius-full);
+  font-size: 11px;
+  color: var(--ev-color-text-tertiary);
+}
+
+.fleet-pane-cwd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* keep the path tail (file-level detail) visible when truncating */
+  direction: rtl;
+  text-align: left;
+  font-size: 11px;
+  color: var(--ev-color-text-quaternary);
+}
+
+.fleet-toggle.active {
+  color: var(--ev-color-text-primary);
+  background: var(--ev-color-bg-active);
+}

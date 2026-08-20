@@ -65,6 +65,23 @@
     "hoursAgo": "{{count}} 小时前",
     "daysAgo": "{{count}} 天前"
   },
+  "fleet": {
+    "title": "Fleet",
+    "openAria": "打开 Fleet 视图",
+    "loading": "正在加载 fleet…",
+    "unavailable": "未检测到本机 Herdr，没有可显示的 fleet。",
+    "stale": "数据可能已过期",
+    "updated": "更新于 {{time}}",
+    "workingCount": "{{count}} 个 working",
+    "blockedCount": "{{count}} 个 blocked",
+    "paneCount": "{{count}} 个 pane",
+    "emptyFleet": "Herdr 在运行，但没有上报任何 pane。",
+    "statusWorking": "working",
+    "statusBlocked": "blocked",
+    "statusDone": "done",
+    "statusIdle": "idle",
+    "statusUnknown": "unknown"
+  },
   "composer": {
     "placeholder": "让 EV 处理一件事…",
     "inputAria": "输入消息",

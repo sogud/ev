@@ -9,6 +9,7 @@ import '@ev/ui/styles/index.css';
 // server-client-split-v1: the renderer is a pure HTTP+WS client (isomorphic between
 // the desktop shell and the web form). Electron main injects the URL hash; the
 // ElectronTransport reads it — never IPC.
+// Fleet view (herdr-fleet-v1) mounts through <App /> — same shared mount as the web form.
 installTransport(createElectronTransport());
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
