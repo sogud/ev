@@ -161,7 +161,9 @@ export function Sidebar({
           <span>{defaultWorkspace?.split('/').pop() ?? t('sidebar.noWorkspace')}</span>
         </div>
         <button
-          className={activeView === 'fleet' ? 'icon-button fleet-toggle active' : 'icon-button fleet-toggle'}
+          className={
+            activeView === 'fleet' ? 'icon-button fleet-toggle active' : 'icon-button fleet-toggle'
+          }
           type='button'
           aria-label={t('fleet.openAria')}
           aria-pressed={activeView === 'fleet'}

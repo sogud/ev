@@ -119,37 +119,37 @@ export default function App(): React.JSX.Element {
         <FleetPanel />
       ) : (
         <ChatPanel
-        task={store.detail}
-        onOpenSidebar={viewport === 'mobile' ? () => setSidebarOpen(true) : undefined}
-        providers={store.providers}
-        runtimes={store.runtimes}
-        canSwitch={canSwitch}
-        selectedModel={selectedModel}
-        runtimeId={
-          store.detail?.runtime?.runtimeId ??
-          store.detail?.pendingRuntimeId ??
-          store.selectedRuntimeId
-        }
-        thinkingLevel={thinkingLevel}
-        defaultWorkspace={store.settings.defaultWorkspace ?? ''}
-        onCreate={() => void store.createTask()}
-        onSend={prompt => void store.sendPrompt(prompt)}
-        onAbort={() => void store.abort()}
-        onModel={(provider, model) => {
-          if (store.detail) void store.setModel(provider, model);
-          else void store.updateSettings({ defaultProvider: provider, defaultModel: model });
-        }}
-        onThinking={level => {
-          if (store.detail) void store.setThinkingLevel(level);
-          else void store.updateSettings({ defaultThinkingLevel: level });
-        }}
-        onRuntime={id => {
-          if (store.detail && store.detail.messages.length === 0) {
-            void store.setTaskRuntime(store.detail.id, id);
-          } else if (!store.detail) {
-            store.selectRuntime(id);
+          task={store.detail}
+          onOpenSidebar={viewport === 'mobile' ? () => setSidebarOpen(true) : undefined}
+          providers={store.providers}
+          runtimes={store.runtimes}
+          canSwitch={canSwitch}
+          selectedModel={selectedModel}
+          runtimeId={
+            store.detail?.runtime?.runtimeId ??
+            store.detail?.pendingRuntimeId ??
+            store.selectedRuntimeId
           }
-        }}
+          thinkingLevel={thinkingLevel}
+          defaultWorkspace={store.settings.defaultWorkspace ?? ''}
+          onCreate={() => void store.createTask()}
+          onSend={prompt => void store.sendPrompt(prompt)}
+          onAbort={() => void store.abort()}
+          onModel={(provider, model) => {
+            if (store.detail) void store.setModel(provider, model);
+            else void store.updateSettings({ defaultProvider: provider, defaultModel: model });
+          }}
+          onThinking={level => {
+            if (store.detail) void store.setThinkingLevel(level);
+            else void store.updateSettings({ defaultThinkingLevel: level });
+          }}
+          onRuntime={id => {
+            if (store.detail && store.detail.messages.length === 0) {
+              void store.setTaskRuntime(store.detail.id, id);
+            } else if (!store.detail) {
+              store.selectRuntime(id);
+            }
+          }}
         />
       )}
       {store.settingsOpen && <SettingsModal onClose={() => store.openSettings(false)} />}

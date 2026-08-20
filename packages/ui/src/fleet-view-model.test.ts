@@ -82,12 +82,7 @@ describe('buildFleetView', () => {
     );
 
     if (view.state !== 'ready') throw new Error('expected ready');
-    expect(view.workspaces[0].tabs[0].panes.map(pane => pane.paneId)).toEqual([
-      'b',
-      'd',
-      'a',
-      'c',
-    ]);
+    expect(view.workspaces[0].tabs[0].panes.map(pane => pane.paneId)).toEqual(['b', 'd', 'a', 'c']);
     expect(view.workspaces[0].blockedCount).toBe(2);
   });
 
