@@ -80,7 +80,15 @@
     "statusBlocked": "blocked",
     "statusDone": "done",
     "statusIdle": "idle",
-    "statusUnknown": "unknown"
+    "statusUnknown": "unknown",
+    "drawer": {
+      "aria": "Pane output drawer",
+      "closeAria": "Close output drawer",
+      "untrusted": "Raw terminal output (untrusted data)",
+      "loading": "Reading pane output…",
+      "empty": "This pane has no output yet.",
+      "errorFallback": "Failed to read pane output."
+    }
   },
   "composer": {
     "placeholder": "Give EV something to do…",

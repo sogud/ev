@@ -49,6 +49,26 @@ export type FleetView =
       workspaces: FleetWorkspaceView[];
     };
 
+/**
+ * Locate a raw pane by id within a snapshot (workspace → tab → pane). Used by
+ * the drawer container to pull header metadata for the selected pane. Returns
+ * undefined when the snapshot is still loading or the pane has since closed.
+ */
+export function findFleetPane(
+  snapshot: FleetSnapshot | null,
+  paneId: string | null
+): FleetPane | undefined {
+  if (!snapshot || !paneId) return undefined;
+  for (const workspace of snapshot.workspaces) {
+    for (const tab of workspace.tabs) {
+      for (const pane of tab.panes) {
+        if (pane.paneId === paneId) return pane;
+      }
+    }
+  }
+  return undefined;
+}
+
 function paneView(pane: FleetPane): FleetPaneView {
   return {
     paneId: pane.paneId,

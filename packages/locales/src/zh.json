@@ -80,7 +80,15 @@
     "statusBlocked": "blocked",
     "statusDone": "done",
     "statusIdle": "idle",
-    "statusUnknown": "unknown"
+    "statusUnknown": "unknown",
+    "drawer": {
+      "aria": "Pane 输出抽屉",
+      "closeAria": "关闭输出抽屉",
+      "untrusted": "终端原始输出（不可信数据）",
+      "loading": "正在读取 pane 输出…",
+      "empty": "该 pane 暂无输出。",
+      "errorFallback": "读取 pane 输出失败。"
+    }
   },
   "composer": {
     "placeholder": "让 EV 处理一件事…",

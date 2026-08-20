@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FleetSnapshot } from '@ev/contracts';
-import { buildFleetView } from './fleet-view-model';
+import { buildFleetView, findFleetPane } from './fleet-view-model';
 
 function snapshot(partial: Partial<FleetSnapshot>): FleetSnapshot {
   return { available: true, fetchedAt: 1_700_000_000_000, workspaces: [], ...partial };
@@ -152,5 +152,34 @@ describe('buildFleetView', () => {
     const seen = view.workspaces[0].tabs[0].panes.map(pane => pane.status);
     expect(seen).toEqual(['blocked', 'idle', 'working', 'done', 'unknown']);
     expect(new Set(seen).size).toBe(statuses.length);
+  });
+});
+
+describe('findFleetPane', () => {
+  const tree = snapshot({
+    workspaces: [
+      {
+        workspaceId: 'ws-1',
+        tabs: [
+          {
+            tabId: 'tab-1',
+            panes: [
+              { paneId: 'pane-1', title: 'a' },
+              { paneId: 'pane-2', title: 'b' },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  it('returns the raw pane for a known id', () => {
+    expect(findFleetPane(tree, 'pane-2')).toMatchObject({ paneId: 'pane-2', title: 'b' });
+  });
+
+  it('returns undefined for a null snapshot, null id, or unknown id', () => {
+    expect(findFleetPane(null, 'pane-1')).toBeUndefined();
+    expect(findFleetPane(tree, null)).toBeUndefined();
+    expect(findFleetPane(tree, 'missing')).toBeUndefined();
   });
 });

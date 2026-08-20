@@ -69,4 +69,27 @@ describe('FleetView', () => {
     const markup = renderToStaticMarkup(<FleetView snapshot={snapshot({ stale: true })} />);
     expect(markup).toContain('fleet-stale');
   });
+
+  it('renders pane rows as selectable buttons with no selection by default', () => {
+    const markup = renderToStaticMarkup(<FleetView snapshot={snapshot({})} />);
+    expect(markup).toContain('role="button"');
+    expect(markup).toContain('aria-pressed="false"');
+    expect(markup).not.toContain('fleet-pane-selected');
+  });
+
+  it('highlights exactly one pane row when selectedPaneId matches', () => {
+    const markup = renderToStaticMarkup(
+      <FleetView snapshot={snapshot({})} selectedPaneId='pane-2' />
+    );
+    expect(markup.split('fleet-pane-selected').length - 1).toBe(1);
+    expect(markup.split('aria-pressed="true"').length - 1).toBe(1);
+  });
+
+  it('does not highlight when selectedPaneId matches no pane', () => {
+    const markup = renderToStaticMarkup(
+      <FleetView snapshot={snapshot({})} selectedPaneId='ghost' />
+    );
+    expect(markup).not.toContain('fleet-pane-selected');
+    expect(markup).not.toContain('aria-pressed="true"');
+  });
 });
