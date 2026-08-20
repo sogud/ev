@@ -1,6 +1,11 @@
 import type { FleetSnapshot } from '@ev/contracts';
+import { Crosshair, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { buildFleetView, type FleetStatusTone } from '../fleet-view-model';
+import {
+  buildFleetView,
+  type FleetFocusFeedback,
+  type FleetStatusTone,
+} from '../fleet-view-model';
 
 const STATUS_LABEL_KEY: Record<FleetStatusTone, string> = {
   working: 'fleet.statusWorking',
@@ -16,6 +21,14 @@ export interface FleetViewProps {
   selectedPaneId?: string | null;
   /** Fired when a pane row is clicked/activated; the container opens the drawer. */
   onSelectPane?: (paneId: string) => void;
+  /**
+   * Fired from the per-pane Focus button only (never from the row click);
+   * the container issues `fleet:focusPane`. Focus is the fleet's single write
+   * operation and stays clearly separate from the drawer-opening row click.
+   */
+  onFocusPane?: (paneId: string) => void;
+  /** Transient focus feedback for one pane at a time; null = idle. */
+  focus?: FleetFocusFeedback | null;
 }
 
 /**
@@ -28,6 +41,8 @@ export function FleetView({
   snapshot,
   selectedPaneId,
   onSelectPane,
+  onFocusPane,
+  focus,
 }: FleetViewProps): React.JSX.Element {
   const { t } = useTranslation();
 
@@ -85,6 +100,7 @@ export function FleetView({
                 <div className='fleet-tab-label'>{tab.label}</div>
                 {tab.panes.map(pane => {
                   const selected = pane.paneId === selectedPaneId;
+                  const paneFocus = focus?.paneId === pane.paneId ? focus : null;
                   return (
                     <div
                       className={`fleet-pane fleet-status-${pane.status}${
@@ -114,6 +130,45 @@ export function FleetView({
                         </span>
                       )}
                       {pane.cwd && <span className='fleet-pane-cwd'>{pane.cwd}</span>}
+                      {pane.agentKind && (
+                        <button
+                          type='button'
+                          className='fleet-focus-button icon-button'
+                          aria-label={t('fleet.focusAria')}
+                          disabled={paneFocus?.status === 'pending'}
+                          onClick={event => {
+                            // Focus is a write action, not a drawer open:
+                            // keep the row's select handler out of it.
+                            event.stopPropagation();
+                            onFocusPane?.(pane.paneId);
+                          }}
+                          onKeyDown={event => {
+                            // The row listens for Enter/Space; don't let the
+                            // button's activation also open the drawer.
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.stopPropagation();
+                            }
+                          }}>
+                          {paneFocus?.status === 'pending' ? (
+                            <LoaderCircle size={14} className='spin' />
+                          ) : (
+                            <Crosshair size={14} />
+                          )}
+                        </button>
+                      )}
+                      {paneFocus?.status === 'pending' && (
+                        <span className='fleet-focus-status'>{t('fleet.focusing')}</span>
+                      )}
+                      {paneFocus?.status === 'success' && (
+                        <span className='fleet-focus-status fleet-focus-success'>
+                          {t('fleet.focused')}
+                        </span>
+                      )}
+                      {paneFocus?.status === 'error' && (
+                        <span className='fleet-focus-status fleet-focus-error'>
+                          {paneFocus.error || t('fleet.focusError')}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

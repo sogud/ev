@@ -1,6 +1,11 @@
 import type { FleetSnapshot } from '@ev/contracts';
-import { useEffect, useState } from 'react';
-import { findFleetPane } from '../fleet-view-model';
+import { useEffect, useRef, useState } from 'react';
+import {
+  findFleetPane,
+  focusFeedbackFromError,
+  focusFeedbackFromResult,
+  type FleetFocusFeedback,
+} from '../fleet-view-model';
 import { FleetDrawer, type FleetPaneLoad } from './FleetDrawer';
 import { FleetView } from './FleetView';
 
@@ -13,11 +18,21 @@ import { FleetView } from './FleetView';
  * `fleet:readPane` pull (never part of polling); switching panes re-fetches;
  * closing the drawer returns to the tree. Snapshot pushes re-render the tree
  * but never re-trigger an output pull.
+ *
+ * The panel also owns the fleet's single write operation: `fleet:focusPane`
+ * feedback is transient (pending -> success/error) and clears itself.
  */
+
+/** Success feedback fades quickly; errors linger so they can be read. */
+const FOCUS_SUCCESS_TTL_MS = 2_500;
+const FOCUS_ERROR_TTL_MS = 6_000;
+
 export function FleetPanel(): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<FleetSnapshot | null>(null);
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [load, setLoad] = useState<FleetPaneLoad>({ status: 'loading' });
+  const [focus, setFocus] = useState<FleetFocusFeedback | null>(null);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const offUpdate = window.agentDesktop.fleet.onUpdate(next => setSnapshot(next));
@@ -57,6 +72,35 @@ export function FleetPanel(): React.JSX.Element {
 
   const selectedPane = findFleetPane(snapshot, selectedPaneId);
 
+  // Terminal focus feedback clears itself; pending feedback stays until the
+  // call resolves. The cleanup + ref guard keep rapid re-focuses honest.
+  useEffect(() => {
+    if (!focus || focus.status === 'pending') return;
+    const ttl = focus.status === 'success' ? FOCUS_SUCCESS_TTL_MS : FOCUS_ERROR_TTL_MS;
+    focusTimer.current = setTimeout(() => {
+      focusTimer.current = null;
+      setFocus(null);
+    }, ttl);
+    return () => {
+      if (focusTimer.current) {
+        clearTimeout(focusTimer.current);
+        focusTimer.current = null;
+      }
+    };
+  }, [focus]);
+
+  const handleFocusPane = (paneId: string): void => {
+    if (focusTimer.current) {
+      clearTimeout(focusTimer.current);
+      focusTimer.current = null;
+    }
+    setFocus({ paneId, status: 'pending' });
+    window.agentDesktop.fleet
+      .focusPane(paneId)
+      .then(result => setFocus(focusFeedbackFromResult(paneId, result)))
+      .catch((error: unknown) => setFocus(focusFeedbackFromError(paneId, error)));
+  };
+
   return (
     <div className='fleet-layout'>
       <FleetView
@@ -70,6 +114,8 @@ export function FleetPanel(): React.JSX.Element {
           setSelectedPaneId(paneId);
           setLoad({ status: 'loading' });
         }}
+        onFocusPane={handleFocusPane}
+        focus={focus}
       />
       {selectedPane && (
         <FleetDrawer pane={selectedPane} load={load} onClose={() => setSelectedPaneId(null)} />

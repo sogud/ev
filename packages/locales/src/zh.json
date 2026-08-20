@@ -81,6 +81,10 @@
     "statusDone": "done",
     "statusIdle": "idle",
     "statusUnknown": "unknown",
+    "focusAria": "在 Herdr 中聚焦该 pane",
+    "focusing": "聚焦中…",
+    "focused": "已聚焦",
+    "focusError": "聚焦失败。",
     "drawer": {
       "aria": "Pane 输出抽屉",
       "closeAria": "关闭输出抽屉",

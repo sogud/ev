@@ -81,6 +81,10 @@
     "statusDone": "done",
     "statusIdle": "idle",
     "statusUnknown": "unknown",
+    "focusAria": "Focus this pane in Herdr",
+    "focusing": "Focusing…",
+    "focused": "Focused",
+    "focusError": "Focus failed.",
     "drawer": {
       "aria": "Pane output drawer",
       "closeAria": "Close output drawer",

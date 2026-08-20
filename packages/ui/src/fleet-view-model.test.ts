@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { FleetSnapshot } from '@ev/contracts';
-import { buildFleetView, findFleetPane } from './fleet-view-model';
+import {
+  buildFleetView,
+  findFleetPane,
+  focusFeedbackFromError,
+  focusFeedbackFromResult,
+} from './fleet-view-model';
 
 function snapshot(partial: Partial<FleetSnapshot>): FleetSnapshot {
   return { available: true, fetchedAt: 1_700_000_000_000, workspaces: [], ...partial };
@@ -181,5 +186,43 @@ describe('findFleetPane', () => {
     expect(findFleetPane(null, 'pane-1')).toBeUndefined();
     expect(findFleetPane(tree, null)).toBeUndefined();
     expect(findFleetPane(tree, 'missing')).toBeUndefined();
+  });
+});
+
+describe('focus feedback mapping (fleet:focusPane)', () => {
+  it('maps an ok result to success feedback without an error field', () => {
+    expect(focusFeedbackFromResult('w1:p1', { ok: true })).toEqual({
+      paneId: 'w1:p1',
+      status: 'success',
+    });
+  });
+
+  it('maps a failed result to error feedback keeping the server reason', () => {
+    expect(focusFeedbackFromResult('w1:p1', { ok: false, error: 'pane closed' })).toEqual({
+      paneId: 'w1:p1',
+      status: 'error',
+      error: 'pane closed',
+    });
+  });
+
+  it('defaults the error text to an empty string when the server sends none', () => {
+    expect(focusFeedbackFromResult('w1:p1', { ok: false })).toEqual({
+      paneId: 'w1:p1',
+      status: 'error',
+      error: '',
+    });
+  });
+
+  it('maps transport-level rejections (Error and non-Error) to error feedback', () => {
+    expect(focusFeedbackFromError('w1:p1', new Error('ws down'))).toEqual({
+      paneId: 'w1:p1',
+      status: 'error',
+      error: 'ws down',
+    });
+    expect(focusFeedbackFromError('w1:p1', 'boom')).toEqual({
+      paneId: 'w1:p1',
+      status: 'error',
+      error: 'boom',
+    });
   });
 });

@@ -2556,6 +2556,33 @@ textarea {
   background: var(--ev-color-bg-active);
 }
 
+/* Focus action (herdr-fleet ticket 04): per-pane write button + inline feedback.
+   The button sits inside the selectable row but never opens the drawer. */
+.fleet-focus-button {
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.fleet-focus-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.fleet-focus-status {
+  flex: none;
+  font-size: 11px;
+  color: var(--ev-color-text-quaternary);
+}
+
+.fleet-focus-success {
+  color: var(--ev-color-status-success);
+}
+
+.fleet-focus-error {
+  color: var(--ev-color-status-danger);
+}
+
 /* ---------- Fleet pane output drawer (herdr-fleet-v1) ---------- */
 
 /* Tree + drawer side by side; the drawer is a layout panel, not an overlay. */

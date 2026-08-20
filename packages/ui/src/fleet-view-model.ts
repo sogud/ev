@@ -1,4 +1,9 @@
-import type { FleetAgentStatus, FleetPane, FleetSnapshot } from '@ev/contracts';
+import type {
+  FleetAgentStatus,
+  FleetPane,
+  FleetPaneFocus,
+  FleetSnapshot,
+} from '@ev/contracts';
 
 /**
  * Expression-layer view-model mapper for the Herdr fleet view
@@ -48,6 +53,36 @@ export type FleetView =
       blockedCount: number;
       workspaces: FleetWorkspaceView[];
     };
+
+/**
+ * Transient feedback for the fleet's single write operation
+ * (`fleet:focusPane`). Owned by the container (FleetPanel); FleetView only
+ * renders it. `error` carries a display-ready, already-localizable-or-server
+ * message — rendered as plain text.
+ */
+export type FleetFocusFeedback =
+  | { paneId: string; status: 'pending' }
+  | { paneId: string; status: 'success' }
+  | { paneId: string; status: 'error'; error: string };
+
+/** Map a `fleet:focusPane` result to feedback (failure keeps the server reason). */
+export function focusFeedbackFromResult(
+  paneId: string,
+  result: FleetPaneFocus
+): FleetFocusFeedback {
+  return result.ok
+    ? { paneId, status: 'success' }
+    : { paneId, status: 'error', error: result.error ?? '' };
+}
+
+/** Map a transport-level rejection (server unreachable) to feedback. */
+export function focusFeedbackFromError(paneId: string, error: unknown): FleetFocusFeedback {
+  return {
+    paneId,
+    status: 'error',
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
 
 /**
  * Locate a raw pane by id within a snapshot (workspace → tab → pane). Used by

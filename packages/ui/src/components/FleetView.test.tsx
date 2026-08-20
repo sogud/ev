@@ -1,7 +1,9 @@
 import type { FleetSnapshot } from '@ev/contracts';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nextProvider } from 'react-i18next';
 import { describe, expect, it } from 'vitest';
-import { FleetView } from './FleetView';
+import { i18n } from '../i18n';
+import { FleetView, type FleetViewProps } from './FleetView';
 
 function snapshot(partial: Partial<FleetSnapshot>): FleetSnapshot {
   return {
@@ -91,5 +93,82 @@ describe('FleetView', () => {
     );
     expect(markup).not.toContain('fleet-pane-selected');
     expect(markup).not.toContain('aria-pressed="true"');
+  });
+
+  describe('Focus action (ticket 04)', () => {
+    // Wrapped in I18nextProvider so translated feedback text is asserted (zh pinned in setup).
+    const render = (props: FleetViewProps): string =>
+      renderToStaticMarkup(
+        <I18nextProvider i18n={i18n}>
+          <FleetView {...props} />
+        </I18nextProvider>
+      );
+
+    it('renders a focus button on agent panes only, separate from the row button', () => {
+      const markup = render({ snapshot: snapshot({}) });
+      // exactly one focus button: pane-2 has an agent, pane-1 does not
+      expect(markup.split('fleet-focus-button').length - 1).toBe(1);
+      expect(markup).toContain('aria-label="在 Herdr 中聚焦该 pane"');
+      // the row stays the drawer-opening control; the focus control is a real <button>
+      expect(markup).toContain('role="button"');
+      expect(markup).toMatch(/<button type="button" class="fleet-focus-button icon-button"/);
+    });
+
+    it('shows pending feedback on the targeted pane and disables its button', () => {
+      const markup = render({
+        snapshot: snapshot({}),
+        focus: { paneId: 'pane-2', status: 'pending' },
+      });
+      expect(markup).toContain('disabled');
+      expect(markup).toContain('聚焦中');
+      expect(markup).toContain('spin');
+    });
+
+    it('shows success feedback on the targeted pane only', () => {
+      const markup = render({
+        snapshot: snapshot({}),
+        focus: { paneId: 'pane-2', status: 'success' },
+      });
+      expect(markup).toContain('fleet-focus-success');
+      expect(markup).toContain('已聚焦');
+      expect(markup).not.toContain('fleet-focus-error');
+    });
+
+    it('shows the server error text on failure', () => {
+      const markup = render({
+        snapshot: snapshot({}),
+        focus: { paneId: 'pane-2', status: 'error', error: 'pane closed' },
+      });
+      expect(markup).toContain('fleet-focus-error');
+      expect(markup).toContain('pane closed');
+    });
+
+    it('falls back to the generic focus error when the message is empty', () => {
+      const markup = render({
+        snapshot: snapshot({}),
+        focus: { paneId: 'pane-2', status: 'error', error: '' },
+      });
+      expect(markup).toContain('聚焦失败');
+    });
+
+    it('ignores focus feedback for a pane that no longer exists in the snapshot', () => {
+      const markup = render({
+        snapshot: snapshot({}),
+        focus: { paneId: 'ghost', status: 'error', error: 'boom' },
+      });
+      expect(markup).not.toContain('fleet-focus-error');
+      expect(markup).not.toContain('boom');
+    });
+
+    it('keeps focus feedback independent from the drawer selection highlight', () => {
+      const markup = render({
+        snapshot: snapshot({}),
+        selectedPaneId: 'pane-1',
+        focus: { paneId: 'pane-2', status: 'success' },
+      });
+      // selection stays on pane-1, feedback renders on pane-2
+      expect(markup.split('fleet-pane-selected').length - 1).toBe(1);
+      expect(markup).toContain('fleet-focus-success');
+    });
   });
 });
