@@ -25,6 +25,7 @@ import { createAppearanceStore } from './appearance-store';
 import { createBrowserBridgeStore } from './browser-bridge-store';
 import { ensureEvCliLauncher } from './cli-launcher';
 import { buildHandlers } from './handlers';
+import { defineFleetPlugin } from './herdr/fleet-service';
 import { createEvKernel, type EvKernel } from './kernel/ev-kernel';
 import * as lifecycle from './lifecycle';
 import { ManagementService } from './management-service';
@@ -334,6 +335,17 @@ async function main(resources: ServerStartupResources): Promise<void> {
 
   const kernel = await createEvKernel();
   resources.kernel = kernel;
+  // Herdr fleet bridge (herdr-fleet-v1): optional local dependency; the loop
+  // probes with backoff and never blocks startup. Stop is owned by the kernel
+  // fiber cleanup. EV_HERDR_PATH / EV_FLEET_INTERVAL_MS configure test fakes.
+  const fleetIntervalMs = Number(process.env.EV_FLEET_INTERVAL_MS);
+  await kernel.context.plugin(
+    defineFleetPlugin({
+      broadcast,
+      herdrPath: process.env.EV_HERDR_PATH?.trim() || undefined,
+      intervalMs: Number.isFinite(fleetIntervalMs) && fleetIntervalMs > 0 ? fleetIntervalMs : undefined,
+    })
+  );
   const agents = await AgentService.create(kernel.runtimes, {
     defaultWorkspace,
     legacyDefaultWorkspaces: [home],
@@ -375,6 +387,7 @@ async function main(resources: ServerStartupResources): Promise<void> {
     browserBridge,
     broadcast,
     listDevices: deviceSnapshot,
+    fleetSnapshot: () => kernel.context.fleet.snapshot(),
   });
   agents.setListener(task => broadcast('tasks:update', task));
   browserBridge.subscribe(snapshot => broadcast('browserBridge:update', snapshot));

@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import type { BrowserBridgeService } from '@ev/browser-host';
-import type { ipcRegistry, DevicePresence, HandlersOf } from '@ev/contracts';
+import type { FleetSnapshot, ipcRegistry, DevicePresence, HandlersOf } from '@ev/contracts';
 import type { AgentService } from './agent-service';
 import type { ManagementService } from './management-service';
 
@@ -12,6 +12,8 @@ export interface ServerDeps {
   broadcast: (channel: string, payload: unknown) => void;
   /** Device presence snapshot for the devices:list call. */
   listDevices: () => DevicePresence[];
+  /** Last fleet snapshot for fleet:get (Herdr fleet view, herdr-fleet-v1). */
+  fleetSnapshot: () => FleetSnapshot;
 }
 
 /**
@@ -116,6 +118,9 @@ export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> 
     },
     devices: {
       list: () => deps.listDevices(),
+    },
+    fleet: {
+      get: () => deps.fleetSnapshot(),
     },
   };
 }
