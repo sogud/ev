@@ -75,3 +75,17 @@ export const FleetPaneReadSchema = z.object({
 });
 
 export type FleetPaneRead = z.infer<typeof FleetPaneReadSchema>;
+
+/**
+ * Result of the fleet's single write operation (`fleet:focusPane`,
+ * herdr-fleet-v1 ticket 04): ask Herdr to focus the pane's agent so the human
+ * can attach from the original terminal. Fails explicitly (never throws) when
+ * the pane has closed, has no focusable agent, or Herdr is unreachable.
+ */
+export const FleetPaneFocusSchema = z.object({
+  ok: z.boolean(),
+  /** Present when ok=false: a short, UI-safe reason. */
+  error: z.string().max(1024).optional(),
+});
+
+export type FleetPaneFocus = z.infer<typeof FleetPaneFocusSchema>;

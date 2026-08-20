@@ -14,7 +14,7 @@ import type {
   TaskSummary,
   ThinkingLevel,
 } from './domain';
-import type { FleetPaneRead, FleetSnapshot } from './fleet';
+import type { FleetPaneFocus, FleetPaneRead, FleetSnapshot } from './fleet';
 import type { RuntimeDescriptor, RuntimeId } from './runtime';
 
 /** A client shell connected to the server; presence is driven by live WS sessions. */
@@ -115,6 +115,10 @@ export const ipcRegistry = {
     // treated as untrusted display data by the UI. lines is optional (server
     // default 60); returns a result object so the UI can show a clear error.
     readPane: call<[string, number?], FleetPaneRead>('fleet:readPane', 'observer'),
+    // The fleet's single write operation (ticket 04): focus a pane's agent in
+    // Herdr so the human can attach. Low-risk and reversible; other herdr
+    // writes are deferred to ticket 08.
+    focusPane: call<[string], FleetPaneFocus>('fleet:focusPane', 'operator'),
     onUpdate: event<FleetSnapshot>('fleet:update'),
   },
 };
