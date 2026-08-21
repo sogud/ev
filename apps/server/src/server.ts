@@ -361,13 +361,16 @@ async function main(resources: ServerStartupResources): Promise<void> {
     pairingMode: 'automatic',
   });
   resources.browserBridge = browserBridge;
+  const browserRuntimeDirectory = join(evDataDir(), 'run');
+  // Stop any standalone host BEFORE the embedded bridge binds, otherwise the
+  // embedded start hits EADDRINUSE (swallowed below) and then the standalone
+  // is killed, leaving port 43121 ownerless and the extension orphaned.
+  await stopStandaloneBrowserHost(browserRuntimeDirectory);
   try {
     await browserBridge.start();
   } catch {
     // clients keep working without browser integration.
   }
-  const browserRuntimeDirectory = join(evDataDir(), 'run');
-  await stopStandaloneBrowserHost(browserRuntimeDirectory);
   const mediaDownloads = new MediaDownloadService({
     downloadDirectory: join(home, 'Downloads', 'EV'),
   });
