@@ -45,12 +45,6 @@ function Popup() {
     }
   })();
 
-  const reconnect = async () => {
-    setBridgeStatus('connecting');
-    const response = await chrome.runtime.sendMessage({ action: 'bridge.reconnect' });
-    if (response?.status) setBridgeStatus(response.status as BridgeStatus);
-  };
-
   const statusColor =
     bridgeStatus === 'connected'
       ? 'var(--ev-color-status-success)'
@@ -81,14 +75,6 @@ function Popup() {
         </span>
         <span className='ev-popup-status-actions' style={{ color: statusColor }}>
           {t(`browser.status.${bridgeStatus}`)}
-          <button
-            type='button'
-            className='ev-popup-reconnect'
-            title={t('browser.popup.requestReconnect')}
-            aria-label={t('browser.popup.requestReconnect')}
-            onClick={() => void reconnect()}>
-            <RefreshCw size={13} />
-          </button>
         </span>
       </div>
 

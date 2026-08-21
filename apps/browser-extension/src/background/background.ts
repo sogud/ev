@@ -11,10 +11,15 @@ void desktopBridge.start();
 chrome.alarms.create(BRIDGE_KEEPALIVE_ALARM, { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name !== BRIDGE_KEEPALIVE_ALARM) return;
-  if (desktopBridge.getStatus() === 'disconnected') {
-    desktopBridge.reconnect();
-  }
+  desktopBridge.ensureConnected();
 });
+
+// Every wake path is a silent reconnect opportunity: SW startup, browser
+// startup, and the user focusing a window all recover the Host connection
+// without any manual action.
+chrome.runtime.onStartup.addListener(() => desktopBridge.ensureConnected());
+chrome.windows?.onFocusChanged?.addListener(() => desktopBridge.ensureConnected());
+chrome.tabs?.onUpdated?.addListener(() => desktopBridge.ensureConnected());
 
 chrome.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
   if (!request || typeof request !== 'object') return false;

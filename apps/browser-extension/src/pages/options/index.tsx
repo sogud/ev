@@ -137,13 +137,6 @@ export const OptionsPage = () => {
     }
   };
 
-  const reconnectBridge = async () => {
-    const response = await chrome.runtime.sendMessage({ action: 'bridge.reconnect' });
-    if (response?.success && isBridgeStatus(response.status)) {
-      setBridgeStatus(response.status);
-    }
-  };
-
   const saveOptions = async () => {
     await chrome.storage.sync.set(options);
     applyCustomSettings(options);
@@ -385,9 +378,6 @@ export const OptionsPage = () => {
                 <div className='ev-background-controls'>
                   <Button variant='outline' size='sm' onClick={() => void refreshBridgeStatus()}>
                     {t('browser.options.refreshStatus')}
-                  </Button>
-                  <Button variant='outline' size='sm' onClick={() => void reconnectBridge()}>
-                    {t('browser.options.requestReconnect')}
                   </Button>
                 </div>
               </div>

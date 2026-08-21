@@ -16,7 +16,7 @@ const BROWSER_ID_KEY = 'ev_browser_id';
 const PAIRING_TOKEN_KEY = 'ev_desktop_bridge_token';
 const HEARTBEAT_INTERVAL_MS = 20_000;
 const HANDSHAKE_TIMEOUT_MS = 5_000;
-const MAX_RECONNECT_DELAY_MS = 60_000;
+const MAX_RECONNECT_DELAY_MS = 10_000;
 const MAX_INBOUND_MESSAGE_BYTES = 1_000_000;
 
 function browserName(): string {
@@ -63,6 +63,16 @@ export class DesktopBridge {
     socket?.close();
     this.authenticated = false;
     this.pairingPending = false;
+  }
+
+  /**
+   * Silent auto-reconnect for wake triggers (alarm, SW startup, window focus).
+   * Never surfaces UI; a no-op when already connected, connecting, or pairing.
+   */
+  ensureConnected(): void {
+    if (this.stopped || !this.config) return;
+    if (this.getStatus() !== 'disconnected') return;
+    this.reconnect();
   }
 
   reconnect(): void {
