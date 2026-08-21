@@ -1,11 +1,7 @@
 import type { FleetSnapshot } from '@ev/contracts';
 import { Crosshair, LoaderCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import {
-  buildFleetView,
-  type FleetFocusFeedback,
-  type FleetStatusTone,
-} from '../fleet-view-model';
+import { buildFleetView, type FleetFocusFeedback, type FleetStatusTone } from '../fleet-view-model';
 
 const STATUS_LABEL_KEY: Record<FleetStatusTone, string> = {
   working: 'fleet.statusWorking',

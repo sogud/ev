@@ -1,9 +1,4 @@
-import type {
-  FleetAgentStatus,
-  FleetPane,
-  FleetPaneFocus,
-  FleetSnapshot,
-} from '@ev/contracts';
+import type { FleetAgentStatus, FleetPane, FleetPaneFocus, FleetSnapshot } from '@ev/contracts';
 
 /**
  * Expression-layer view-model mapper for the Herdr fleet view
