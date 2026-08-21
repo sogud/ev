@@ -1,5 +1,6 @@
 import type { FleetSnapshot } from '@ev/contracts';
-import { Crosshair, LoaderCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Crosshair, LoaderCircle } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { buildFleetView, type FleetFocusFeedback, type FleetStatusTone } from '../fleet-view-model';
 
@@ -41,6 +42,7 @@ export function FleetView({
   focus,
 }: FleetViewProps): React.JSX.Element {
   const { t } = useTranslation();
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
   if (!snapshot) {
     return (
@@ -84,14 +86,33 @@ export function FleetView({
         {view.workspaces.map(workspace => (
           <section className='fleet-workspace' key={workspace.workspaceId}>
             <div className='fleet-workspace-name'>
-              <span>{workspace.name}</span>
+              <button
+                type='button'
+                className='fleet-workspace-toggle'
+                aria-expanded={!collapsed.has(workspace.workspaceId)}
+                onClick={() =>
+                  setCollapsed(prev => {
+                    const next = new Set(prev);
+                    if (next.has(workspace.workspaceId)) next.delete(workspace.workspaceId);
+                    else next.add(workspace.workspaceId);
+                    return next;
+                  })
+                }>
+                {collapsed.has(workspace.workspaceId) ? (
+                  <ChevronRight size={13} />
+                ) : (
+                  <ChevronDown size={13} />
+                )}
+                <span>{workspace.name}</span>
+              </button>
               {workspace.blockedCount > 0 && (
                 <span className='fleet-chip fleet-chip-blocked'>
                   {t('fleet.blockedCount', { count: workspace.blockedCount })}
                 </span>
               )}
             </div>
-            {workspace.tabs.map(tab => (
+            {!collapsed.has(workspace.workspaceId) &&
+              workspace.tabs.map(tab => (
               <div className='fleet-tab' key={tab.tabId}>
                 <div className='fleet-tab-label'>{tab.label}</div>
                 {tab.panes.map(pane => {
@@ -126,11 +147,13 @@ export function FleetView({
                         </span>
                       )}
                       {pane.cwd && <span className='fleet-pane-cwd'>{pane.cwd}</span>}
+                      <ChevronRight size={13} className='fleet-pane-chevron' aria-hidden='true' />
                       {pane.agentKind && (
                         <button
                           type='button'
                           className='fleet-focus-button icon-button'
                           aria-label={t('fleet.focusAria')}
+                          title={t('fleet.focusAria')}
                           disabled={paneFocus?.status === 'pending'}
                           onClick={event => {
                             // Focus is a write action, not a drawer open:
@@ -169,7 +192,7 @@ export function FleetView({
                   );
                 })}
               </div>
-            ))}
+              ))}
           </section>
         ))}
       </div>

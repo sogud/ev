@@ -2449,28 +2449,61 @@ textarea {
 .fleet-tree {
   flex: 1;
   overflow: auto;
-  padding: 16px;
+  padding: 12px 16px 20px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+}
+
+.fleet-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .fleet-workspace-name {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--ev-color-text-secondary);
 }
 
+.fleet-workspace-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border: 0;
+  border-radius: var(--ev-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fleet-workspace-toggle:hover {
+  background: var(--ev-color-bg-hover);
+}
+
+.fleet-workspace-toggle:active {
+  transform: scale(0.97);
+}
+
+.fleet-workspace-toggle svg {
+  color: var(--ev-color-icon-tertiary);
+}
+
 .fleet-tab {
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .fleet-tab-label {
-  margin: 0 0 4px 10px;
+  margin-left: 12px;
   font-size: 11px;
   color: var(--ev-color-text-quaternary);
 }
@@ -2480,11 +2513,27 @@ textarea {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  margin-bottom: 4px;
-  padding: 6px 10px;
+  padding: 7px 12px;
   border: 1px solid var(--ev-color-border-subtle);
   border-radius: var(--ev-radius-md);
   background: var(--ev-color-bg-surface);
+  cursor: pointer;
+  transition: background-color 120ms var(--ev-ease-standard),
+    border-color 120ms var(--ev-ease-standard);
+}
+
+.fleet-pane:hover {
+  background: var(--ev-color-bg-hover);
+  border-color: var(--ev-color-border-default);
+}
+
+.fleet-pane:active {
+  transform: scale(0.995);
+}
+
+.fleet-pane:focus-visible {
+  outline: 1px solid var(--ev-color-border-focus);
+  box-shadow: var(--ev-focus-ring);
 }
 
 .fleet-status-dot {
@@ -2521,6 +2570,18 @@ textarea {
   border: 1.5px dashed var(--ev-color-border-strong);
 }
 
+.fleet-pane-chevron {
+  flex: none;
+  color: var(--ev-color-icon-tertiary);
+  opacity: 0;
+  transition: opacity 120ms var(--ev-ease-standard);
+}
+
+.fleet-pane:hover .fleet-pane-chevron,
+.fleet-pane:focus-visible .fleet-pane-chevron {
+  opacity: 1;
+}
+
 .fleet-pane-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2551,6 +2612,19 @@ textarea {
   color: var(--ev-color-text-quaternary);
 }
 
+.fleet-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  padding: 0 10px;
+}
+
+.fleet-toggle-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .fleet-toggle.active {
   color: var(--ev-color-text-primary);
   background: var(--ev-color-bg-active);
@@ -2562,6 +2636,14 @@ textarea {
   flex: none;
   width: 24px;
   height: 24px;
+  opacity: 0;
+  transition: opacity 120ms var(--ev-ease-standard);
+}
+
+.fleet-pane:hover .fleet-focus-button,
+.fleet-focus-button:focus-visible,
+.fleet-focus-button:disabled {
+  opacity: 1;
 }
 
 .fleet-focus-button:disabled {

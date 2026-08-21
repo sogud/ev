@@ -170,6 +170,7 @@ export function Sidebar({
           data-testid='fleet-open'
           onClick={onOpenFleet}>
           <LayoutGrid size={17} />
+          <span className='fleet-toggle-label'>{t('fleet.title')}</span>
         </button>
         <button
           className='icon-button'
