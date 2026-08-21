@@ -25,6 +25,10 @@
   color: var(--ev-color-text-primary);
 }
 
+.ui-picker-trigger:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
 .ui-picker-trigger:disabled {
   color: var(--ev-color-text-quaternary);
   cursor: default;
@@ -64,7 +68,6 @@
   background: var(--ev-color-bg-overlay);
   color: var(--ev-color-text-primary);
   box-shadow: var(--ev-shadow-overlay);
-  backdrop-filter: blur(24px) saturate(1.35);
   transform-origin: var(--radix-popover-content-transform-origin);
   animation: ev-overlay-in var(--ev-duration-normal) var(--ev-ease-out);
 }
