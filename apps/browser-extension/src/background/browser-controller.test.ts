@@ -483,6 +483,17 @@ describe('CDP browser controller', () => {
           },
         ];
       }
+      if (operation?.kind === 'mediaHint') {
+        return [
+          {
+            frameId: 0,
+            result: {
+              mediaUrl: 'https://media.example.com/audio.m4a?signature=secret',
+              userAgent: 'EV Test Browser',
+            },
+          },
+        ];
+      }
       if (operation?.kind === 'context') {
         return [
           {
@@ -1037,6 +1048,57 @@ describe('CDP browser controller', () => {
     expect(calls).toContainEqual({
       method: 'Emulation.setDeviceMetricsOverride',
       params: { width: 390, height: 844, deviceScaleFactor: 3, mobile: true },
+    });
+  });
+
+  test('dispatches the owned page URL for bounded subtitle extraction', async () => {
+    await expect(
+      executeBrowserCommand({
+        action: 'page.subtitles',
+        tabId: 7,
+        operation: 'read',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'none',
+      })
+    ).resolves.toEqual({
+      pageUrl: 'https://example.com',
+      title: 'Example',
+    });
+  });
+
+  test('includes a browser-observed audio URL only for approved local ASR', async () => {
+    const executeScript = vi.fn(async () => [
+      {
+        frameId: 0,
+        result: {
+          mediaUrl: 'https://media.example.com/audio.m4a?signature=secret',
+          userAgent: 'EV Test Browser',
+        },
+      },
+    ]);
+    (
+      globalThis.chrome as unknown as { scripting: { executeScript: typeof executeScript } }
+    ).scripting = { executeScript };
+    resetBrowserControllerForTests();
+
+    await expect(
+      executeBrowserCommand({
+        action: 'page.subtitles',
+        tabId: 7,
+        operation: 'read',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'local-asr',
+        confirm: 'RUN_LOCAL_ASR',
+      })
+    ).resolves.toEqual({
+      pageUrl: 'https://example.com',
+      title: 'Example',
+      mediaUrl: 'https://media.example.com/audio.m4a?signature=secret',
+      userAgent: 'EV Test Browser',
     });
   });
 

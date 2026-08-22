@@ -29,7 +29,7 @@ your phone.**
 - Runtime health drawer: native auth status (read-only), config paths,
   model catalog — EV displays, never writes, native configs.
 - Experimental DeepSeek Harness adapter: official stdio JSON-RPC, one isolated process per task, streamed reasoning/tools/subagents, explicit no-cold-resume behavior, and terminal process-level stop.
-- Browser bridge: paired extension over `127.0.0.1`; every page/workspace operation runs in a new Agent-owned BrowserSession window with one EV tab group, never the user's current tabs; ordinary DOM work avoids remote debugging while advanced diagnostics attach bounded CDP on demand; includes Host-local BrowserRun, reviewed SiteRecipes, safe profile-global bookmark/history/download actions, and a bilingual optional bookmark New Tab.
+- Browser bridge: paired extension over `127.0.0.1`; every page/workspace operation runs in a new Agent-owned BrowserSession window with one EV tab group, never the user's current tabs; ordinary DOM work avoids remote debugging while advanced diagnostics attach bounded CDP on demand; includes Host-local BrowserRun, reviewed SiteRecipes, bounded subtitle reading/downloading for yt-dlp-supported public pages, safe profile-global bookmark/history/download actions, and a bilingual optional bookmark New Tab.
 - Mobile web entry at `/m`: task list, chat, model switch — nothing else.
 - i18n: English (default) and 中文, following your system locale with a
   per-user override in Settings → General → Language.
@@ -63,6 +63,7 @@ ev task follow <id> --until-idle
 ev browser check
 ev browser session.create --payload '{"url":"https://example.com"}' --compact
 ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.snapshot"}}' --compact
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.subtitles","operation":"read","language":"en"}}' --compact
 ev browser oneShot --payload '{"url":"https://example.com","command":{"action":"page.context"}}' --compact
 ev browser recipe.list --compact
 # bookmark mutations auto-back up to ~/.ev/backups/bookmarks/

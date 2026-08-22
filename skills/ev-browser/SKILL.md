@@ -215,6 +215,36 @@ Uploads require absolute local paths and explicit user intent:
 ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.upload","selector":"input[type=file]","filePaths":["/absolute/path/file.png"]}}' --compact
 ```
 
+## Subtitles and transcripts
+
+Use `page.subtitles` inside a live BrowserSession for public, non-DRM pages supported by the Host's local `yt-dlp` helper. This is site-generic, not YouTube-specific.
+
+Read a bounded plain-text transcript without creating a local file:
+
+```bash
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.subtitles","operation":"read","language":"en","includeAutomatic":true,"format":"vtt","maxChars":100000}}' --compact
+```
+
+Only when the user explicitly asks for a local subtitle file, use the download operation. It saves under `~/Downloads/EV` and returns the final filename:
+
+```bash
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.subtitles","operation":"download","language":"en","includeAutomatic":true,"format":"srt"}}' --compact
+```
+
+The language is optional; without it yt-dlp selects its default preferred subtitle. `includeAutomatic` defaults to true. Reading returns de-duplicated text with cue timing removed and is capped at 200,000 characters. Results identify `source` as `subtitle` or `local-asr`.
+
+When a page has no subtitle tracks and the user explicitly approves local transcription, retry with the opt-in fallback:
+
+```bash
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.subtitles","operation":"read","fallback":"local-asr","confirm":"RUN_LOCAL_ASR","language":"auto","maxChars":100000}}' --timeout 300 --compact
+```
+
+For YouTube local ASR, Browser Host uses yt-dlp's anonymous `web_embedded` client. This avoids Chrome cookies, PO Token providers, browser profile access, and persistent helper services. It works only when the video owner allows playback in embedded players; videos that disable embedding fail explicitly rather than falling back to credentials or bypasses.
+
+Local ASR requires `whisper-cli` from whisper.cpp on `PATH`. The model defaults to `~/.ev/models/whisper/ggml-small.bin`; `EV_WHISPER_MODEL` can override it. It downloads only temporary WAV audio, returns timestamped segments plus plain text, and removes the temporary directory afterward. On non-YouTube sites, EV may reuse a fresh audio URL already observed by the isolated BrowserSession; only the page origin and browser User-Agent are forwarded, never Cookie or Authorization headers. Never add the confirmation unless the user requested this compute/download operation.
+
+The helper receives the page URL over stdin, routes all network traffic through loopback SSRF filtering, and never receives Chrome cookies. Login-only, region-locked, DRM, and unsupported sites fail explicitly; do not bypass those limits.
+
 ## Media downloads
 
 Only download when the user explicitly asks for a local file operation.

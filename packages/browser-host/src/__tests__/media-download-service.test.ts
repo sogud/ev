@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -23,6 +23,152 @@ function fakeProcess(): ChildProcessWithoutNullStreams {
 }
 
 describe('MediaDownloadService', () => {
+  it('extracts a bounded plain-text transcript without exposing the page URL in arguments', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const child = fakeProcess();
+    let input = '';
+    const stdin = child.stdin as PassThrough;
+    stdin.setEncoding('utf8');
+    stdin.on('data', chunk => {
+      input += String(chunk);
+    });
+    const launch = vi.fn((_executable: string, args: string[]) => {
+      const temporaryDirectory = args[args.indexOf('--paths') + 1];
+      queueMicrotask(async () => {
+        child.emit('spawn');
+        await writeFile(
+          path.join(temporaryDirectory, 'Example [abc].en.vtt'),
+          'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n\n00:00:01.000 --> 00:00:02.000\nHello\nworld\n'
+        );
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      launch,
+      resolveAddresses: async () => ['93.184.216.34'],
+    });
+
+    await expect(
+      service.readSubtitles({
+        pageUrl: 'https://example.com/watch?signature=secret',
+        title: 'Example',
+        language: 'en',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'none',
+      })
+    ).resolves.toEqual({
+      pageUrl: 'https://example.com/watch?signature=secret',
+      title: 'Example',
+      source: 'subtitle',
+      language: 'en',
+      format: 'vtt',
+      text: 'Hello\nworld',
+      truncated: false,
+    });
+    const [, args] = launch.mock.calls[0];
+    expect(args).toContain('--write-auto-subs');
+    expect(args).toContain('--proxy');
+    expect(args.join(' ')).not.toContain('signature=secret');
+    expect(input).toBe('https://example.com/watch?signature=secret\n');
+  });
+
+  it('requires an explicit local whisper model before running ASR fallback', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const child = fakeProcess();
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      whisperModel: path.join(root, 'missing-model.bin'),
+      launch: () => {
+        queueMicrotask(() => {
+          child.emit('spawn');
+          child.emit('close', 0);
+        });
+        return child;
+      },
+      resolveAddresses: async () => ['93.184.216.34'],
+    });
+
+    await expect(
+      service.readSubtitles({
+        pageUrl: 'https://example.com/watch',
+        language: 'en',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'local-asr',
+      })
+    ).rejects.toThrow('Whisper model is missing');
+  });
+
+  it('uses a browser-observed audio URL for local ASR without forwarding credentials', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const model = path.join(root, 'model.bin');
+    await writeFile(model, 'model');
+    const processes = [fakeProcess(), fakeProcess(), fakeProcess()];
+    const inputs: string[] = ['', '', ''];
+    const launch = vi.fn((_executable: string, args: string[]) => {
+      const index = launch.mock.calls.length - 1;
+      const child = processes[index];
+      const stdin = child.stdin as PassThrough;
+      stdin.setEncoding('utf8');
+      stdin.on('data', chunk => {
+        inputs[index] += String(chunk);
+      });
+      queueMicrotask(async () => {
+        child.emit('spawn');
+        if (index === 1) {
+          const output = args[args.indexOf('--output') + 1].replace('%(ext)s', 'wav');
+          await writeFile(output, 'audio');
+        }
+        if (index === 2) {
+          const outputPrefix = args[args.indexOf('-of') + 1];
+          await writeFile(
+            `${outputPrefix}.json`,
+            JSON.stringify({
+              result: { language: 'en' },
+              transcription: [{ text: 'Hello', offsets: { from: 0, to: 1200 } }],
+            })
+          );
+        }
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      whisperModel: model,
+      launch,
+      resolveAddresses: async () => ['93.184.216.34'],
+    });
+
+    await expect(
+      service.readSubtitles({
+        pageUrl: 'https://example.com/watch?private=page',
+        mediaUrl: 'https://media.example.com/audio.m4a?signature=secret',
+        userAgent: 'EV Test Browser',
+        language: 'auto',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'local-asr',
+      })
+    ).resolves.toMatchObject({ source: 'local-asr', text: 'Hello', language: 'en' });
+
+    const [, audioArgs] = launch.mock.calls[1];
+    expect(audioArgs).toContain('Referer:https://example.com/');
+    expect(audioArgs).toContain('EV Test Browser');
+    expect(audioArgs.join(' ')).not.toContain('signature=secret');
+    expect(audioArgs.join(' ')).not.toContain('private=page');
+    expect(inputs[1]).toBe('https://media.example.com/audio.m4a?signature=secret\n');
+  });
+
   it('starts a bounded yt-dlp job without exposing the media URL in process arguments', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
     directories.push(root);

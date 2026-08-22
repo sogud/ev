@@ -41,6 +41,24 @@ describe('EV contracts', () => {
     expect(result.success).toBe(true);
   });
 
+  test('requires explicit confirmation before local ASR fallback', () => {
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'page.subtitles',
+        operation: 'read',
+        fallback: 'local-asr',
+      }).success
+    ).toBe(false);
+    expect(
+      BrowserCommandSchema.safeParse({
+        action: 'page.subtitles',
+        operation: 'read',
+        fallback: 'local-asr',
+        confirm: 'RUN_LOCAL_ASR',
+      }).success
+    ).toBe(true);
+  });
+
   test('rejects non-web URLs and oversized selections', () => {
     expect(
       PageContextSchema.safeParse({
@@ -65,6 +83,16 @@ describe('EV contracts', () => {
       { action: 'page.logs', tabId: 12, limit: 20 },
       { action: 'page.network', tabId: 12, limit: 20 },
       { action: 'page.media', tabId: 12, maxItems: 100 },
+      {
+        action: 'page.subtitles',
+        tabId: 12,
+        operation: 'read',
+        language: 'zh-Hans',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 80_000,
+        fallback: 'none',
+      },
       { action: 'page.download', tabId: 12, ref: '@m2' },
       { action: 'downloads.status', downloadId: 'local:download-id' },
       {

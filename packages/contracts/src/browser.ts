@@ -313,6 +313,23 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   }),
   z.object({ action: z.literal('page.frames'), tabId: TabIdSchema.optional() }),
   z.object({
+    action: z.literal('page.subtitles'),
+    tabId: TabIdSchema.optional(),
+    operation: z.enum(['read', 'download']).default('read'),
+    language: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .regex(/^[A-Za-z0-9._-]+$/)
+      .optional(),
+    includeAutomatic: z.boolean().default(true),
+    format: z.enum(['vtt', 'srt']).default('vtt'),
+    maxChars: z.number().int().min(1_000).max(200_000).default(100_000),
+    fallback: z.enum(['none', 'local-asr']).default('none'),
+    confirm: z.literal('RUN_LOCAL_ASR').optional(),
+  }),
+  z.object({
     action: z.literal('page.media'),
     tabId: TabIdSchema.optional(),
     maxItems: z.number().int().min(1).max(500).optional(),
@@ -534,6 +551,16 @@ export const BrowserAtomicCommandSchema = BrowserCommandUnionSchema.superRefine(
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'History search endTime must be greater than startTime',
+      });
+    }
+    if (
+      command.action === 'page.subtitles' &&
+      command.fallback === 'local-asr' &&
+      command.confirm !== 'RUN_LOCAL_ASR'
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Local ASR fallback requires confirm: RUN_LOCAL_ASR',
       });
     }
     if (
@@ -1234,6 +1261,47 @@ export const BrowserMediaResultSchema = z.object({
 });
 
 export type BrowserMediaResult = z.infer<typeof BrowserMediaResultSchema>;
+
+export const BrowserSubtitleDispatchSchema = z.object({
+  pageUrl: WebUrlSchema,
+  title: z.string().trim().min(1).max(1_000).optional(),
+  mediaUrl: WebUrlSchema.refine(
+    value => value.length <= 16_384,
+    'Media URL is too long'
+  ).optional(),
+  userAgent: z.string().trim().min(1).max(512).optional(),
+});
+
+export type BrowserSubtitleDispatch = z.infer<typeof BrowserSubtitleDispatchSchema>;
+
+export const BrowserTranscriptSegmentSchema = z.object({
+  start: z.number().finite().nonnegative(),
+  end: z.number().finite().nonnegative(),
+  text: z.string().trim().min(1).max(10_000),
+});
+
+export const BrowserSubtitleResultSchema = z.object({
+  pageUrl: WebUrlSchema,
+  title: z.string().max(1_000).optional(),
+  source: z.enum(['subtitle', 'local-asr']),
+  language: z.string().trim().min(1).max(64),
+  format: z.enum(['vtt', 'srt', 'text']),
+  text: z.string().max(200_000),
+  segments: z.array(BrowserTranscriptSegmentSchema).max(20_000).optional(),
+  truncated: z.boolean(),
+});
+
+export type BrowserSubtitleResult = z.infer<typeof BrowserSubtitleResultSchema>;
+
+export const BrowserSubtitleDownloadResultSchema = z.object({
+  pageUrl: WebUrlSchema,
+  title: z.string().max(1_000).optional(),
+  language: z.string().trim().min(1).max(64),
+  format: z.enum(['vtt', 'srt']),
+  filename: z.string().max(4096),
+});
+
+export type BrowserSubtitleDownloadResult = z.infer<typeof BrowserSubtitleDownloadResultSchema>;
 
 export const BrowserDownloadDispatchSchema = z.discriminatedUnion('backend', [
   z.object({

@@ -71,6 +71,7 @@
 - [x] EV Browser 设置修复：English / 简体中文切换、可关闭书签 New Tab、背景图应用与实时同步
 - [x] WebMCP 桥 + 操作可视化：页面通过 `navigator.modelContext.registerTool` 注册工具，`page.webmcp.listTools/callTool` 经 session/oneShot 调用（JSON 错误封装、超时）；元素操作前独立 overlay 高亮，设置开关默认开启（spec: webmcp-and-action-visualization）
 - [x] Browser Control P0/P1：普通 DOM 操作无 CDP、高级能力按需 attach 且同 tab 并发合并；完整 typed 页面交互、iframe、BrowserRun，以及 window/tab/group/download/history/session/zoom 工作区操作（spec: browser-control-p0-p1）
+- [x] 通用字幕读取/下载：`page.subtitles` 通过 Host 本地 yt-dlp helper 读取去时间码 transcript 或显式保存 VTT/SRT；无字幕时可经用户确认调用本地 whisper.cpp ASR，返回来源标记、纯文本与时间段；限定 BrowserSession owned tab、公开非 DRM 页面、stdin URL 与 SSRF 安全代理
 - [x] SiteRecipe P2：review-token 审批、精确域名/路径、typed adapter、本地 0600 存储、`x.mute-words` 与 `x.read-grok-conversation`（spec: site-recipe-p2）
 - [x] BrowserSession P1：每个 Session 新建非聚焦 Chrome window 和单一 EV tab group，只允许 owned tabs，禁止 adopt/borrowed tab，安全 release 与 Host 内存 ownership（spec: browser-session-p1）
 - [x] BrowserRun P0：Host 本地顺序/循环/重试、语义目标重新定位、最终汇总输出；不开放 eval（spec: browser-run-p0）

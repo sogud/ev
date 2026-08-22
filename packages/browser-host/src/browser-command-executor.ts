@@ -1,6 +1,7 @@
 import {
   BrowserDownloadDispatchSchema,
   BrowserDownloadStatusSchema,
+  BrowserSubtitleDispatchSchema,
   type BrowserAtomicCommand,
   type BrowserCommand,
   type BrowserOneShotCommand,
@@ -152,6 +153,20 @@ export class BrowserCommandExecutor {
           ? [...extensionActions.filter(isSessionScopedAction), 'browser.run']
           : [],
       };
+    }
+    if (command.action === 'page.subtitles') {
+      const dispatch = BrowserSubtitleDispatchSchema.parse(result);
+      const request = {
+        ...dispatch,
+        language: command.language,
+        includeAutomatic: command.includeAutomatic,
+        format: command.format,
+        maxChars: command.maxChars,
+        fallback: command.fallback,
+      };
+      return command.operation === 'download'
+        ? this.downloads.downloadSubtitles(request)
+        : this.downloads.readSubtitles(request);
     }
     if (command.action !== 'page.download') return result;
 

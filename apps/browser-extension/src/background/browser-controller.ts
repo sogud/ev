@@ -2,6 +2,7 @@ import {
   BrowserDownloadDispatchSchema,
   BrowserDownloadStatusSchema,
   BrowserMediaResultSchema,
+  BrowserSubtitleDispatchSchema,
   BrowserWebMcpCallResultSchema,
   BrowserWebMcpListResultSchema,
   type BrowserAtomicCommand,
@@ -46,6 +47,7 @@ const DOM_PAGE_ACTIONS = [
   'page.scroll',
   'page.wait',
   'page.screenshot',
+  'page.subtitles',
   'page.release',
 ] as const;
 const WEBMCP_ACTIONS = ['page.webmcp.listTools', 'page.webmcp.callTool'] as const;
@@ -242,6 +244,11 @@ function isStreamMedia(url: string, mimeType?: string): boolean {
     mime.includes('mpegurl') ||
     mime.includes('dash+xml')
   );
+}
+
+function isNetworkMedia(url: string, mimeType?: string): boolean {
+  const mime = mimeType?.toLowerCase() ?? '';
+  return isStreamMedia(url, mimeType) || mime.startsWith('audio/') || mime.startsWith('video/');
 }
 
 function publicMediaUrl(rawUrl: string): string {
@@ -457,7 +464,7 @@ function sessionResult(session: chrome.sessions.Session): Record<string, unknown
       type: 'tab',
       sessionId: tab.sessionId,
       tab: {
-        ...(tab.id !== undefined ? { id: tab.id } : {}),
+        ...(tab.id === undefined ? {} : { id: tab.id }),
         windowId: tab.windowId,
         index: tab.index,
         active: tab.active,
@@ -473,7 +480,7 @@ function sessionResult(session: chrome.sessions.Session): Record<string, unknown
       type: 'window',
       sessionId: window.sessionId,
       window: {
-        ...(window.id !== undefined ? { id: window.id } : {}),
+        ...(window.id === undefined ? {} : { id: window.id }),
         focused: window.focused,
         state: window.state,
         tabIds: (window.tabs ?? []).flatMap(tab => (tab.id === undefined ? [] : [tab.id])),
@@ -485,6 +492,7 @@ function sessionResult(session: chrome.sessions.Session): Record<string, unknown
 
 type DomPageOperation =
   | { kind: 'context'; maxChars: number; scope: 'body' | 'main' }
+  | { kind: 'mediaHint' }
   | { kind: 'history'; operation: 'back' | 'forward' | 'reload' | 'stop' }
   | { kind: 'snapshot'; maxNodes: number; maxChars: number; mode: 'full' | 'interactive' }
   | { kind: 'click'; selector: string }
@@ -598,6 +606,26 @@ async function executeDomPageOperation(operation: DomPageOperation): Promise<unk
         text: (root?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, operation.maxChars),
         capturedAt: new Date().toISOString(),
       };
+    }
+    case 'mediaHint': {
+      const mediaUrl = performance
+        .getEntriesByType('resource')
+        .map(entry => entry.name)
+        .reverse()
+        .find(value => {
+          try {
+            const url = new URL(value);
+            const mime = url.searchParams.get('mime') ?? '';
+            return (
+              url.protocol === 'https:' &&
+              (mime.toLowerCase().startsWith('audio/') ||
+                /\.(m4a|mp3|opus|ogg|wav)(?:$|\?)/i.test(value))
+            );
+          } catch {
+            return false;
+          }
+        });
+      return { mediaUrl, userAgent: navigator.userAgent };
     }
     case 'history':
       if (operation.operation === 'back') history.back();
@@ -825,7 +853,7 @@ class CdpBrowserController {
       if (
         typeof url === 'string' &&
         (mimeType === undefined || typeof mimeType === 'string') &&
-        isStreamMedia(url, mimeType)
+        isNetworkMedia(url, mimeType)
       ) {
         boundedPush(this.rawNetworkMediaByTab, tabId, { url, mimeType });
       }
@@ -904,12 +932,12 @@ class CdpBrowserController {
       }
       case 'windows.update': {
         const changes = {
-          ...(command.focused !== undefined ? { focused: command.focused } : {}),
-          ...(command.state !== undefined ? { state: command.state } : {}),
-          ...(command.left !== undefined ? { left: command.left } : {}),
-          ...(command.top !== undefined ? { top: command.top } : {}),
-          ...(command.width !== undefined ? { width: command.width } : {}),
-          ...(command.height !== undefined ? { height: command.height } : {}),
+          ...(command.focused === undefined ? {} : { focused: command.focused }),
+          ...(command.state === undefined ? {} : { state: command.state }),
+          ...(command.left === undefined ? {} : { left: command.left }),
+          ...(command.top === undefined ? {} : { top: command.top }),
+          ...(command.width === undefined ? {} : { width: command.width }),
+          ...(command.height === undefined ? {} : { height: command.height }),
         };
         return windowResult(await chrome.windows.update(command.windowId, changes));
       }
@@ -931,7 +959,7 @@ class CdpBrowserController {
         assertWebUrl(command.url);
         const tab = await chrome.tabs.create({
           url: command.url,
-          ...(command.windowId !== undefined ? { windowId: command.windowId } : {}),
+          ...(command.windowId === undefined ? {} : { windowId: command.windowId }),
           active: command.active ?? true,
         });
         if (tab.id === undefined) throw new Error('Chrome did not return the created tab');
@@ -940,16 +968,16 @@ class CdpBrowserController {
       case 'tabs.update': {
         if (command.url) assertWebUrl(command.url);
         const changes = {
-          ...(command.url !== undefined ? { url: command.url } : {}),
-          ...(command.active !== undefined ? { active: command.active } : {}),
-          ...(command.pinned !== undefined ? { pinned: command.pinned } : {}),
-          ...(command.muted !== undefined ? { muted: command.muted } : {}),
+          ...(command.url === undefined ? {} : { url: command.url }),
+          ...(command.active === undefined ? {} : { active: command.active }),
+          ...(command.pinned === undefined ? {} : { pinned: command.pinned }),
+          ...(command.muted === undefined ? {} : { muted: command.muted }),
         };
         return tabResult(await chrome.tabs.update(command.tabId, changes));
       }
       case 'tabs.move': {
         const moved = await chrome.tabs.move(command.tabId, {
-          ...(command.windowId !== undefined ? { windowId: command.windowId } : {}),
+          ...(command.windowId === undefined ? {} : { windowId: command.windowId }),
           index: command.index,
         });
         const tab = Array.isArray(moved) ? moved[0] : moved;
@@ -996,18 +1024,18 @@ class CdpBrowserController {
             : { createProperties: { windowId: command.windowId } }),
         });
         const group = await chrome.tabGroups.update(groupId, {
-          ...(command.title !== undefined ? { title: command.title } : {}),
-          ...(command.color !== undefined ? { color: command.color } : {}),
-          ...(command.collapsed !== undefined ? { collapsed: command.collapsed } : {}),
+          ...(command.title === undefined ? {} : { title: command.title }),
+          ...(command.color === undefined ? {} : { color: command.color }),
+          ...(command.collapsed === undefined ? {} : { collapsed: command.collapsed }),
         });
         return tabGroupResult(group);
       }
       case 'tabGroups.update':
         return tabGroupResult(
           await chrome.tabGroups.update(command.groupId, {
-            ...(command.title !== undefined ? { title: command.title } : {}),
-            ...(command.color !== undefined ? { color: command.color } : {}),
-            ...(command.collapsed !== undefined ? { collapsed: command.collapsed } : {}),
+            ...(command.title === undefined ? {} : { title: command.title }),
+            ...(command.color === undefined ? {} : { color: command.color }),
+            ...(command.collapsed === undefined ? {} : { collapsed: command.collapsed }),
           })
         );
       case 'tabGroups.ungroup':
@@ -1069,8 +1097,8 @@ class CdpBrowserController {
       case 'history.search':
         return chrome.history.search({
           text: command.text ?? '',
-          ...(command.startTime !== undefined ? { startTime: command.startTime } : {}),
-          ...(command.endTime !== undefined ? { endTime: command.endTime } : {}),
+          ...(command.startTime === undefined ? {} : { startTime: command.startTime }),
+          ...(command.endTime === undefined ? {} : { endTime: command.endTime }),
           maxResults: command.maxResults ?? 100,
         });
       case 'history.getVisits':
@@ -1115,8 +1143,8 @@ class CdpBrowserController {
       }
       case 'bookmarks.update': {
         const node = await chrome.bookmarks.update(command.id, {
-          ...(command.title !== undefined ? { title: command.title } : {}),
-          ...(command.url !== undefined ? { url: command.url } : {}),
+          ...(command.title === undefined ? {} : { title: command.title }),
+          ...(command.url === undefined ? {} : { url: command.url }),
         });
         return { id: node.id, title: node.title };
       }
@@ -1454,7 +1482,29 @@ class CdpBrowserController {
 
   private async executePageCommand(command: BrowserPageCommand): Promise<unknown> {
     const tabId = command.tabId ?? (await activeTabId());
-    await resolveTab(tabId);
+    const tab = await resolveTab(tabId);
+    if (command.action === 'page.subtitles') {
+      let mediaHint: { mediaUrl?: string; userAgent?: string } = {};
+      if (command.fallback === 'local-asr') {
+        mediaHint = await this.withAdvancedLease(tabId, async () => {
+          await this.ensureAttached(tabId);
+          await new Promise(resolve => setTimeout(resolve, 1_500));
+          const domHint = (await this.runDomOperation(tabId, { kind: 'mediaHint' })) as {
+            mediaUrl?: string;
+            userAgent?: string;
+          };
+          const observedAudio = [...(this.rawNetworkMediaByTab.get(tabId) ?? [])]
+            .reverse()
+            .find(item => item.mimeType?.toLowerCase().startsWith('audio/'));
+          return { ...domHint, mediaUrl: observedAudio?.url ?? domHint.mediaUrl };
+        });
+      }
+      return BrowserSubtitleDispatchSchema.parse({
+        pageUrl: tab.url,
+        title: tab.title,
+        ...mediaHint,
+      });
+    }
     if (command.action === 'page.webmcp.listTools') return this.webMcpListTools(tabId);
     if (command.action === 'page.webmcp.callTool') return this.webMcpCallTool(tabId, command);
     if (this.canExecuteWithoutDebugger(command)) {
@@ -1825,7 +1875,7 @@ class CdpBrowserController {
       case 'page.dialog.respond':
         await this.send(tabId, 'Page.handleJavaScriptDialog', {
           accept: command.accept,
-          ...(command.promptText !== undefined ? { promptText: command.promptText } : {}),
+          ...(command.promptText === undefined ? {} : { promptText: command.promptText }),
         });
         return { tabId, accepted: command.accept };
       case 'page.screenshot':
@@ -2132,7 +2182,7 @@ class CdpBrowserController {
       returnByValue: true,
       awaitPromise: true,
       userGesture: false,
-      ...(contextId !== undefined ? { contextId } : {}),
+      ...(contextId === undefined ? {} : { contextId }),
     });
     const exception = response.exceptionDetails as Record<string, unknown> | undefined;
     if (exception) throw new Error(`CDP evaluation failed: ${String(exception.text ?? 'unknown')}`);
@@ -2417,7 +2467,7 @@ class CdpBrowserController {
       ...(this.rawNetworkMediaByTab.get(tabId) ?? []),
     ];
     for (const item of networkCandidates) {
-      if (!httpUrl(item.url) || !isStreamMedia(item.url, item.mimeType)) continue;
+      if (!httpUrl(item.url) || !isNetworkMedia(item.url, item.mimeType)) continue;
       candidates.push({
         rawUrl: item.url,
         pageUrl: scan.pageUrl,
@@ -2445,9 +2495,9 @@ class CdpBrowserController {
         url: publicMediaUrl(candidate.rawUrl),
         filename: mediaFilename(candidate.rawUrl, candidate.kind, candidate.mimeType),
         ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
-        ...(candidate.width !== undefined ? { width: candidate.width } : {}),
-        ...(candidate.height !== undefined ? { height: candidate.height } : {}),
-        ...(candidate.duration !== undefined ? { duration: candidate.duration } : {}),
+        ...(candidate.width === undefined ? {} : { width: candidate.width }),
+        ...(candidate.height === undefined ? {} : { height: candidate.height }),
+        ...(candidate.duration === undefined ? {} : { duration: candidate.duration }),
       };
       refs.set(ref, { rawUrl: candidate.rawUrl, pageUrl: candidate.pageUrl, item });
       return item;

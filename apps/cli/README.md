@@ -34,6 +34,8 @@ ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"p
 ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.click","selector":"@e1"}}' --compact
 ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"tabs.list"}}' --compact
 ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.screenshot","fullPage":true}}' --output /tmp/page.png
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.subtitles","operation":"read","language":"zh-Hans","includeAutomatic":true,"format":"vtt","maxChars":100000}}' --compact
+ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"page.subtitles","operation":"download","language":"zh-Hans","includeAutomatic":true,"format":"srt"}}' --compact
 ev browser session.release --payload '{"sessionId":"UUID"}' --compact
 
 # Chrome profile 全局 action 仅在用户明确要求时直接调用
@@ -60,6 +62,8 @@ ev browser host stop
 ## P0/P1 浏览器控制
 
 P0 页面 action 包含导航历史、点击/双击/右键、输入、checkbox/radio、原生 select、拖拽、focus、元素状态读取、键盘、坐标 pointer、滚动、iframe、JavaScript dialog，以及 navigation/network-idle/popup/download 等待。普通 navigate/context/snapshot/左键 click/type/check/select/focus/inspect/scroll/target wait/viewport screenshot 使用固定 content script 或 tabs API，不调用 `chrome.debugger.attach`；仅高级底层输入、iframe、Network/Console、emulation、上传、媒体和 full-page screenshot 调用 CDP attach。`page.click.waitFor` 会在点击前注册事件监听，避免错过新页面、popup 或下载事件。
+
+`page.subtitles` 从当前 BrowserSession 的 owned tab 读取页面 URL，再由 Host 中受限的 `yt-dlp` helper 提取字幕。`operation: "read"` 返回去除时间码和重复 cue 的纯文本，最多 200,000 字符；`operation: "download"` 显式保存 VTT/SRT 到 `~/Downloads/EV`。可指定单个语言代码、是否包含自动字幕和格式。页面没有字幕时，可在用户明确同意后传 `fallback: "local-asr"` 与 `confirm: "RUN_LOCAL_ASR"`：Host 临时提取 WAV，调用 `PATH` 中的 `whisper-cli` 和 ggml 模型（默认 `~/.ev/models/whisper/ggml-small.bin`，可用 `EV_WHISPER_MODEL` 覆盖），返回 `source: "local-asr"`、纯文本及时间段，随后删除临时音频。页面 URL 通过 stdin 传入 helper，所有网络请求经过 loopback 安全代理并拒绝 local/private/link-local/reserved 地址。YouTube 本地 ASR 使用匿名 `web_embedded` client，不读取 Cookie、不需要 PO Token 或常驻服务，因此仅支持作者允许嵌入播放的视频；其他站点沿用受限的公开媒体提取。首版覆盖 yt-dlp 支持的公开、非 DRM 页面，不绕过登录或地区限制。
 
 P1 浏览器工作区能力包含 window、tab、tab group、download、history、recent sessions 和 zoom。对外规则是：
 

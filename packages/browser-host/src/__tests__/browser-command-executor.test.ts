@@ -294,6 +294,71 @@ describe('BrowserCommandExecutor', () => {
     });
   });
 
+  it('reads and downloads subtitles through the bounded local helper', async () => {
+    const dispatch = { pageUrl: 'https://example.com/watch', title: 'Example' };
+    const { bridge } = createIsolatedBridge(command => {
+      if (command.action === 'page.subtitles') return dispatch;
+      return { ok: true };
+    });
+    const downloads = {
+      readSubtitles: vi.fn(async () => ({
+        ...dispatch,
+        language: 'en',
+        format: 'vtt',
+        text: 'Hello',
+        truncated: false,
+      })),
+      downloadSubtitles: vi.fn(async () => ({
+        ...dispatch,
+        language: 'en',
+        format: 'srt',
+        filename: '/tmp/EV/example.en.srt',
+      })),
+    } as unknown as MediaDownloadService;
+    const executor = new BrowserCommandExecutor(bridge, downloads);
+    const sessionId = await createSession(executor);
+
+    await expect(
+      executor.sendCommand({
+        action: 'browser.session.command',
+        sessionId,
+        command: {
+          action: 'page.subtitles',
+          operation: 'read',
+          language: 'en',
+          includeAutomatic: true,
+          format: 'vtt',
+          maxChars: 100_000,
+          fallback: 'none',
+        },
+      })
+    ).resolves.toMatchObject({ result: { text: 'Hello', language: 'en' } });
+    expect(downloads.readSubtitles).toHaveBeenCalledWith({
+      ...dispatch,
+      language: 'en',
+      includeAutomatic: true,
+      format: 'vtt',
+      maxChars: 100_000,
+      fallback: 'none',
+    });
+
+    await expect(
+      executor.sendCommand({
+        action: 'browser.session.command',
+        sessionId,
+        command: {
+          action: 'page.subtitles',
+          operation: 'download',
+          language: 'en',
+          includeAutomatic: false,
+          format: 'srt',
+          maxChars: 100_000,
+          fallback: 'none',
+        },
+      })
+    ).resolves.toMatchObject({ result: { filename: '/tmp/EV/example.en.srt' } });
+  });
+
   it('starts a local helper job for streaming media inside a BrowserSession', async () => {
     const dispatch = {
       backend: 'external' as const,
