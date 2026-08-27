@@ -340,9 +340,16 @@ async function writeBookmarkBackup(data: unknown, outputPath: string): Promise<s
 
 async function createAutomaticBookmarkBackup(
   timeoutMs: number,
-  profile: string = DEFAULT_BROWSER_PROFILE
+  profile: string = DEFAULT_BROWSER_PROFILE,
+  browserId?: string
 ): Promise<string> {
-  const backup = await invoke({ action: 'bookmarks.export' }, timeoutMs, profile);
+  // Back up the same browser the mutation targets; with several browsers
+  // online an untargeted export is ambiguous.
+  const backup = await invoke(
+    browserId ? { action: 'bookmarks.export', browserId } : { action: 'bookmarks.export' },
+    timeoutMs,
+    profile
+  );
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `${timestamp}-${randomUUID()}.json`;
   return writeBookmarkBackup(
@@ -443,7 +450,11 @@ export async function run(argv: string[]): Promise<number> {
     await validateLocalFiles(commandResult.data);
     if (!process.env.EV_BROWSER_CONTROL_FILE?.trim()) await ensureStandaloneHost(parsed.profile);
     const backupPath = MUTATING_BOOKMARK_ACTIONS.has(commandResult.data.action)
-      ? await createAutomaticBookmarkBackup(parsed.timeoutMs, parsed.profile)
+      ? await createAutomaticBookmarkBackup(
+          parsed.timeoutMs,
+          parsed.profile,
+          'browserId' in commandResult.data ? commandResult.data.browserId : undefined
+        )
       : undefined;
     let data: unknown;
     try {
