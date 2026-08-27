@@ -1,26 +1,50 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { BrowserBridgePersistedState, BrowserBridgeStore } from './browser-bridge-service';
+import type {
+  BrowserBridgeIdentity,
+  BrowserBridgePersistedState,
+  BrowserBridgeStore,
+} from './browser-bridge-service';
 
-const EMPTY_STATE: BrowserBridgePersistedState = {
-  pairingToken: null,
-  allowedOrigin: null,
-  browserId: null,
-};
+const EMPTY_STATE: BrowserBridgePersistedState = { identities: [] };
+
+function parseToken(value: unknown): string | null {
+  return typeof value === 'string' && value.length >= 16 && value.length <= 512 ? value : null;
+}
+
+function parseIdentity(value: unknown): BrowserBridgeIdentity | null {
+  if (!value || typeof value !== 'object') return null;
+  const identity = value as Record<string, unknown>;
+  const pairingToken = parseToken(identity.pairingToken);
+  if (!pairingToken) return null;
+  return {
+    pairingToken,
+    allowedOrigin: typeof identity.allowedOrigin === 'string' ? identity.allowedOrigin : null,
+    browserId: typeof identity.browserId === 'string' ? identity.browserId : null,
+    browserName: typeof identity.browserName === 'string' ? identity.browserName : null,
+    pairedAt:
+      typeof identity.pairedAt === 'number' && Number.isFinite(identity.pairedAt)
+        ? identity.pairedAt
+        : Date.now(),
+  };
+}
 
 function parseState(value: unknown): BrowserBridgePersistedState {
-  if (!value || typeof value !== 'object') return { ...EMPTY_STATE };
+  if (!value || typeof value !== 'object') return { identities: [] };
   const state = value as Record<string, unknown>;
-  return {
-    pairingToken:
-      typeof state.pairingToken === 'string' &&
-      state.pairingToken.length >= 16 &&
-      state.pairingToken.length <= 512
-        ? state.pairingToken
-        : null,
-    allowedOrigin: typeof state.allowedOrigin === 'string' ? state.allowedOrigin : null,
-    browserId: typeof state.browserId === 'string' ? state.browserId : null,
-  };
+
+  // Current shape: a list of paired identities.
+  if (Array.isArray(state.identities)) {
+    const identities = state.identities
+      .map(parseIdentity)
+      .filter((identity): identity is BrowserBridgeIdentity => identity !== null);
+    return { identities };
+  }
+
+  // Legacy single-identity shape: migrate into a one-entry list so an already
+  // paired browser keeps working across the upgrade.
+  const legacy = parseIdentity(state);
+  return legacy ? { identities: [legacy] } : { identities: [] };
 }
 
 export class FileBrowserBridgeStore implements BrowserBridgeStore {
@@ -37,7 +61,7 @@ export class FileBrowserBridgeStore implements BrowserBridgeStore {
   }
 
   get(): BrowserBridgePersistedState {
-    return { ...this.state };
+    return { identities: this.state.identities.map(identity => ({ ...identity })) };
   }
 
   set(state: BrowserBridgePersistedState): void {

@@ -31,7 +31,12 @@ function trustedExtensionOrigins(): string[] {
     .filter(Boolean);
   const origins = [...DEFAULT_TRUSTED_EXTENSION_ORIGINS, ...configured];
   for (const origin of origins) {
-    const url = new URL(origin);
+    let url: URL;
+    try {
+      url = new URL(origin);
+    } catch {
+      throw new Error(`Invalid trusted EV Browser extension origin: ${origin}`);
+    }
     if (
       (url.protocol !== 'chrome-extension:' && url.protocol !== 'moz-extension:') ||
       !url.hostname ||
@@ -168,8 +173,7 @@ export interface BrowserProfileInfo {
   profile: string;
   port: number;
   hostOnline: boolean;
-  pairedOrigin: string | null;
-  pairedBrowserId: string | null;
+  pairedBrowsers: Array<{ origin: string; browserId: string }>;
 }
 
 /** Snapshot of every known profile (default + registered) for `ev browser profile list`. */
@@ -182,15 +186,31 @@ export async function listBrowserProfiles(): Promise<BrowserProfileInfo[]> {
     let hostOnline = false;
     const discovery = await readBrowserHostDiscovery(runtime);
     if (discovery) hostOnline = await browserHostIsAvailable(runtime, discovery);
-    let pairedOrigin: string | null = null;
-    let pairedBrowserId: string | null = null;
+    const pairedBrowsers: Array<{ origin: string; browserId: string }> = [];
     try {
       const pairing = JSON.parse(await readFile(profilePairingPath(name), 'utf8')) as Record<
         string,
         unknown
       >;
-      if (typeof pairing.allowedOrigin === 'string') pairedOrigin = pairing.allowedOrigin;
-      if (typeof pairing.browserId === 'string') pairedBrowserId = pairing.browserId;
+      // Current multi-identity shape; the legacy single-identity file is
+      // migrated by FileBrowserBridgeStore on first write.
+      if (Array.isArray(pairing.identities)) {
+        for (const identity of pairing.identities) {
+          if (
+            identity &&
+            typeof identity === 'object' &&
+            typeof identity.allowedOrigin === 'string' &&
+            typeof identity.browserId === 'string'
+          ) {
+            pairedBrowsers.push({ origin: identity.allowedOrigin, browserId: identity.browserId });
+          }
+        }
+      } else if (
+        typeof pairing.allowedOrigin === 'string' &&
+        typeof pairing.browserId === 'string'
+      ) {
+        pairedBrowsers.push({ origin: pairing.allowedOrigin, browserId: pairing.browserId });
+      }
     } catch {
       // never paired
     }
@@ -198,8 +218,7 @@ export async function listBrowserProfiles(): Promise<BrowserProfileInfo[]> {
       profile: name,
       port: await profileBridgePort(name),
       hostOnline,
-      pairedOrigin,
-      pairedBrowserId,
+      pairedBrowsers,
     });
   }
   return infos;
@@ -219,12 +238,14 @@ function selfCommand(profile: string): { executable: string; args: string[] } {
       'browser',
       'host',
       '--background',
-      ...(profile !== DEFAULT_BROWSER_PROFILE ? ['--profile', profile] : []),
+      ...(profile === DEFAULT_BROWSER_PROFILE ? [] : ['--profile', profile]),
     ],
   };
 }
 
-export async function ensureStandaloneHost(profile: string = DEFAULT_BROWSER_PROFILE): Promise<boolean> {
+export async function ensureStandaloneHost(
+  profile: string = DEFAULT_BROWSER_PROFILE
+): Promise<boolean> {
   const name = normalizeBrowserProfile(profile);
   const runtimePath = profileRuntimeDirectory(name);
   const existing = await readBrowserHostDiscovery(runtimePath);
@@ -251,7 +272,6 @@ export async function ensureStandaloneHost(profile: string = DEFAULT_BROWSER_PRO
 
 export async function runStandaloneHost(profile: string = DEFAULT_BROWSER_PROFILE): Promise<void> {
   const name = normalizeBrowserProfile(profile);
-  const home = evHomeDirectory();
   let port = await profileBridgePort(name);
   // The persisted profile port can be squatted by another app between boots;
   // move to the next free port and update the registry so the extension
@@ -309,6 +329,8 @@ export async function runStandaloneHost(profile: string = DEFAULT_BROWSER_PROFIL
   downloads.dispose();
 }
 
-export async function stopStandaloneHost(profile: string = DEFAULT_BROWSER_PROFILE): Promise<boolean> {
+export async function stopStandaloneHost(
+  profile: string = DEFAULT_BROWSER_PROFILE
+): Promise<boolean> {
   return stopStandaloneBrowserHost(profileRuntimeDirectory(normalizeBrowserProfile(profile)));
 }

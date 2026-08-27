@@ -90,7 +90,9 @@ export class BrowserCommandExecutor {
     private readonly downloads: MediaDownloadService,
     recipeFilePath = defaultSiteRecipeFilePath()
   ) {
-    this.sessions = new BrowserSessionManager(command => this.executeAtomic(command));
+    this.sessions = new BrowserSessionManager((command, browserId) =>
+      this.executeAtomic(command, browserId)
+    );
     this.recipes = new SiteRecipeRegistry(recipeFilePath, (sessionId, operation) =>
       this.sessions.runExclusive(sessionId, operation)
     );
@@ -98,8 +100,19 @@ export class BrowserCommandExecutor {
 
   async sendCommand(command: BrowserCommand): Promise<unknown> {
     if (isRecipeCommand(command)) return this.recipes.execute(command);
-    if (isSessionCommand(command)) return this.sessions.execute(command);
-    if (isOneShotCommand(command)) return this.sessions.runOneShot(command);
+    if (isSessionCommand(command)) {
+      // Pin a new session to one concrete browser up front; later session
+      // commands always route through the stored browserId.
+      if (command.action === 'browser.session.create') {
+        const browserId = this.bridge.resolveBrowserId(command.browserId);
+        return this.sessions.execute({ ...command, browserId });
+      }
+      return this.sessions.execute(command);
+    }
+    if (isOneShotCommand(command)) {
+      const browserId = this.bridge.resolveBrowserId(command.browserId);
+      return this.sessions.runOneShot({ ...command, browserId });
+    }
     if (!isAtomicCommand(command)) {
       throw new Error(
         'Browser workspace commands require browser.session.command or browser.oneShot'
@@ -113,12 +126,12 @@ export class BrowserCommandExecutor {
     );
   }
 
-  private async executeAtomic(command: BrowserAtomicCommand): Promise<unknown> {
+  private async executeAtomic(command: BrowserAtomicCommand, browserId?: string): Promise<unknown> {
     if (command.action === 'downloads.status' && command.downloadId.startsWith('local:')) {
       return this.downloads.status(command.downloadId);
     }
 
-    const result = await this.bridge.sendCommand(command);
+    const result = await this.bridge.sendCommand(command, browserId ?? command.browserId);
     if (
       command.action === 'browser.capabilities' &&
       result &&

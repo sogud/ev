@@ -93,10 +93,10 @@ export function buildHandlers(deps: ServerDeps): HandlersOf<typeof ipcRegistry> 
     },
     browserBridge: {
       get: () => browserBridge.getSnapshot(),
-      approvePairing: () => browserBridge.approvePendingPairing(),
-      rejectPairing: () => browserBridge.rejectPendingPairing(),
-      reconnect: () => browserBridge.requestReconnect(),
-      revokePairing: () => browserBridge.revokePairing(),
+      approvePairing: browserId => browserBridge.approvePendingPairing(browserId),
+      rejectPairing: browserId => browserBridge.rejectPendingPairing(browserId),
+      reconnect: browserId => browserBridge.requestReconnect(browserId),
+      revokePairing: browserId => browserBridge.revokePairing(browserId),
     },
     settings: {
       get: () => management.getSettings(),

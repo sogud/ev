@@ -5,8 +5,7 @@ import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import cliPackage from '../package.json' with { type: 'json' };
-import
- {
+import {
   DEFAULT_BROWSER_PROFILE,
   ensureStandaloneHost,
   evHomeDirectory,
@@ -207,9 +206,7 @@ const PAGE_ACTION_HINTS: Record<string, string> = {
 function pageActionHint(action: string): string | null {
   const bare = action.startsWith('page.') ? action.slice('page.'.length) : action;
   if (!(bare in PAGE_ACTION_HINTS) && !/^[a-zA-Z][a-zA-Z.]*$/.test(bare)) return null;
-  const example = PAGE_ACTION_HINTS[bare]
-    ? ` (${PAGE_ACTION_HINTS[bare]})`
-    : '';
+  const example = PAGE_ACTION_HINTS[bare] ? ` (${PAGE_ACTION_HINTS[bare]})` : '';
   return [
     `"${action}" is a page action; page actions never run top-level${example}.`,
     `One-shot form: ev browser oneShot --payload '{"url":"<url>","command":{"action":"page.${bare}", ...}}'.`,
@@ -237,7 +234,9 @@ function discoveryPath(profile: string = DEFAULT_BROWSER_PROFILE): string {
   return process.env.EV_BROWSER_CONTROL_FILE?.trim() || standaloneDiscoveryPath(profile);
 }
 
-async function readDiscovery(profile: string = DEFAULT_BROWSER_PROFILE): Promise<DiscoveryFile & { token: string }> {
+async function readDiscovery(
+  profile: string = DEFAULT_BROWSER_PROFILE
+): Promise<DiscoveryFile & { token: string }> {
   const filePath = discoveryPath(profile);
   let decoded: unknown;
   try {

@@ -11,12 +11,8 @@ const renderMarkup = (node: React.ReactNode): string =>
 const baseSnapshot: BrowserBridgeSnapshot = {
   status: 'listening',
   endpoint: 'ws://127.0.0.1:43121/browser',
-  pairingToken: null,
-  pairedOrigin: null,
-  browserId: null,
-  pendingPairing: null,
-  connectedAt: null,
-  lastSeenAt: null,
+  pairedBrowsers: [],
+  pendingPairings: [],
   lastError: null,
 };
 
@@ -26,13 +22,15 @@ describe('BrowserBridgeContent', () => {
       <BrowserBridgeContent
         snapshot={{
           ...baseSnapshot,
-          pendingPairing: {
-            browserId: 'browser-id',
-            browserName: 'Chrome',
-            extensionVersion: '1.0.0',
-            origin: 'chrome-extension://extension-id',
-            requestedAt: Date.now(),
-          },
+          pendingPairings: [
+            {
+              browserId: 'browser-id',
+              browserName: 'Chrome',
+              extensionVersion: '1.0.0',
+              origin: 'chrome-extension://extension-id',
+              requestedAt: Date.now(),
+            },
+          ],
         }}
         onApprove={vi.fn()}
         onReject={vi.fn()}
@@ -63,5 +61,50 @@ describe('BrowserBridgeContent', () => {
 
     expect(html).toContain('刷新状态');
     expect(html).toContain('请求重连');
+  });
+
+  it('lists every paired browser with its online state', () => {
+    const html = renderMarkup(
+      <BrowserBridgeContent
+        snapshot={{
+          ...baseSnapshot,
+          status: 'connected',
+          pairedBrowsers: [
+            {
+              browserId: 'browser-work',
+              browserName: 'Chrome',
+              origin: 'chrome-extension://extension-id',
+              online: true,
+              connectedAt: Date.now(),
+              lastSeenAt: Date.now(),
+            },
+            {
+              browserId: 'browser-personal',
+              browserName: 'Edge',
+              origin: 'chrome-extension://extension-id',
+              online: false,
+              connectedAt: null,
+              lastSeenAt: null,
+            },
+          ],
+        }}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onRefresh={vi.fn()}
+        onReconnect={vi.fn()}
+        onRevoke={vi.fn()}
+      />
+    );
+
+    expect(html).toContain('Chrome');
+    expect(html).toContain('Edge');
+    expect(html).toContain('browser-work');
+    expect(html).toContain('browser-personal');
+    expect(html).toContain('当前在线');
+    expect(html).toContain('等待自动重连');
+    expect(html).not.toContain('2 个在线'); // only one is online
+    expect(html).toContain('1 个在线');
+    // two paired browsers expose the bulk revoke action
+    expect(html).toContain('撤销全部配对');
   });
 });

@@ -34,7 +34,7 @@ const SCOPED_TAB_ACTIONS = new Set([
   'tabs.activate',
 ]);
 
-type AtomicCommandExecutor = (command: BrowserAtomicCommand) => Promise<unknown>;
+type AtomicCommandExecutor = (command: BrowserAtomicCommand, browserId: string) => Promise<unknown>;
 
 function isPageCommand(command: BrowserAtomicCommand): command is BrowserPageCommand {
   return command.action.startsWith('page.');
@@ -48,6 +48,8 @@ function isTabScopedCommand(
 
 interface BrowserSessionState {
   sessionId: string;
+  /** Sessions are pinned to the browser that created them. */
+  browserId: string;
   windowId: number;
   groupId: number;
   ownedTabIds: Set<number>;
@@ -56,7 +58,7 @@ interface BrowserSessionState {
 
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, BrowserSessionState>();
-  private readonly tabOwners = new Map<number, string>();
+  private readonly tabOwners = new Map<string, string>();
   private readonly sessionTails = new Map<string, Promise<void>>();
   private ownershipTail: Promise<void> = Promise.resolve();
 
@@ -67,7 +69,8 @@ export class BrowserSessionManager {
 
   async execute(command: BrowserSessionCommand): Promise<unknown> {
     const parsed = BrowserSessionCommandSchema.parse(command);
-    if (parsed.action === 'browser.session.create') return this.create(parsed.url);
+    if (parsed.action === 'browser.session.create')
+      return this.create(parsed.url, parsed.browserId);
     if (parsed.action === 'browser.session.list') return this.list();
 
     return this.enqueue(parsed.sessionId, async () => {
@@ -87,7 +90,7 @@ export class BrowserSessionManager {
   }
 
   async runOneShot(command: BrowserOneShotCommand): Promise<unknown> {
-    const session = await this.create(command.url);
+    const session = await this.create(command.url, command.browserId);
     try {
       const result = await this.execute({
         action: 'browser.session.command',
@@ -122,53 +125,71 @@ export class BrowserSessionManager {
     });
   }
 
-  private async create(url: string): Promise<BrowserSessionSnapshot> {
+  private async create(
+    url: string,
+    browserId: string | undefined
+  ): Promise<BrowserSessionSnapshot> {
     return this.withOwnershipLock(async () => {
+      if (!browserId) {
+        throw new Error('BrowserSession creation requires a resolved target browserId');
+      }
       if (this.sessions.size >= MAX_SESSIONS) {
         throw new Error(`Browser Host cannot exceed ${MAX_SESSIONS} BrowserSessions`);
       }
 
       const sessionId = this.createSessionId();
       const created = BrowserWindowOpenResultSchema.parse(
-        await this.executeAtomic({ action: 'windows.open', url, focused: false })
+        await this.executeAtomic({ action: 'windows.open', url, focused: false }, browserId)
       );
-      if (this.sessions.has(sessionId) || this.tabOwners.has(created.tabId)) {
-        await this.executeAtomic({ action: 'tabs.close', tabId: created.tabId });
+      if (
+        this.sessions.has(sessionId) ||
+        this.tabOwners.has(this.tabKey(browserId, created.tabId))
+      ) {
+        await this.executeAtomic({ action: 'tabs.close', tabId: created.tabId }, browserId);
         throw new Error('BrowserSession ownership collision');
       }
 
       let groupId: number;
       try {
         const group = BrowserTabGroupSchema.parse(
-          await this.executeAtomic({
-            action: 'tabGroups.create',
-            tabIds: [created.tabId],
-            windowId: created.windowId,
-            title: 'EV',
-            color: 'cyan',
-            collapsed: false,
-          })
+          await this.executeAtomic(
+            {
+              action: 'tabGroups.create',
+              tabIds: [created.tabId],
+              windowId: created.windowId,
+              title: 'EV',
+              color: 'cyan',
+              collapsed: false,
+            },
+            browserId
+          )
         );
         if (group.windowId !== created.windowId) {
           throw new Error('Chrome created the EV tab group outside the BrowserSession window');
         }
         groupId = group.id;
       } catch (error) {
-        await this.executeAtomic({ action: 'tabs.close', tabId: created.tabId });
+        await this.executeAtomic({ action: 'tabs.close', tabId: created.tabId }, browserId);
         throw error;
       }
 
       const session: BrowserSessionState = {
         sessionId,
+        browserId,
         windowId: created.windowId,
         groupId,
         ownedTabIds: new Set([created.tabId]),
         activeTabId: created.tabId,
       };
       this.sessions.set(sessionId, session);
-      this.tabOwners.set(created.tabId, sessionId);
+      this.tabOwners.set(this.tabKey(browserId, created.tabId), sessionId);
       return this.snapshot(session);
     });
+  }
+
+  /** Tab ids are only unique inside one browser; ownership keys include the browser. */
+  private tabKey(browserId: string, tabId: number): string {
+    return `${browserId}:${tabId}`;
   }
 
   private async list(): Promise<{ sessions: BrowserSessionSnapshot[] }> {
@@ -201,26 +222,32 @@ export class BrowserSessionManager {
     await this.refresh(session);
     this.assertTabCapacity(session);
     const created = BrowserTabOpenResultSchema.parse(
-      await this.executeAtomic({
-        action: 'tabs.open',
-        url,
-        windowId: session.windowId,
-        active,
-      })
+      await this.executeAtomic(
+        {
+          action: 'tabs.open',
+          url,
+          windowId: session.windowId,
+          active,
+        },
+        session.browserId
+      )
     );
-    if (created.windowId !== session.windowId || this.tabOwners.has(created.id)) {
-      await this.executeAtomic({ action: 'tabs.close', tabId: created.id });
+    if (
+      created.windowId !== session.windowId ||
+      this.tabOwners.has(this.tabKey(session.browserId, created.id))
+    ) {
+      await this.executeAtomic({ action: 'tabs.close', tabId: created.id }, session.browserId);
       throw new Error('Chrome created the tab outside the BrowserSession window');
     }
 
     try {
       await this.addToSessionGroup(session, created.id);
     } catch (error) {
-      await this.executeAtomic({ action: 'tabs.close', tabId: created.id });
+      await this.executeAtomic({ action: 'tabs.close', tabId: created.id }, session.browserId);
       throw error;
     }
     session.ownedTabIds.add(created.id);
-    this.tabOwners.set(created.id, session.sessionId);
+    this.tabOwners.set(this.tabKey(session.browserId, created.id), session.sessionId);
     if (active) session.activeTabId = created.id;
     return this.snapshot(session);
   }
@@ -250,7 +277,10 @@ export class BrowserSessionManager {
       const tabId = requestedTabId ?? this.defaultTabId(session);
       this.assertOwnsTab(session, tabId);
       session.activeTabId = tabId;
-      const result = await this.executeAtomic({ ...atomic, tabId } as BrowserAtomicCommand);
+      const result = await this.executeAtomic(
+        { ...atomic, tabId } as BrowserAtomicCommand,
+        session.browserId
+      );
       return BrowserSessionCommandResultSchema.parse({
         sessionId: session.sessionId,
         tabId,
@@ -273,7 +303,7 @@ export class BrowserSessionManager {
     const tabId = 'tabId' in command ? command.tabId : undefined;
     const scopedTabId = tabId ?? this.defaultTabId(session);
     this.assertOwnsTab(session, scopedTabId);
-    return this.executeAtomic({ ...command, tabId: scopedTabId });
+    return this.executeAtomic({ ...command, tabId: scopedTabId }, session.browserId);
   }
 
   private async executeScopedWorkspace(
@@ -281,7 +311,9 @@ export class BrowserSessionManager {
     command: BrowserAtomicCommand
   ): Promise<unknown> {
     if (command.action === 'tabs.list') {
-      const tabs = BrowserTabsResultSchema.parse(await this.executeAtomic(command));
+      const tabs = BrowserTabsResultSchema.parse(
+        await this.executeAtomic(command, session.browserId)
+      );
       return tabs.filter(tab => session.ownedTabIds.has(tab.id));
     }
     if (isTabScopedCommand(command)) {
@@ -293,50 +325,61 @@ export class BrowserSessionManager {
       case 'tabs.discard':
       case 'tabs.activate':
         if (command.action === 'tabs.activate') session.activeTabId = command.tabId;
-        return this.executeAtomic(command);
+        return this.executeAtomic(command, session.browserId);
       case 'tabs.update': {
         if (command.pinned) {
           throw new Error(
             'BrowserSession tabs cannot be pinned because every tab must stay grouped'
           );
         }
-        await this.executeAtomic(command);
+        await this.executeAtomic(command, session.browserId);
         await this.addToSessionGroup(session, command.tabId);
         if (command.active) session.activeTabId = command.tabId;
-        return this.executeAtomic({ action: 'tabs.get', tabId: command.tabId });
+        return this.executeAtomic({ action: 'tabs.get', tabId: command.tabId }, session.browserId);
       }
       case 'tabs.move':
-        await this.executeAtomic({ ...command, windowId: session.windowId });
+        await this.executeAtomic({ ...command, windowId: session.windowId }, session.browserId);
         await this.addToSessionGroup(session, command.tabId);
-        return this.executeAtomic({ action: 'tabs.get', tabId: command.tabId });
+        return this.executeAtomic({ action: 'tabs.get', tabId: command.tabId }, session.browserId);
       case 'tabs.duplicate': {
         this.assertTabCapacity(session);
-        const duplicated = BrowserTabSchema.parse(await this.executeAtomic(command));
-        if (duplicated.windowId !== session.windowId || this.tabOwners.has(duplicated.id)) {
-          await this.executeAtomic({ action: 'tabs.close', tabId: duplicated.id });
+        const duplicated = BrowserTabSchema.parse(
+          await this.executeAtomic(command, session.browserId)
+        );
+        if (
+          duplicated.windowId !== session.windowId ||
+          this.tabOwners.has(this.tabKey(session.browserId, duplicated.id))
+        ) {
+          await this.executeAtomic(
+            { action: 'tabs.close', tabId: duplicated.id },
+            session.browserId
+          );
           throw new Error('Chrome duplicated the tab outside the BrowserSession window');
         }
         try {
           await this.addToSessionGroup(session, duplicated.id);
         } catch (error) {
-          await this.executeAtomic({ action: 'tabs.close', tabId: duplicated.id });
+          await this.executeAtomic(
+            { action: 'tabs.close', tabId: duplicated.id },
+            session.browserId
+          );
           throw error;
         }
         session.ownedTabIds.add(duplicated.id);
-        this.tabOwners.set(duplicated.id, session.sessionId);
-        return this.executeAtomic({ action: 'tabs.get', tabId: duplicated.id });
+        this.tabOwners.set(this.tabKey(session.browserId, duplicated.id), session.sessionId);
+        return this.executeAtomic({ action: 'tabs.get', tabId: duplicated.id }, session.browserId);
       }
       case 'tabs.close':
         if (session.ownedTabIds.size === 1) {
           throw new Error('Release the BrowserSession instead of closing its last tab');
         }
-        await this.executeAtomic(command);
+        await this.executeAtomic(command, session.browserId);
         session.ownedTabIds.delete(command.tabId);
-        this.tabOwners.delete(command.tabId);
+        this.tabOwners.delete(this.tabKey(session.browserId, command.tabId));
         if (session.activeTabId === command.tabId) session.activeTabId = this.firstTabId(session);
         return { closed: true, tabId: command.tabId };
       case 'windows.list': {
-        const windows = await this.executeAtomic(command);
+        const windows = await this.executeAtomic(command, session.browserId);
         if (!Array.isArray(windows)) return [];
         return windows.filter(
           window =>
@@ -349,12 +392,15 @@ export class BrowserSessionManager {
             `BrowserSession ${session.sessionId} does not own window ${command.windowId}`
           );
         }
-        return this.executeAtomic(command);
+        return this.executeAtomic(command, session.browserId);
       case 'tabGroups.list': {
-        const groups = await this.executeAtomic({
-          action: 'tabGroups.list',
-          windowId: session.windowId,
-        });
+        const groups = await this.executeAtomic(
+          {
+            action: 'tabGroups.list',
+            windowId: session.windowId,
+          },
+          session.browserId
+        );
         if (!Array.isArray(groups)) return [];
         return groups.filter(
           group =>
@@ -367,7 +413,7 @@ export class BrowserSessionManager {
             `BrowserSession ${session.sessionId} does not own group ${command.groupId}`
           );
         }
-        return this.executeAtomic(command);
+        return this.executeAtomic(command, session.browserId);
       default:
         throw new Error(`BrowserSession cannot execute workspace action ${command.action}`);
     }
@@ -377,9 +423,10 @@ export class BrowserSessionManager {
     await this.refresh(session, true);
     const closedOwnedTabIds: number[] = [];
     for (const tabId of [...session.ownedTabIds]) {
-      await this.executeAtomic({ action: 'tabs.close', tabId });
+      await this.executeAtomic({ action: 'tabs.close', tabId }, session.browserId);
       session.ownedTabIds.delete(tabId);
-      if (this.tabOwners.get(tabId) === session.sessionId) this.tabOwners.delete(tabId);
+      const key = this.tabKey(session.browserId, tabId);
+      if (this.tabOwners.get(key) === session.sessionId) this.tabOwners.delete(key);
       closedOwnedTabIds.push(tabId);
     }
 
@@ -392,12 +439,15 @@ export class BrowserSessionManager {
   }
 
   private async refresh(session: BrowserSessionState, allowEmpty = false): Promise<void> {
-    const tabs = BrowserTabsResultSchema.parse(await this.executeAtomic({ action: 'tabs.list' }));
+    const tabs = BrowserTabsResultSchema.parse(
+      await this.executeAtomic({ action: 'tabs.list' }, session.browserId)
+    );
     const liveTabs = new Map(tabs.map(tab => [tab.id, tab]));
     for (const tabId of [...session.ownedTabIds]) {
       if (liveTabs.has(tabId)) continue;
       session.ownedTabIds.delete(tabId);
-      if (this.tabOwners.get(tabId) === session.sessionId) this.tabOwners.delete(tabId);
+      const key = this.tabKey(session.browserId, tabId);
+      if (this.tabOwners.get(key) === session.sessionId) this.tabOwners.delete(key);
     }
     if (session.ownedTabIds.size === 0) {
       session.activeTabId = undefined;
@@ -419,11 +469,14 @@ export class BrowserSessionManager {
 
   private async addToSessionGroup(session: BrowserSessionState, tabId: number): Promise<void> {
     const group = BrowserTabGroupSchema.parse(
-      await this.executeAtomic({
-        action: 'tabGroups.add',
-        groupId: session.groupId,
-        tabIds: [tabId],
-      })
+      await this.executeAtomic(
+        {
+          action: 'tabGroups.add',
+          groupId: session.groupId,
+          tabIds: [tabId],
+        },
+        session.browserId
+      )
     );
     if (group.id !== session.groupId || group.windowId !== session.windowId) {
       throw new Error('Chrome moved the tab outside the BrowserSession group');
@@ -433,6 +486,7 @@ export class BrowserSessionManager {
   private snapshot(session: BrowserSessionState): BrowserSessionSnapshot {
     return BrowserSessionSnapshotSchema.parse({
       sessionId: session.sessionId,
+      browserId: session.browserId,
       windowId: session.windowId,
       groupId: session.groupId,
       ownedTabIds: [...session.ownedTabIds],

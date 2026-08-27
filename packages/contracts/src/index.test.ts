@@ -527,6 +527,15 @@ describe('EV contracts', () => {
       { action: 'windows.open', url: 'https://example.com', focused: false },
       { action: 'tabs.open', url: 'https://example.com/docs', windowId: 9, active: false },
       { action: 'browser.session.create', url: 'https://example.com' },
+      {
+        action: 'browser.session.create',
+        url: 'https://example.com',
+        browserId: 'a1130f7e-7c25-4f24-9b64-9d6f2a913f47',
+      },
+      {
+        action: 'bookmarks.list',
+        browserId: 'a1130f7e-7c25-4f24-9b64-9d6f2a913f47',
+      },
       { action: 'browser.session.list' },
       { action: 'browser.session.get', sessionId },
       {
@@ -563,6 +572,12 @@ describe('EV contracts', () => {
         url: 'https://example.com',
         command: { action: 'page.snapshot', mode: 'interactive' },
       },
+      {
+        action: 'browser.oneShot',
+        url: 'https://example.com',
+        browserId: 'a1130f7e-7c25-4f24-9b64-9d6f2a913f47',
+        command: { action: 'page.context' },
+      },
       { action: 'browser.session.release', sessionId },
     ];
     for (const command of commands) {
@@ -593,6 +608,7 @@ describe('EV contracts', () => {
 
     const session = {
       sessionId,
+      browserId: 'a1130f7e-7c25-4f24-9b64-9d6f2a913f47',
       windowId: 9,
       groupId: 7,
       ownedTabIds: [11, 12],

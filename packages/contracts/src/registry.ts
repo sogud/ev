@@ -87,10 +87,22 @@ export const ipcRegistry = {
   },
   browserBridge: {
     get: call<[], BrowserBridgeSnapshot>('browserBridge:get', 'observer'),
-    approvePairing: call<[], BrowserBridgeSnapshot>('browserBridge:approvePairing', 'observer'),
-    rejectPairing: call<[], BrowserBridgeSnapshot>('browserBridge:rejectPairing', 'observer'),
-    reconnect: call<[], BrowserBridgeSnapshot>('browserBridge:reconnect', 'operator'),
-    revokePairing: call<[], BrowserBridgeSnapshot>('browserBridge:revokePairing', 'operator'),
+    approvePairing: call<[browserId: string], BrowserBridgeSnapshot>(
+      'browserBridge:approvePairing',
+      'observer'
+    ),
+    rejectPairing: call<[browserId: string], BrowserBridgeSnapshot>(
+      'browserBridge:rejectPairing',
+      'observer'
+    ),
+    reconnect: call<[browserId?: string], BrowserBridgeSnapshot>(
+      'browserBridge:reconnect',
+      'operator'
+    ),
+    revokePairing: call<[browserId?: string], BrowserBridgeSnapshot>(
+      'browserBridge:revokePairing',
+      'operator'
+    ),
     onUpdate: event<BrowserBridgeSnapshot>('browserBridge:update'),
   },
   settings: {

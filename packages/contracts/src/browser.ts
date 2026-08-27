@@ -7,6 +7,15 @@ const WindowIdSchema = z.number().int().nonnegative();
 const TabGroupIdSchema = z.number().int().nonnegative();
 const FrameIdSchema = z.string().trim().min(1).max(256);
 const BrowserSessionIdSchema = z.string().uuid();
+export const BrowserIdSchema = z.string().uuid();
+export type BrowserId = z.infer<typeof BrowserIdSchema>;
+
+/**
+ * Optional explicit target browser. A Host can hold several extension
+ * connections (one per Chrome profile) at once; when omitted the Host routes
+ * to the only online connection, or to the most recently connected one.
+ */
+const BrowserTargetSchema = z.object({ browserId: BrowserIdSchema.optional() });
 const ChromeSessionIdSchema = z.string().trim().min(1).max(512);
 const BrowserDownloadIdSchema = z.string().regex(/^chrome:\d+$/);
 const CoordinateSchema = z.number().finite().min(0).max(100_000);
@@ -471,120 +480,120 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
   }),
 ]);
 
-export const BrowserAtomicCommandSchema = BrowserCommandUnionSchema.superRefine(
-  (command, context) => {
-    if (
-      command.action === 'windows.update' &&
-      command.focused === undefined &&
-      command.state === undefined &&
-      command.left === undefined &&
-      command.top === undefined &&
-      command.width === undefined &&
-      command.height === undefined
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Window update requires at least one property',
-      });
-    }
-    if (
-      command.action === 'tabs.update' &&
-      command.url === undefined &&
-      command.active === undefined &&
-      command.pinned === undefined &&
-      command.muted === undefined
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Tab update requires at least one property',
-      });
-    }
-    if (
-      command.action === 'tabGroups.update' &&
-      command.title === undefined &&
-      command.color === undefined &&
-      command.collapsed === undefined
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Tab group update requires at least one property',
-      });
-    }
-    if (
-      command.action === 'page.scroll' &&
-      command.direction === undefined &&
-      command.selector === undefined &&
-      command.deltaX === undefined &&
-      command.deltaY === undefined
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Page scroll requires a direction, target, or delta',
-      });
-    }
-    if (
-      command.action === 'page.wait' &&
-      command.condition === 'target' &&
-      command.selector === undefined
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Target wait requires a selector',
-      });
-    }
-    if (
-      command.action === 'history.remove' &&
-      command.target.type === 'range' &&
-      command.target.startTime >= command.target.endTime
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'History range endTime must be greater than startTime',
-      });
-    }
-    if (
-      command.action === 'history.search' &&
-      command.startTime !== undefined &&
-      command.endTime !== undefined &&
-      command.startTime >= command.endTime
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'History search endTime must be greater than startTime',
-      });
-    }
-    if (
-      command.action === 'page.subtitles' &&
-      command.fallback === 'local-asr' &&
-      command.confirm !== 'RUN_LOCAL_ASR'
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Local ASR fallback requires confirm: RUN_LOCAL_ASR',
-      });
-    }
-    if (
-      command.action === 'bookmarks.update' &&
-      command.title === undefined &&
-      command.url === undefined
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Bookmark update requires a title or URL',
-      });
-    }
-    if (
-      command.action === 'bookmarks.move' &&
-      command.parentId === undefined &&
-      command.index === undefined
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Bookmark move requires a parentId or index',
-      });
-    }
+export const BrowserAtomicCommandSchema = BrowserCommandUnionSchema.and(
+  BrowserTargetSchema
+).superRefine((command, context) => {
+  if (
+    command.action === 'windows.update' &&
+    command.focused === undefined &&
+    command.state === undefined &&
+    command.left === undefined &&
+    command.top === undefined &&
+    command.width === undefined &&
+    command.height === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Window update requires at least one property',
+    });
   }
-);
+  if (
+    command.action === 'tabs.update' &&
+    command.url === undefined &&
+    command.active === undefined &&
+    command.pinned === undefined &&
+    command.muted === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Tab update requires at least one property',
+    });
+  }
+  if (
+    command.action === 'tabGroups.update' &&
+    command.title === undefined &&
+    command.color === undefined &&
+    command.collapsed === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Tab group update requires at least one property',
+    });
+  }
+  if (
+    command.action === 'page.scroll' &&
+    command.direction === undefined &&
+    command.selector === undefined &&
+    command.deltaX === undefined &&
+    command.deltaY === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Page scroll requires a direction, target, or delta',
+    });
+  }
+  if (
+    command.action === 'page.wait' &&
+    command.condition === 'target' &&
+    command.selector === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Target wait requires a selector',
+    });
+  }
+  if (
+    command.action === 'history.remove' &&
+    command.target.type === 'range' &&
+    command.target.startTime >= command.target.endTime
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'History range endTime must be greater than startTime',
+    });
+  }
+  if (
+    command.action === 'history.search' &&
+    command.startTime !== undefined &&
+    command.endTime !== undefined &&
+    command.startTime >= command.endTime
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'History search endTime must be greater than startTime',
+    });
+  }
+  if (
+    command.action === 'page.subtitles' &&
+    command.fallback === 'local-asr' &&
+    command.confirm !== 'RUN_LOCAL_ASR'
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Local ASR fallback requires confirm: RUN_LOCAL_ASR',
+    });
+  }
+  if (
+    command.action === 'bookmarks.update' &&
+    command.title === undefined &&
+    command.url === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Bookmark update requires a title or URL',
+    });
+  }
+  if (
+    command.action === 'bookmarks.move' &&
+    command.parentId === undefined &&
+    command.index === undefined
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Bookmark move requires a parentId or index',
+    });
+  }
+});
 
 export type BrowserAtomicCommand = z.infer<typeof BrowserAtomicCommandSchema>;
 
@@ -952,7 +961,11 @@ export const BrowserSessionScopedCommandSchema = z.union([
 ]);
 
 export const BrowserSessionCommandSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('browser.session.create'), url: WebUrlSchema }),
+  z.object({
+    action: z.literal('browser.session.create'),
+    url: WebUrlSchema,
+    browserId: BrowserIdSchema.optional(),
+  }),
   z.object({ action: z.literal('browser.session.list') }),
   z.object({ action: z.literal('browser.session.get'), sessionId: BrowserSessionIdSchema }),
   z.object({
@@ -975,6 +988,7 @@ export type BrowserSessionScopedCommand = z.infer<typeof BrowserSessionScopedCom
 export const BrowserSessionSnapshotSchema = z
   .object({
     sessionId: BrowserSessionIdSchema,
+    browserId: BrowserIdSchema,
     windowId: WindowIdSchema,
     groupId: TabGroupIdSchema,
     ownedTabIds: z.array(TabIdSchema).min(1).max(32),
@@ -1170,6 +1184,7 @@ export const BrowserOneShotCommandSchema = z.object({
   action: z.literal('browser.oneShot'),
   url: WebUrlSchema,
   command: BrowserSessionScopedCommandSchema,
+  browserId: BrowserIdSchema.optional(),
 });
 
 export type BrowserOneShotCommand = z.infer<typeof BrowserOneShotCommandSchema>;
@@ -1420,14 +1435,14 @@ export const ExtensionToDesktopMessageSchema = z.union([
   z.object({
     type: z.literal('bridge.pair.request'),
     protocolVersion: z.literal(EV_PROTOCOL_VERSION),
-    browserId: z.string().uuid(),
+    browserId: BrowserIdSchema,
     browserName: z.string().trim().min(1).max(100),
     extensionVersion: z.string().trim().min(1).max(100),
   }),
   z.object({
     type: z.literal('bridge.hello'),
     protocolVersion: z.literal(EV_PROTOCOL_VERSION),
-    browserId: z.string().uuid(),
+    browserId: BrowserIdSchema,
     browserName: z.string().trim().min(1).max(100),
     extensionVersion: z.string().trim().min(1).max(100),
     pairingToken: z.string().min(16).max(512),

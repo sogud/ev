@@ -156,6 +156,7 @@ function createFakeBrowser() {
 }
 
 const SESSION_ONE = '3f88e635-1ba1-4e8c-91fd-83d682959f8a';
+const BROWSER_ONE = 'a1130f7e-7c25-4f24-9b64-9d6f2a913f47';
 const SESSION_TWO = '88b4763f-120d-4769-91bc-3802469c7775';
 
 function sessionIds(): () => string {
@@ -169,9 +170,14 @@ describe('BrowserSessionManager', () => {
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
 
     await expect(
-      manager.execute({ action: 'browser.session.create', url: 'https://example.com' })
+      manager.execute({
+        action: 'browser.session.create',
+        url: 'https://example.com',
+        browserId: BROWSER_ONE,
+      })
     ).resolves.toEqual({
       sessionId: SESSION_ONE,
+      browserId: BROWSER_ONE,
       windowId: 9,
       groupId: 20,
       ownedTabIds: [11],
@@ -214,7 +220,11 @@ describe('BrowserSessionManager', () => {
   it('rejects user tabs and restores moved EV tabs to their session group', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
-    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+    await manager.execute({
+      action: 'browser.session.create',
+      url: 'https://example.com',
+      browserId: BROWSER_ONE,
+    });
 
     await expect(
       manager.execute({
@@ -227,17 +237,24 @@ describe('BrowserSessionManager', () => {
     Object.assign(browser.tabs.get(11)!, { windowId: 1, groupId: -1 });
     await manager.execute({ action: 'browser.session.get', sessionId: SESSION_ONE });
     expect(browser.tabs.get(11)).toMatchObject({ windowId: 9, groupId: 20 });
-    expect(browser.execute).toHaveBeenCalledWith({
-      action: 'tabGroups.add',
-      groupId: 20,
-      tabIds: [11],
-    });
+    expect(browser.execute).toHaveBeenCalledWith(
+      {
+        action: 'tabGroups.add',
+        groupId: 20,
+        tabIds: [11],
+      },
+      BROWSER_ONE
+    );
   });
 
   it('scopes workspace commands and preserves the one-group invariant', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
-    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+    await manager.execute({
+      action: 'browser.session.create',
+      url: 'https://example.com',
+      browserId: BROWSER_ONE,
+    });
 
     await expect(
       manager.execute({
@@ -285,7 +302,11 @@ describe('BrowserSessionManager', () => {
   it('scopes BrowserRun atomic commands to session tabs', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
-    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+    await manager.execute({
+      action: 'browser.session.create',
+      url: 'https://example.com',
+      browserId: BROWSER_ONE,
+    });
 
     await expect(
       manager.execute({
@@ -307,17 +328,24 @@ describe('BrowserSessionManager', () => {
       result: { status: 'completed', summary: { commands: 1 } },
     });
 
-    expect(browser.execute).toHaveBeenCalledWith({
-      action: 'page.navigate',
-      tabId: 11,
-      url: 'https://example.com/next',
-    });
+    expect(browser.execute).toHaveBeenCalledWith(
+      {
+        action: 'page.navigate',
+        tabId: 11,
+        url: 'https://example.com/next',
+      },
+      BROWSER_ONE
+    );
   });
 
   it('routes WebMCP page commands through the session to owned tabs only', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
-    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+    await manager.execute({
+      action: 'browser.session.create',
+      url: 'https://example.com',
+      browserId: BROWSER_ONE,
+    });
 
     await expect(
       manager.execute({
@@ -326,7 +354,10 @@ describe('BrowserSessionManager', () => {
         command: { action: 'page.webmcp.listTools' },
       })
     ).resolves.toMatchObject({ sessionId: SESSION_ONE, tabId: 11 });
-    expect(browser.execute).toHaveBeenCalledWith({ action: 'page.webmcp.listTools', tabId: 11 });
+    expect(browser.execute).toHaveBeenCalledWith(
+      { action: 'page.webmcp.listTools', tabId: 11 },
+      BROWSER_ONE
+    );
 
     await expect(
       manager.execute({
@@ -345,6 +376,7 @@ describe('BrowserSessionManager', () => {
       manager.runOneShot({
         action: 'browser.oneShot',
         url: 'https://example.com',
+        browserId: BROWSER_ONE,
         command: { action: 'page.snapshot', mode: 'interactive' },
       })
     ).resolves.toMatchObject({
@@ -362,7 +394,11 @@ describe('BrowserSessionManager', () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
 
-    await manager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+    await manager.execute({
+      action: 'browser.session.create',
+      url: 'https://example.com',
+      browserId: BROWSER_ONE,
+    });
     // User closes the EV window: every owned tab vanishes outside EV.
     browser.tabs.delete(11);
 
@@ -386,18 +422,24 @@ describe('BrowserSessionManager', () => {
       await sessionManager.execute({
         action: 'browser.session.create',
         url: `https://session-${index}.example.com`,
+        browserId: BROWSER_ONE,
       });
     }
     await expect(
       sessionManager.execute({
         action: 'browser.session.create',
         url: 'https://overflow.example.com',
+        browserId: BROWSER_ONE,
       })
     ).rejects.toThrow('cannot exceed 32 BrowserSessions');
 
     const tabBrowser = createFakeBrowser();
     const tabManager = new BrowserSessionManager(tabBrowser.execute, sessionIds());
-    await tabManager.execute({ action: 'browser.session.create', url: 'https://example.com' });
+    await tabManager.execute({
+      action: 'browser.session.create',
+      url: 'https://example.com',
+      browserId: BROWSER_ONE,
+    });
     for (let index = 0; index < 31; index += 1) {
       await tabManager.execute({
         action: 'browser.session.open',
@@ -418,8 +460,16 @@ describe('BrowserSessionManager', () => {
   it('serializes one session while allowing separate sessions to progress concurrently', async () => {
     const browser = createFakeBrowser();
     const manager = new BrowserSessionManager(browser.execute, sessionIds());
-    await manager.execute({ action: 'browser.session.create', url: 'https://one.example.com' });
-    await manager.execute({ action: 'browser.session.create', url: 'https://two.example.com' });
+    await manager.execute({
+      action: 'browser.session.create',
+      url: 'https://one.example.com',
+      browserId: BROWSER_ONE,
+    });
+    await manager.execute({
+      action: 'browser.session.create',
+      url: 'https://two.example.com',
+      browserId: BROWSER_ONE,
+    });
 
     const originalExecute = browser.execute.getMockImplementation()!;
     const started: number[] = [];

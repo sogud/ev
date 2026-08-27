@@ -55,15 +55,34 @@ A healthy response advertises top-level isolated actions in `actions` and comman
 
 ## Multiple browsers (profiles)
 
-Each browser can pair with its own Host profile (separate port, pairing, and sessions). The default profile needs no flags.
+One Host keeps several extensions online at once: install/enable EV Browser in every Chrome
+profile you want to drive; each profile pairs with its own identity (automatic on standalone
+Hosts, one approval per browser on Desktop). The Desktop settings page lists paired browsers
+with their `browserId` and online state.
+
+- With exactly one browser online, every command routes to it automatically.
+- With several online, session and one-shot commands need a target; a missing target fails
+  with the connected `browserId`s listed:
+
+```bash
+ev browser session.create --payload '{"url":"https://example.com","browserId":"<uuid>"}'
+ev browser oneShot --payload '{"url":"https://example.com","browserId":"<uuid>","command":{"action":"page.snapshot"}}'
+```
+
+A BrowserSession is pinned to the browser that created it; later `session.command` calls route
+there without extra flags. Top-level profile-global actions (`bookmarks.*`, `history.*`,
+`downloads.*`, `sessions.recent`) also accept `browserId` and follow the same ambiguity rule.
+
+Host profiles (`--profile <name>`) still exist for strict isolation (separate port, pairing, and
+process per browser); prefer the single-Host multi-browser mode unless isolation is required:
 
 ```bash
 ev browser host serve --profile edge --background   # start a per-browser Host (auto-assigned free port)
-ev browser profile list                             # ports, online state, paired origins
+ev browser profile list                             # ports, online state, paired browsers
 ev browser session.create --payload '{"url":"https://example.com"}' --profile edge
 ```
 
-Point the target browser's extension at the profile port via its options page ("Host endpoint" = `ws://127.0.0.1:<port>/browser`); then every command with `--profile edge` drives that browser. Never mix profiles and session IDs: a session belongs to exactly one profile's Host.
+Point the target browser's extension at the profile port via its options page ("Host endpoint" = `ws://127.0.0.1:<port>/browser`); then every command with `--profile edge` drives that browser. Never mix profiles and session IDs: a session belongs to exactly one Host.
 
 ## One-shot operation
 

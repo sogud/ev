@@ -10,6 +10,8 @@ import type { MediaDownloadService } from '../media-download-service';
 
 type CommandHandler = (command: BrowserAtomicCommand) => Promise<unknown> | unknown;
 
+const BROWSER_ID = '6f2a1c88-9d31-4c17-8a52-2b9e6d40f1c3';
+
 function createIsolatedBridge(handler: CommandHandler = () => ({ ok: true })) {
   let live = false;
   const tab = {
@@ -49,7 +51,10 @@ function createIsolatedBridge(handler: CommandHandler = () => ({ ok: true })) {
     }
   });
   return {
-    bridge: { sendCommand } as unknown as BrowserBridgeService,
+    bridge: {
+      sendCommand,
+      resolveBrowserId: (explicit?: string) => explicit ?? BROWSER_ID,
+    } as unknown as BrowserBridgeService,
     sendCommand,
     isLive: () => live,
   };
@@ -99,15 +104,18 @@ describe('BrowserCommandExecutor', () => {
       })
     ).resolves.toMatchObject({ tabId: 11, result: { tabId: 11, nodes: [] } });
     expect(isLive()).toBe(false);
-    expect(sendCommand).toHaveBeenCalledWith({
-      action: 'tabGroups.create',
-      tabIds: [11],
-      windowId: 9,
-      title: 'EV',
-      color: 'cyan',
-      collapsed: false,
-    });
-    expect(sendCommand).toHaveBeenCalledWith({ action: 'tabs.close', tabId: 11 });
+    expect(sendCommand).toHaveBeenCalledWith(
+      {
+        action: 'tabGroups.create',
+        tabIds: [11],
+        windowId: 9,
+        title: 'EV',
+        color: 'cyan',
+        collapsed: false,
+      },
+      BROWSER_ID
+    );
+    expect(sendCommand).toHaveBeenCalledWith({ action: 'tabs.close', tabId: 11 }, BROWSER_ID);
   });
 
   it('normalizes Chrome and local media downloads inside a BrowserSession', async () => {
@@ -236,7 +244,8 @@ describe('BrowserCommandExecutor', () => {
       output: { text: 'conversation' },
     });
     expect(sendCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'page.context', tabId: 11 })
+      expect.objectContaining({ action: 'page.context', tabId: 11 }),
+      BROWSER_ID
     );
   });
 
@@ -388,5 +397,88 @@ describe('BrowserCommandExecutor', () => {
       })
     ).resolves.toMatchObject({ result: { downloadId: 'local:job', state: 'in_progress' } });
     expect(downloads.start).toHaveBeenCalledWith(dispatch);
+  });
+
+  describe('with several browsers connected', () => {
+    const BROWSER_WORK = '1c9f4d2a-6a17-48e0-93aa-5f0c1d2e8b41';
+    const BROWSER_HOME = '7e5b2f10-3d89-4c46-b7f1-9a6e4d0c2f77';
+
+    function createMultiBridge() {
+      const routed: Array<{ action: string; browserId: string | undefined }> = [];
+      const sendCommand = vi.fn(
+        async (command: BrowserAtomicCommand, browserId?: string): Promise<unknown> => {
+          routed.push({ action: command.action, browserId });
+          switch (command.action) {
+            case 'windows.open':
+              return { windowId: 9, tabId: 11, url: command.url };
+            case 'tabGroups.create':
+            case 'tabGroups.add':
+              return { id: 20, windowId: 9, title: 'EV', color: 'cyan', collapsed: false };
+            case 'tabs.list':
+              return [
+                {
+                  id: 11,
+                  windowId: 9,
+                  groupId: 20,
+                  active: true,
+                  title: 'EV',
+                  url: 'https://example.com',
+                  cdpAttached: false,
+                },
+              ];
+            case 'tabs.close':
+              return { closed: true, tabId: command.tabId };
+            default:
+              return { ok: true };
+          }
+        }
+      );
+      const bridge = {
+        sendCommand,
+        resolveBrowserId: (explicit?: string) => {
+          if (explicit) return explicit;
+          throw new Error(
+            `Multiple EV Browsers are connected; pass browserId to pick one (${BROWSER_WORK}, ${BROWSER_HOME})`
+          );
+        },
+      } as unknown as BrowserBridgeService;
+      return { bridge, sendCommand, routed };
+    }
+
+    it('requires an explicit browserId for new sessions when ambiguous', async () => {
+      const { bridge } = createMultiBridge();
+      const executor = new BrowserCommandExecutor(bridge, {} as MediaDownloadService);
+
+      await expect(
+        executor.sendCommand({ action: 'browser.session.create', url: 'https://example.com' })
+      ).rejects.toThrow(/Multiple EV Browsers are connected/);
+      await expect(
+        executor.sendCommand({
+          action: 'browser.oneShot',
+          url: 'https://example.com',
+          command: { action: 'page.context' },
+        })
+      ).rejects.toThrow(/Multiple EV Browsers are connected/);
+    });
+
+    it('pins a session to the browser chosen at creation', async () => {
+      const { bridge, routed } = createMultiBridge();
+      const executor = new BrowserCommandExecutor(bridge, {} as MediaDownloadService);
+
+      const session = (await executor.sendCommand({
+        action: 'browser.session.create',
+        url: 'https://example.com',
+        browserId: BROWSER_HOME,
+      })) as { sessionId: string; browserId: string };
+      expect(session.browserId).toBe(BROWSER_HOME);
+
+      await executor.sendCommand({
+        action: 'browser.session.command',
+        sessionId: session.sessionId,
+        command: { action: 'page.context' },
+      });
+
+      expect(routed.every(entry => entry.browserId === BROWSER_HOME)).toBe(true);
+    });
   });
 });

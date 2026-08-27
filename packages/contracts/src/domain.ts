@@ -151,14 +151,21 @@ export interface BrowserBridgePendingPairing {
   requestedAt: number;
 }
 
-export interface BrowserBridgeSnapshot {
-  status: 'stopped' | 'listening' | 'connected' | 'error';
-  endpoint: string;
-  pairingToken: string | null;
-  pairedOrigin: string | null;
-  browserId: string | null;
-  pendingPairing: BrowserBridgePendingPairing | null;
+/** One paired browser (a Chrome profile's extension) known to the Host. */
+export interface BrowserBridgePairedBrowser {
+  browserId: string;
+  browserName: string | null;
+  origin: string;
+  online: boolean;
   connectedAt: number | null;
   lastSeenAt: number | null;
+}
+
+export interface BrowserBridgeSnapshot {
+  /** Aggregate: 'connected' as soon as any paired browser is online. */
+  status: 'stopped' | 'listening' | 'connected' | 'error';
+  endpoint: string;
+  pairedBrowsers: BrowserBridgePairedBrowser[];
+  pendingPairings: BrowserBridgePendingPairing[];
   lastError: string | null;
 }

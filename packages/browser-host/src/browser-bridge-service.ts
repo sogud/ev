@@ -15,14 +15,22 @@ import type { BrowserBridgeSnapshot } from './types';
 const DEFAULT_PORT = 43_121;
 const BRIDGE_PATH = '/browser';
 const MAX_INBOUND_MESSAGE_BYTES = 16 * 1024 * 1024;
-const MAX_UNAUTHENTICATED_CONNECTIONS = 16;
+const MAX_UNAUTHENTICATED_CONNECTIONS = 32;
+const MAX_PAIRED_IDENTITIES = 16;
 const HANDSHAKE_TIMEOUT_MS = 5_000;
 const COMMAND_TIMEOUT_MS = 30_000;
 
-export interface BrowserBridgePersistedState {
-  pairingToken: string | null;
+/** One paired extension identity (a Chrome profile's EV Browser extension). */
+export interface BrowserBridgeIdentity {
+  pairingToken: string;
   allowedOrigin: string | null;
   browserId: string | null;
+  browserName: string | null;
+  pairedAt: number;
+}
+
+export interface BrowserBridgePersistedState {
+  identities: BrowserBridgeIdentity[];
 }
 
 export interface BrowserBridgeStore {
@@ -38,6 +46,7 @@ interface BrowserBridgeOptions {
 }
 
 interface PendingCommand {
+  browserId: string;
   resolve(value: unknown): void;
   reject(error: Error): void;
   timer: ReturnType<typeof setTimeout>;
@@ -51,6 +60,15 @@ interface PendingPairing {
   origin: string;
   requestedAt: number;
   approve(pairingToken: string): void;
+}
+
+interface BridgeConnection {
+  socket: WebSocket;
+  browserId: string;
+  browserName: string;
+  origin: string;
+  connectedAt: number;
+  lastSeenAt: number;
 }
 
 function isExtensionOrigin(origin: string): boolean {
@@ -81,16 +99,15 @@ export class BrowserBridgeService {
   private readonly automaticPairingOrigins: ReadonlySet<string>;
   private readonly listeners = new Set<(snapshot: BrowserBridgeSnapshot) => void>();
   private readonly pendingCommands = new Map<string, PendingCommand>();
+  /** Live extension connections, one per paired browser profile. */
+  private readonly connections = new Map<string, BridgeConnection>();
+  /** Awaiting approval (approval mode only), keyed by browserId. */
+  private readonly pendingPairings = new Map<string, PendingPairing>();
   private httpServer: HttpServer | null = null;
   private webSocketServer: WebSocketServer | null = null;
-  private activeSocket: WebSocket | null = null;
-  private activeBrowserId: string | null = null;
-  private pendingPairing: PendingPairing | null = null;
-  private connectedAt: number | null = null;
-  private lastSeenAt: number | null = null;
-  private endpoint: string;
   private status: BrowserBridgeSnapshot['status'] = 'stopped';
   private lastError: string | null = null;
+  private endpoint: string;
 
   constructor(options: BrowserBridgeOptions) {
     this.port = options.port ?? DEFAULT_PORT;
@@ -164,14 +181,15 @@ export class BrowserBridgeService {
   }
 
   async stop(): Promise<void> {
-    this.rejectPendingCommands(new Error('Browser bridge stopped'));
-    this.activeSocket?.close(1001, 'Desktop bridge stopped');
-    this.pendingPairing?.socket.close(1001, 'Desktop bridge stopped');
-    this.activeSocket = null;
-    this.pendingPairing = null;
-    this.activeBrowserId = null;
-    this.connectedAt = null;
-    this.lastSeenAt = null;
+    this.rejectPendingCommands(null, new Error('Browser bridge stopped'));
+    for (const connection of this.connections.values()) {
+      connection.socket.close(1001, 'Desktop bridge stopped');
+    }
+    for (const pending of this.pendingPairings.values()) {
+      pending.socket.close(1001, 'Desktop bridge stopped');
+    }
+    this.connections.clear();
+    this.pendingPairings.clear();
 
     const webSocketServer = this.webSocketServer;
     const httpServer = this.httpServer;
@@ -190,69 +208,125 @@ export class BrowserBridgeService {
   }
 
   getSnapshot(): BrowserBridgeSnapshot {
-    const persisted = this.store.get();
+    const identities = this.store.get().identities;
+    const pairedBrowsers = identities
+      .filter(identity => identity.allowedOrigin !== null && identity.browserId !== null)
+      .map(identity => {
+        const connection = this.connections.get(identity.browserId as string);
+        return {
+          browserId: identity.browserId as string,
+          browserName: connection?.browserName ?? identity.browserName,
+          origin: identity.allowedOrigin as string,
+          online: connection !== undefined,
+          connectedAt: connection?.connectedAt ?? null,
+          lastSeenAt: connection?.lastSeenAt ?? null,
+        };
+      })
+      .sort(
+        (a, b) => Number(b.online) - Number(a.online) || b.browserId.localeCompare(a.browserId)
+      );
+
     return {
-      status: this.status,
+      status: this.connections.size > 0 ? 'connected' : this.status,
       endpoint: this.endpoint,
-      pairingToken: persisted.pairingToken,
-      pairedOrigin: persisted.allowedOrigin,
-      browserId: this.activeBrowserId ?? persisted.browserId,
-      pendingPairing: this.pendingPairing
-        ? {
-            browserId: this.pendingPairing.browserId,
-            browserName: this.pendingPairing.browserName,
-            extensionVersion: this.pendingPairing.extensionVersion,
-            origin: this.pendingPairing.origin,
-            requestedAt: this.pendingPairing.requestedAt,
-          }
-        : null,
-      connectedAt: this.connectedAt,
-      lastSeenAt: this.lastSeenAt,
+      pairedBrowsers,
+      pendingPairings: [...this.pendingPairings.values()]
+        .map(pending => ({
+          browserId: pending.browserId,
+          browserName: pending.browserName,
+          extensionVersion: pending.extensionVersion,
+          origin: pending.origin,
+          requestedAt: pending.requestedAt,
+        }))
+        .sort((a, b) => a.requestedAt - b.requestedAt),
       lastError: this.lastError,
     };
   }
 
-  approvePendingPairing(): BrowserBridgeSnapshot {
-    const pending = this.pendingPairing;
-    if (!pending) throw new Error('No EV Browser pairing request is pending');
-    const pairingToken = randomBytes(32).toString('base64url');
-    this.pendingPairing = null;
-    pending.approve(pairingToken);
+  approvePendingPairing(browserId: string): BrowserBridgeSnapshot {
+    const pending = this.pendingPairings.get(browserId);
+    if (!pending) throw new Error(`No EV Browser pairing request is pending for ${browserId}`);
+    this.pendingPairings.delete(browserId);
+    pending.approve(randomBytes(32).toString('base64url'));
     this.emit();
     return this.getSnapshot();
   }
 
-  rejectPendingPairing(): BrowserBridgeSnapshot {
-    this.pendingPairing?.socket.close(1008, 'Pairing rejected by user');
-    this.pendingPairing = null;
+  rejectPendingPairing(browserId: string): BrowserBridgeSnapshot {
+    const pending = this.pendingPairings.get(browserId);
+    if (!pending) throw new Error(`No EV Browser pairing request is pending for ${browserId}`);
+    this.pendingPairings.delete(browserId);
+    pending.socket.close(1008, 'Pairing rejected by user');
     this.emit();
     return this.getSnapshot();
   }
 
-  requestReconnect(): BrowserBridgeSnapshot {
-    this.pendingPairing?.socket.close(4002, 'Reconnect requested');
-    this.pendingPairing = null;
-    this.disconnectActiveSocket('Reconnect requested', 4002);
+  /** Disconnect one connected browser (or all of them) so extensions reconnect. */
+  requestReconnect(browserId?: string): BrowserBridgeSnapshot {
+    const targets = browserId === undefined ? [...this.connections.values()] : [];
+    if (browserId !== undefined) {
+      const connection = this.connections.get(browserId);
+      if (connection) targets.push(connection);
+    }
+    for (const connection of targets) {
+      this.disconnectConnection(connection, 'Reconnect requested', 4002);
+    }
+    const pending = browserId === undefined ? [...this.pendingPairings.keys()] : [browserId];
+    for (const key of pending) {
+      const request = this.pendingPairings.get(key);
+      if (!request) continue;
+      this.pendingPairings.delete(key);
+      request.socket.close(4002, 'Reconnect requested');
+    }
     this.emit();
     return this.getSnapshot();
   }
 
+  /**
+   * Rotate to a fresh anonymous pairing credential. Existing connections are
+   * dropped and all previous identities are forgotten.
+   */
   createPairing(): BrowserBridgeSnapshot {
-    this.disconnectActiveSocket('Pairing credentials rotated');
+    this.disconnectAll('Pairing credentials rotated');
     this.store.set({
-      pairingToken: randomBytes(32).toString('base64url'),
-      allowedOrigin: null,
-      browserId: null,
+      identities: [
+        {
+          pairingToken: randomBytes(32).toString('base64url'),
+          allowedOrigin: null,
+          browserId: null,
+          browserName: null,
+          pairedAt: Date.now(),
+        },
+      ],
     });
     this.emit();
     return this.getSnapshot();
   }
 
-  revokePairing(): BrowserBridgeSnapshot {
-    this.disconnectActiveSocket('Pairing revoked');
-    this.pendingPairing?.socket.close(1008, 'Pairing revoked');
-    this.pendingPairing = null;
-    this.store.set({ pairingToken: null, allowedOrigin: null, browserId: null });
+  /** Revoke one paired identity by browserId, or every identity when omitted. */
+  revokePairing(browserId?: string): BrowserBridgeSnapshot {
+    const persisted = this.store.get();
+    if (browserId === undefined) {
+      this.disconnectAll('Pairing revoked');
+      for (const pending of this.pendingPairings.values()) {
+        pending.socket.close(1008, 'Pairing revoked');
+      }
+      this.pendingPairings.clear();
+      this.store.set({ identities: [] });
+      this.emit();
+      return this.getSnapshot();
+    }
+
+    const connection = this.connections.get(browserId);
+    if (connection) this.disconnectConnection(connection, 'Pairing revoked');
+    const pending = this.pendingPairings.get(browserId);
+    if (pending) {
+      this.pendingPairings.delete(browserId);
+      pending.socket.close(1008, 'Pairing revoked');
+    }
+    this.store.set({
+      identities: persisted.identities.filter(identity => identity.browserId !== browserId),
+    });
     this.emit();
     return this.getSnapshot();
   }
@@ -262,18 +336,45 @@ export class BrowserBridgeService {
     return () => this.listeners.delete(listener);
   }
 
-  async sendCommand(command: BrowserAtomicCommand): Promise<unknown> {
+  /**
+   * Resolve which connected browser a command should target. Explicit ids must
+   * be online; without one, a lone connection wins; several require an explicit
+   * choice so profile-global data is never read from the wrong profile.
+   */
+  resolveBrowserId(explicitBrowserId?: string): string {
+    if (explicitBrowserId !== undefined) {
+      if (!this.connections.has(explicitBrowserId)) {
+        throw new Error(`EV Browser ${explicitBrowserId} is not connected`);
+      }
+      return explicitBrowserId;
+    }
+    if (this.connections.size === 0) throw new Error('EV Browser is not connected');
+    if (this.connections.size === 1) return this.connections.keys().next().value as string;
+    const ids = [...this.connections.keys()].sort();
+    throw new Error(
+      `Multiple EV Browsers are connected; pass browserId to pick one (${ids.join(', ')})`
+    );
+  }
+
+  /** Number of extension connections currently online. */
+  connectionCount(): number {
+    return this.connections.size;
+  }
+
+  async sendCommand(command: BrowserAtomicCommand, browserId?: string): Promise<unknown> {
     const payload = BrowserAtomicCommandSchema.parse(command);
-    const socket = this.activeSocket;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      throw new Error('EV Browser is not connected');
+    const target = this.resolveBrowserId(browserId);
+    const connection = this.connections.get(target);
+    if (!connection || connection.socket.readyState !== WebSocket.OPEN) {
+      throw new Error(`EV Browser ${target} is not connected`);
     }
 
     const requestId = randomUUID();
+    const { browserId: _target, ...wireCommand } = payload;
     const message = DesktopToExtensionMessageSchema.parse({
       type: 'browser.command',
       id: requestId,
-      command: payload,
+      command: wireCommand,
     });
 
     return new Promise((resolve, reject) => {
@@ -281,8 +382,8 @@ export class BrowserBridgeService {
         this.pendingCommands.delete(requestId);
         reject(new Error('Browser command timed out'));
       }, COMMAND_TIMEOUT_MS);
-      this.pendingCommands.set(requestId, { resolve, reject, timer });
-      socket.send(JSON.stringify(message), error => {
+      this.pendingCommands.set(requestId, { browserId: target, resolve, reject, timer });
+      connection.socket.send(JSON.stringify(message), error => {
         if (!error) return;
         const pending = this.pendingCommands.get(requestId);
         if (!pending) return;
@@ -326,9 +427,9 @@ export class BrowserBridgeService {
         if (message.type === 'bridge.pair.request') {
           if (this.pairingMode === 'automatic') {
             // Trust-on-first-use: with no explicit allowlist, any genuine
-            // extension origin may pair (the persisted identity pins later
-            // pairings). Web/null origins can never auto-pair, so a page
-            // cannot hijack the bridge over loopback.
+            // extension origin may pair (each profile's persisted identity
+            // pins its own later pairings). Web/null origins can never
+            // auto-pair, so a page cannot hijack the bridge over loopback.
             const trusted =
               isExtensionOrigin(origin) &&
               (this.automaticPairingOrigins.size === 0 || this.automaticPairingOrigins.has(origin));
@@ -337,14 +438,14 @@ export class BrowserBridgeService {
               return;
             }
           }
-          if (this.activeSocket) {
-            socket.close(1008, 'EV Browser is already paired and connected');
-            return;
-          }
           clearTimeout(handshakeTimer);
-          this.pendingPairing?.socket.close(4000, 'Replaced by a newer pairing request');
           browserId = message.browserId;
-          this.pendingPairing = {
+          // A newer request from the same profile replaces its older one;
+          // requests from other profiles coexist.
+          this.pendingPairings
+            .get(message.browserId)
+            ?.socket.close(4000, 'Replaced by a newer pairing request');
+          const pendingPairing: PendingPairing = {
             socket,
             browserId: message.browserId,
             browserName: message.browserName,
@@ -353,12 +454,14 @@ export class BrowserBridgeService {
             requestedAt: Date.now(),
             approve: pairingToken => {
               authenticated = true;
-              this.store.set({
+              this.upsertIdentity({
                 pairingToken,
                 allowedOrigin: origin,
                 browserId: message.browserId,
+                browserName: message.browserName,
+                pairedAt: Date.now(),
               });
-              this.bindActiveSocket(socket, message.browserId, origin);
+              this.bindConnection(socket, message.browserId, message.browserName, origin);
               this.send(socket, {
                 type: 'bridge.pair.approved',
                 protocolVersion: EV_PROTOCOL_VERSION,
@@ -366,14 +469,16 @@ export class BrowserBridgeService {
               });
             },
           };
-          const persisted = this.store.get();
-          const knownIdentity =
-            persisted.allowedOrigin === origin && persisted.browserId === message.browserId;
+          this.pendingPairings.set(message.browserId, pendingPairing);
+          const knownIdentity = this.store
+            .get()
+            .identities.some(
+              identity =>
+                identity.allowedOrigin === origin && identity.browserId === message.browserId
+            );
           if (this.pairingMode === 'automatic' || knownIdentity) {
-            const pairingToken = randomBytes(32).toString('base64url');
-            const pending = this.pendingPairing;
-            this.pendingPairing = null;
-            pending.approve(pairingToken);
+            this.pendingPairings.delete(message.browserId);
+            pendingPairing.approve(randomBytes(32).toString('base64url'));
           } else {
             this.send(socket, { type: 'bridge.pair.pending' });
             this.emit();
@@ -388,7 +493,7 @@ export class BrowserBridgeService {
         authenticated = true;
         clearTimeout(handshakeTimer);
         browserId = message.browserId;
-        this.bindActiveSocket(socket, browserId, origin);
+        this.bindConnection(socket, message.browserId, message.browserName, origin);
         this.send(socket, {
           type: 'bridge.hello.ack',
           protocolVersion: EV_PROTOCOL_VERSION,
@@ -397,17 +502,21 @@ export class BrowserBridgeService {
       }
 
       if (message.type === 'bridge.ping') {
-        this.lastSeenAt = Date.now();
+        const connection = browserId ? this.connections.get(browserId) : undefined;
+        if (connection) {
+          connection.lastSeenAt = Date.now();
+          this.emit();
+        }
         this.send(socket, {
           type: 'bridge.pong',
           timestamp: message.timestamp,
         });
-        this.emit();
         return;
       }
 
       if (message.type === 'browser.response') {
-        this.lastSeenAt = Date.now();
+        const connection = browserId ? this.connections.get(browserId) : undefined;
+        if (connection) connection.lastSeenAt = Date.now();
         const pending = this.pendingCommands.get(message.id);
         if (!pending) return;
         clearTimeout(pending.timer);
@@ -419,17 +528,14 @@ export class BrowserBridgeService {
 
     socket.on('close', () => {
       clearTimeout(handshakeTimer);
-      if (this.pendingPairing?.socket === socket) {
-        this.pendingPairing = null;
-        this.emit();
+      for (const [key, pending] of this.pendingPairings) {
+        if (pending.socket === socket) this.pendingPairings.delete(key);
       }
-      if (this.activeSocket !== socket) return;
-      this.activeSocket = null;
-      this.activeBrowserId = null;
-      this.connectedAt = null;
-      this.lastSeenAt = null;
-      this.status = this.httpServer ? 'listening' : 'stopped';
-      this.rejectPendingCommands(new Error('EV Browser disconnected'));
+      if (browserId === null) return;
+      const connection = this.connections.get(browserId);
+      if (!connection || connection.socket !== socket) return;
+      this.connections.delete(browserId);
+      this.rejectPendingCommands(browserId, new Error('EV Browser disconnected'));
       this.emit();
     });
 
@@ -443,48 +549,94 @@ export class BrowserBridgeService {
     origin: string
   ): boolean {
     const persisted = this.store.get();
-    if (!persisted.pairingToken || !tokensMatch(message.pairingToken, persisted.pairingToken)) {
-      return false;
-    }
-    if (persisted.allowedOrigin && persisted.allowedOrigin !== origin) return false;
-    if (persisted.browserId && persisted.browserId !== message.browserId) return false;
+    const identity = persisted.identities.find(candidate =>
+      tokensMatch(message.pairingToken, candidate.pairingToken)
+    );
+    if (!identity) return false;
+    if (identity.allowedOrigin !== null && identity.allowedOrigin !== origin) return false;
+    if (identity.browserId !== null && identity.browserId !== message.browserId) return false;
 
-    if (!persisted.allowedOrigin || !persisted.browserId) {
-      this.store.set({
-        pairingToken: persisted.pairingToken,
+    if (identity.allowedOrigin === null || identity.browserId === null) {
+      this.upsertIdentity({
+        ...identity,
         allowedOrigin: origin,
         browserId: message.browserId,
+        browserName: message.browserName,
+        pairedAt: Date.now(),
       });
     }
     return true;
   }
 
-  private bindActiveSocket(socket: WebSocket, browserId: string, origin: string): void {
-    if (this.activeSocket && this.activeSocket !== socket) {
-      this.activeSocket.close(4000, 'Replaced by a newer connection');
+  private bindConnection(
+    socket: WebSocket,
+    browserId: string,
+    browserName: string,
+    origin: string
+  ): void {
+    const existing = this.connections.get(browserId);
+    if (existing && existing.socket !== socket) {
+      existing.socket.close(4000, 'Replaced by a newer connection');
     }
-    this.activeSocket = socket;
-    this.activeBrowserId = browserId;
-    this.connectedAt = Date.now();
-    this.lastSeenAt = this.connectedAt;
-    this.status = 'connected';
-    this.lastError = null;
-    this.store.set({
-      pairingToken: this.store.get().pairingToken,
-      allowedOrigin: origin,
+    this.connections.set(browserId, {
+      socket,
       browserId,
+      browserName,
+      origin,
+      connectedAt: Date.now(),
+      lastSeenAt: Date.now(),
     });
+    this.lastError = null;
     this.emit();
   }
 
-  private disconnectActiveSocket(reason: string, closeCode = 4001): void {
-    this.rejectPendingCommands(new Error(reason));
-    this.activeSocket?.close(closeCode, reason);
-    this.activeSocket = null;
-    this.activeBrowserId = null;
-    this.connectedAt = null;
-    this.lastSeenAt = null;
-    this.status = this.httpServer ? 'listening' : 'stopped';
+  private disconnectConnection(
+    connection: BridgeConnection,
+    reason: string,
+    closeCode = 4001
+  ): void {
+    this.connections.delete(connection.browserId);
+    this.rejectPendingCommands(connection.browserId, new Error(reason));
+    connection.socket.close(closeCode, reason);
+  }
+
+  private disconnectAll(reason: string): void {
+    for (const connection of [...this.connections.values()]) {
+      this.disconnectConnection(connection, reason);
+    }
+  }
+
+  private upsertIdentity(identity: BrowserBridgeIdentity): void {
+    const persisted = this.store.get();
+    // Replace the same identity slot (origin + browserId) or the same
+    // credential: pinning an anonymous pairing token must consume it, so it
+    // can never authenticate a second, different browser afterwards.
+    const kept = persisted.identities.filter(
+      candidate =>
+        candidate.pairingToken !== identity.pairingToken &&
+        !(
+          candidate.browserId === identity.browserId &&
+          candidate.allowedOrigin === identity.allowedOrigin
+        )
+    );
+    kept.push(identity);
+    // Bound the identity list; drop the oldest offline identity first.
+    // Bound the identity list; drop the oldest offline identity first. Never
+    // evict an online browser's pairing — if every identity is online, allow
+    // the list to exceed the cap until one of them disconnects.
+    while (kept.length > MAX_PAIRED_IDENTITIES) {
+      let oldestIndex = -1;
+      for (let index = 0; index < kept.length; index += 1) {
+        const candidate = kept[index];
+        if (this.connections.has(candidate.browserId ?? '')) continue;
+        if (oldestIndex === -1 || candidate.pairedAt < kept[oldestIndex].pairedAt) {
+          oldestIndex = index;
+        }
+      }
+      if (oldestIndex === -1) break;
+      kept.splice(oldestIndex, 1);
+    }
+    this.store.set({ identities: kept });
   }
 
   private send(socket: WebSocket, message: unknown): void {
@@ -492,12 +644,13 @@ export class BrowserBridgeService {
     socket.send(JSON.stringify(validated));
   }
 
-  private rejectPendingCommands(error: Error): void {
-    for (const pending of this.pendingCommands.values()) {
+  private rejectPendingCommands(browserId: string | null, error: Error): void {
+    for (const [requestId, pending] of this.pendingCommands) {
+      if (browserId !== null && pending.browserId !== browserId) continue;
       clearTimeout(pending.timer);
+      this.pendingCommands.delete(requestId);
       pending.reject(error);
     }
-    this.pendingCommands.clear();
   }
 
   private emit(): void {

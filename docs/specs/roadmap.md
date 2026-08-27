@@ -69,6 +69,7 @@
 - [x] Cordis Runtime tracer：`apps/server` 精确锁定 upstream Cordis，RuntimeRegistry 成为 Service，五个 Runtime 由静态 plugins 挂载；单 Fiber unload 与 packaged Server DSH smoke 通过（spec: server-plugin-architecture-v1，ADR-0001）
 - [x] Experimental DSH Runtime：官方 stdio JSON-RPC、每 Task 独立进程、流式 assistant/thinking/tool/subagent 投影、明确禁用 cold resume，并通过官方源码 + 本地 mock model smoke
 - [x] EV Browser 设置修复：English / 简体中文切换、可关闭书签 New Tab、背景图应用与实时同步
+- [x] EV Browser 多 profile 同时在线：单 Host 桥支持多个扩展连接并存（每 Chrome profile 独立配对身份），Session 固定到创建它的浏览器，`browserId` 显式路由（多连接缺目标时报错并列出可选 id），设置页展示配对浏览器列表与逐个撤销；原 `--profile` 独立 Host 保留为隔离选项
 - [x] WebMCP 桥 + 操作可视化：页面通过 `navigator.modelContext.registerTool` 注册工具，`page.webmcp.listTools/callTool` 经 session/oneShot 调用（JSON 错误封装、超时）；元素操作前独立 overlay 高亮，设置开关默认开启（spec: webmcp-and-action-visualization）
 - [x] Browser Control P0/P1：普通 DOM 操作无 CDP、高级能力按需 attach 且同 tab 并发合并；完整 typed 页面交互、iframe、BrowserRun，以及 window/tab/group/download/history/session/zoom 工作区操作（spec: browser-control-p0-p1）
 - [x] 通用字幕读取/下载：`page.subtitles` 通过 Host 本地 yt-dlp helper 读取去时间码 transcript 或显式保存 VTT/SRT；无字幕时可经用户确认调用本地 whisper.cpp ASR，返回来源标记、纯文本与时间段；限定 BrowserSession owned tab、公开非 DRM 页面、stdin URL 与 SSRF 安全代理

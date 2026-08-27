@@ -13,11 +13,11 @@ const STATUS_LABEL_KEYS: Record<BrowserBridgeSnapshot['status'], string> = {
 
 interface BrowserBridgeContentProps {
   snapshot: BrowserBridgeSnapshot;
-  onApprove(): void;
-  onReject(): void;
+  onApprove(browserId: string): void;
+  onReject(browserId: string): void;
   onRefresh(): void;
-  onReconnect(): void;
-  onRevoke(): void;
+  onReconnect(browserId?: string): void;
+  onRevoke(browserId?: string): void;
 }
 
 export function BrowserBridgeContent({
@@ -29,7 +29,8 @@ export function BrowserBridgeContent({
   onRevoke,
 }: BrowserBridgeContentProps): React.JSX.Element {
   const { t } = useTranslation();
-  const statusLabel = snapshot.pendingPairing
+  const onlineCount = snapshot.pairedBrowsers.filter(browser => browser.online).length;
+  const statusLabel = snapshot.pendingPairings.length
     ? t('bridge.statusPendingPairing')
     : t(STATUS_LABEL_KEYS[snapshot.status]);
 
@@ -42,12 +43,14 @@ export function BrowserBridgeContent({
 
       <section className='bridge-status-card' aria-live='polite'>
         <div className={`bridge-status-icon ${snapshot.status}`}>
-          {snapshot.status === 'connected' ? <ShieldCheck size={21} /> : <Cable size={21} />}
+          {onlineCount > 0 ? <ShieldCheck size={21} /> : <Cable size={21} />}
         </div>
         <div className='bridge-status-copy'>
           <strong>{statusLabel}</strong>
           <small>
-            {snapshot.status === 'connected' ? t('bridge.authedNote') : t('bridge.localNote')}
+            {onlineCount > 0
+              ? t('bridge.onlineCount', { count: onlineCount })
+              : t('bridge.localNote')}
           </small>
         </div>
         <span className={`bridge-status-pill ${snapshot.status}`}>{statusLabel}</span>
@@ -59,42 +62,59 @@ export function BrowserBridgeContent({
         </div>
       )}
 
-      {snapshot.pendingPairing && (
-        <section className='settings-group'>
-          <h3>{t('bridge.pairingTitle', { name: snapshot.pendingPairing.browserName })}</h3>
+      {snapshot.pendingPairings.map(pending => (
+        <section className='settings-group' key={pending.browserId}>
+          <h3>{t('bridge.pairingTitle', { name: pending.browserName })}</h3>
           <div className='bridge-identity'>
             <strong>{t('bridge.pairingConfirm')}</strong>
-            <code>{snapshot.pendingPairing.origin}</code>
+            <code>{pending.origin}</code>
             <small>
-              {t('bridge.pairingMeta', { id: snapshot.pendingPairing.browserId })}{' '}
-              {snapshot.pendingPairing.extensionVersion}
+              {t('bridge.pairingMeta', { id: pending.browserId })} {pending.extensionVersion}
             </small>
           </div>
           <div className='bridge-actions'>
-            <button className='primary-button compact' type='button' onClick={onApprove}>
+            <button
+              className='primary-button compact'
+              type='button'
+              onClick={() => onApprove(pending.browserId)}>
               <Check size={15} /> {t('bridge.allow')}
             </button>
-            <button className='bridge-revoke-button' type='button' onClick={onReject}>
+            <button
+              className='bridge-revoke-button'
+              type='button'
+              onClick={() => onReject(pending.browserId)}>
               <X size={15} /> {t('bridge.deny')}
             </button>
           </div>
         </section>
-      )}
+      ))}
 
-      {snapshot.pairedOrigin && (
+      {snapshot.pairedBrowsers.length > 0 && (
         <section className='settings-group'>
           <h3>{t('bridge.pairedTitle')}</h3>
-          <div className='bridge-identity'>
-            <strong>
-              {snapshot.status === 'connected' ? t('bridge.online') : t('bridge.reconnecting')}
-            </strong>
-            <code>{snapshot.pairedOrigin}</code>
-            {snapshot.browserId && <small>Browser ID · {snapshot.browserId}</small>}
-          </div>
+          {snapshot.pairedBrowsers.map(browser => (
+            <div className='bridge-identity' key={browser.browserId}>
+              <strong>
+                {browser.online ? t('bridge.online') : t('bridge.reconnecting')}
+                {browser.browserName ? ` · ${browser.browserName}` : ''}
+              </strong>
+              <code>{browser.origin}</code>
+              <small>Browser ID · {browser.browserId}</small>
+              <button
+                className='bridge-revoke-button'
+                type='button'
+                onClick={() => {
+                  if (!window.confirm(t('bridge.unpairConfirm'))) return;
+                  onRevoke(browser.browserId);
+                }}>
+                <Unplug size={15} /> {t('bridge.unpair')}
+              </button>
+            </div>
+          ))}
         </section>
       )}
 
-      {!snapshot.pendingPairing && !snapshot.pairedOrigin && (
+      {!snapshot.pendingPairings.length && snapshot.pairedBrowsers.length === 0 && (
         <section className='settings-group'>
           <h3>{t('bridge.waitingTitle')}</h3>
           <p className='settings-note'>{t('bridge.waitingNote')}</p>
@@ -105,12 +125,18 @@ export function BrowserBridgeContent({
         <button className='secondary-button compact' type='button' onClick={onRefresh}>
           <RefreshCw size={15} /> {t('bridge.refresh')}
         </button>
-        <button className='secondary-button compact' type='button' onClick={onReconnect}>
+        <button className='secondary-button compact' type='button' onClick={() => onReconnect()}>
           <RefreshCw size={15} /> {t('bridge.requestReconnect')}
         </button>
-        {snapshot.pairedOrigin && (
-          <button className='bridge-revoke-button' type='button' onClick={onRevoke}>
-            <Unplug size={15} /> {t('bridge.unpair')}
+        {snapshot.pairedBrowsers.length > 1 && (
+          <button
+            className='bridge-revoke-button'
+            type='button'
+            onClick={() => {
+              if (!window.confirm(t('bridge.unpairAllConfirm'))) return;
+              onRevoke();
+            }}>
+            <Unplug size={15} /> {t('bridge.unpairAll')}
           </button>
         )}
       </div>
@@ -141,14 +167,19 @@ export function BrowserBridgeSettings(): React.JSX.Element {
   return (
     <BrowserBridgeContent
       snapshot={snapshot}
-      onApprove={() => void window.agentDesktop.browserBridge.approvePairing().then(setSnapshot)}
-      onReject={() => void window.agentDesktop.browserBridge.rejectPairing().then(setSnapshot)}
+      onApprove={browserId =>
+        void window.agentDesktop.browserBridge.approvePairing(browserId).then(setSnapshot)
+      }
+      onReject={browserId =>
+        void window.agentDesktop.browserBridge.rejectPairing(browserId).then(setSnapshot)
+      }
       onRefresh={() => void window.agentDesktop.browserBridge.get().then(setSnapshot)}
-      onReconnect={() => void window.agentDesktop.browserBridge.reconnect().then(setSnapshot)}
-      onRevoke={() => {
-        if (!window.confirm(t('bridge.unpairConfirm'))) return;
-        void window.agentDesktop.browserBridge.revokePairing().then(setSnapshot);
-      }}
+      onReconnect={browserId =>
+        void window.agentDesktop.browserBridge.reconnect(browserId).then(setSnapshot)
+      }
+      onRevoke={browserId =>
+        void window.agentDesktop.browserBridge.revokePairing(browserId).then(setSnapshot)
+      }
     />
   );
 }
