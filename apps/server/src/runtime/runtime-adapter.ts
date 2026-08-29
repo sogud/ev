@@ -1,5 +1,6 @@
 import type { RuntimeDescriptor, RuntimeEvent, RuntimeId, RuntimeSessionRef } from '@ev/contracts';
-import type { ModelRef, ThinkingLevel } from '@ev/contracts/domain';
+import type { ModelRef, PromptImage, ThinkingLevel } from '@ev/contracts/domain';
+import type { CommandInfo } from '@ev/contracts/domain';
 
 export class RuntimeSessionUnavailableError extends Error {
   constructor(message: string) {
@@ -42,8 +43,12 @@ export interface RuntimeSession {
   readonly runtimeId: RuntimeId;
   getState(): RuntimeSessionState;
   getEvents(): RuntimeEvent[];
-  prompt(text: string): Promise<void>;
-  promptAndWait(text: string): Promise<void>;
+  prompt(text: string, images?: PromptImage[]): Promise<void>;
+  promptAndWait(text: string, images?: PromptImage[]): Promise<void>;
+  /** Queue a message into a running turn (Pi steer/follow_up); absent = runtime cannot queue. */
+  queueMessage?(text: string, queue: 'steer' | 'followUp', images?: PromptImage[]): Promise<void>;
+  /** Native slash commands / skills invocable via prompt; absent = none. */
+  listCommands?(): Promise<CommandInfo[]>;
   abort(): Promise<void>;
   setModel?(provider: string, modelId: string): Promise<void>;
   setThinkingLevel?(level: ThinkingLevel): Promise<void>;

@@ -133,7 +133,7 @@ export default function App(): React.JSX.Element {
           thinkingLevel={thinkingLevel}
           defaultWorkspace={store.settings.defaultWorkspace ?? ''}
           onCreate={() => void store.createTask()}
-          onSend={prompt => void store.sendPrompt(prompt)}
+          onSend={(prompt, images, queue) => void store.sendPrompt(prompt, images, queue)}
           onAbort={() => void store.abort()}
           onModel={(provider, model) => {
             if (store.detail) void store.setModel(provider, model);

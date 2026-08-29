@@ -48,7 +48,9 @@
     "collapseHistory": "收起历史",
     "showMore": "显示更多（{{count}}）",
     "empty": "还没有任务",
-    "noWorkspace": "未选择目录"
+    "noWorkspace": "未选择目录",
+    "deleteConfirm": "再次点击确认删除 {{title}}",
+    "deleteAgain": "再点一次"
   },
   "devices": {
     "title": "设备",
@@ -98,13 +100,23 @@
     "placeholder": "让 EV 处理一件事…",
     "inputAria": "输入消息",
     "hint": "Enter 发送 · Shift Enter 换行",
-    "stopAria": "停止"
+    "stopAria": "停止",
+    "queueSendAria": "排队发送",
+    "queueSendTitle": "运行中排队（Enter 插队 steer，⌥ Enter 末尾追加）",
+    "hintRunning": "Enter 插队 · ⌥ Enter 排队 · ■ 停止",
+    "slashMenuAria": "命令菜单",
+    "attachImage": "添加图片",
+    "removeImage": "移除图片",
+    "imageAlt": "已添加的图片",
+    "imagePrompt": "请描述已添加的图片。"
   },
   "transcript": {
     "running": "进行中",
     "processing": "正在处理",
     "thinkingActive": "思考中",
-    "thinkingDone": "运行了 {{count}} 个工具"
+    "thinkingDone": "运行了 {{count}} 个工具",
+    "copyTurn": "复制这条回复",
+    "jumpToLatest": "回到底部"
   },
   "app": {
     "loadError": "无法读取 EV 设置",
@@ -217,16 +229,26 @@
     "unpairConfirm": "撤销后，EV Browser 需要重新批准才能连接。是否继续？"
   },
   "thinking": {
-    "off": "不思考",
-    "minimal": "最少",
-    "low": "低",
-    "medium": "中",
-    "high": "高",
-    "xhigh": "极高",
-    "max": "最大",
+    "off": "Off",
+    "desc.off": "不推理，最快",
+    "minimal": "Minimal",
+    "desc.minimal": "几乎不思考",
+    "low": "Low",
+    "desc.low": "快速推理",
+    "medium": "Medium",
+    "desc.medium": "均衡日常首选",
+    "high": "High",
+    "desc.high": "更深入推理",
+    "xhigh": "XHigh",
+    "desc.xhigh": "极深推理，更耗额度",
+    "max": "Max",
+    "desc.max": "只留给最难的任务",
     "aria": "思考强度",
-    "valueText": "{{label}}，第 {{index}} 项，共 {{count}} 项",
-    "trigger": "思考：{{label}}"
+    "trigger": "{{label}}",
+    "endpointFast": "Faster",
+    "endpointDeep": "Smarter",
+    "costWarning": "这个档位会明显更慢，并消耗更多额度。",
+    "valueText": "{{label}}，第 {{index}} 项，共 {{count}} 项"
   },
   "model": {
     "unavailableNow": "{{name}} 当前不可用",

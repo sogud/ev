@@ -1,6 +1,8 @@
 import { stat } from 'node:fs/promises';
 import type { RuntimeEvent, RuntimeId, RuntimeSessionRef } from '@ev/contracts';
 import type {
+  CommandInfo,
+  PromptImage,
   TaskDetail,
   TaskInspection,
   TaskSummary,
@@ -16,6 +18,73 @@ import { inspectWorkspace } from './workspace-inspection';
 
 /** Task workspace missing/invalid; getTask uses it to mark the task unavailable without blocking startup. */
 export class WorkspaceUnavailableError extends Error {}
+
+const MAX_PROMPT_IMAGES = 4;
+const MAX_PROMPT_IMAGE_BYTES = 5 * 1024 * 1024;
+const PROMPT_IMAGE_TYPES = new Set<PromptImage['mimeType']>([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
+
+function promptImageBytes(data: unknown, mimeType: PromptImage['mimeType']): Buffer {
+  if (
+    typeof data !== 'string' ||
+    data.length === 0 ||
+    data.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)
+  ) {
+    throw new Error('Image data must be valid base64');
+  }
+  const bytes = Buffer.from(data, 'base64');
+  if (bytes.length > MAX_PROMPT_IMAGE_BYTES) throw new Error('Each image must be 5 MB or smaller');
+  const validSignature =
+    (mimeType === 'image/png' &&
+      bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) ||
+    (mimeType === 'image/jpeg' && bytes.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'))) ||
+    (mimeType === 'image/gif' &&
+      ['GIF87a', 'GIF89a'].includes(bytes.subarray(0, 6).toString('ascii'))) ||
+    (mimeType === 'image/webp' &&
+      bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      bytes.subarray(8, 12).toString('ascii') === 'WEBP');
+  if (!validSignature) throw new Error(`Image data does not match ${mimeType}`);
+  return bytes;
+}
+
+function parsePromptImages(value: unknown): PromptImage[] {
+  if (!Array.isArray(value)) throw new Error('Prompt images must be an array');
+  if (value.length > MAX_PROMPT_IMAGES) throw new Error('A prompt can include at most 4 images');
+  return value.map(item => {
+    if (!item || typeof item !== 'object') throw new Error('Prompt image is invalid');
+    const image = item as Record<string, unknown>;
+    if (
+      image.type !== 'image' ||
+      !PROMPT_IMAGE_TYPES.has(image.mimeType as PromptImage['mimeType'])
+    ) {
+      throw new Error('Prompt image type is unsupported');
+    }
+    const mimeType = image.mimeType as PromptImage['mimeType'];
+    promptImageBytes(image.data, mimeType);
+    if (
+      image.fileName !== undefined &&
+      (typeof image.fileName !== 'string' || image.fileName.length > 255)
+    ) {
+      throw new Error('Prompt image filename is invalid');
+    }
+    return {
+      type: 'image',
+      data: image.data as string,
+      mimeType,
+      ...(typeof image.fileName === 'string' ? { fileName: image.fileName } : {}),
+    };
+  });
+}
+
+function parseQueueMode(value: unknown): 'steer' | 'followUp' {
+  if (value === 'steer' || value === 'followUp') return value;
+  throw new Error('Prompt queue mode must be steer or followUp');
+}
 
 /** Live bundle behind a Task: native session plus its Transcript/Trace projections. */
 interface TaskRuntimeState {
@@ -127,19 +196,33 @@ export class TaskSession {
     await this.ensureState();
   }
 
-  async prompt(prompt: string): Promise<void> {
+  async prompt(prompt: string, images: unknown = [], queue: unknown = 'steer'): Promise<void> {
+    if (typeof prompt !== 'string') throw new Error('Prompt must be a string');
     const text = prompt.trim();
-    if (!text) return;
+    const parsedImages = parsePromptImages(images);
+    const parsedQueue = parseQueueMode(queue);
+    if (!text && parsedImages.length === 0) return;
     const runtime = await this.ensureState();
 
-    if (this.task.title === 'New task') this.task.title = taskTitleFromPrompt(text);
+    // Mid-turn input: queue into the running session (steer/follow_up) without
+    // touching task status; the queued text surfaces when Pi delivers it.
+    if (this.task.status === 'running') {
+      const queueFn = runtime.session.queueMessage?.bind(runtime.session);
+      if (!queueFn) throw new Error('This runtime does not support queueing messages');
+      await queueFn(text, parsedQueue, parsedImages);
+      return;
+    }
+
+    if (this.task.title === 'New task') {
+      this.task.title = taskTitleFromPrompt(text || 'Image attachment');
+    }
     this.task.status = 'running';
     this.task.error = undefined;
     this.task.updatedAt = Date.now();
     this.persistTask();
     this.notify();
 
-    const run = runtime.session.promptAndWait(text).catch((error: unknown) => {
+    const run = runtime.session.promptAndWait(text, parsedImages).catch((error: unknown) => {
       this.task.status = 'error';
       this.task.error = error instanceof Error ? error.message : String(error);
       this.task.updatedAt = Date.now();
@@ -149,6 +232,12 @@ export class TaskSession {
       this.notify();
     });
     void run;
+  }
+
+  async commands(): Promise<CommandInfo[]> {
+    const runtime = await this.ensureState();
+    if (!runtime.session.listCommands) return [];
+    return await runtime.session.listCommands();
   }
 
   async abort(): Promise<void> {

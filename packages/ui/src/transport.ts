@@ -37,8 +37,12 @@ function readParams(preferHash: boolean): { port: string; token: string } {
 
 function build(kind: Transport['kind'], preferHash: boolean): Transport {
   const { port, token } = readParams(preferHash);
+  // Same-origin when the page itself is served by the EV server (any host:port);
+  // hardcoded loopback only applies to the vite dev origin.
+  const baseUrl =
+    window.location.port === port ? window.location.origin : `http://127.0.0.1:${port}`;
   const client = createEvClient({
-    baseUrl: `http://127.0.0.1:${port}`,
+    baseUrl,
     token,
     device: deviceIdentity(kind),
   });

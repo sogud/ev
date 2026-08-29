@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, mkdtemp, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -126,14 +125,8 @@ process.stdin.on('data', chunk => {
 
 afterEach(async () => {
   await Promise.allSettled(sessions.splice(0).map(session => session.dispose()));
-  const trash = path.join(os.homedir(), '.Trash');
-  await mkdir(trash, { recursive: true });
   await Promise.all(
-    directories
-      .splice(0)
-      .map(directory =>
-        rename(directory, path.join(trash, `${path.basename(directory)}-${randomUUID()}`))
-      )
+    directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))
   );
 });
 

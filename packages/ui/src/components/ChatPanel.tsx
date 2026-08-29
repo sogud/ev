@@ -10,6 +10,8 @@ import {
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
+  CommandInfo,
+  PromptImage,
   ProviderSummary,
   RuntimeDescriptor,
   RuntimeId,
@@ -36,7 +38,7 @@ interface ChatPanelProps {
   /** Present only in the mobile form factor: opens the sidebar drawer. */
   onOpenSidebar?(): void;
   onCreate(): void;
-  onSend(prompt: string): void;
+  onSend(prompt: string, images?: PromptImage[], queue?: 'steer' | 'followUp'): void;
   onAbort(): void;
   onModel(provider: string, model: string): void;
   onThinking(level: ThinkingLevel): void;
@@ -69,7 +71,26 @@ export function ChatPanel({
   const activeRuntime = runtimes.find(runtime => runtime.id === runtimeId);
   const supportsModels = activeRuntime?.capabilities.models ?? runtimeId === 'pi';
   const supportsThinking = activeRuntime?.capabilities.thinkingLevels ?? runtimeId === 'pi';
+  const supportsImages = activeRuntime?.capabilities.imageInput ?? false;
+  const supportsQueue = activeRuntime?.capabilities.promptQueue ?? false;
   const catalog = activeRuntime?.modelCatalog;
+
+  // Native slash commands / skills for the composer menu (pi only for now).
+  const [commands, setCommands] = useState<CommandInfo[]>([]);
+  useEffect(() => {
+    setCommands([]);
+    if (!task || runtimeId !== 'pi') return;
+    let stale = false;
+    void window.agentDesktop.tasks
+      .commands(task.id)
+      .then(value => {
+        if (!stale) setCommands(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      stale = true;
+    };
+  }, [runtimeId, task?.id]);
 
   useEffect(() => {
     if (!task) {
@@ -195,16 +216,28 @@ export function ChatPanel({
               </div>
             ) : (
               <Transcript
+                key={task.id}
                 items={task.messages}
                 running={task.status === 'running'}
                 onViewDiff={() => setInspectorOpen(true)}
               />
             )}
             <Composer
+              key={task.id}
               running={task.status === 'running'}
+              imageInput={supportsImages}
+              queueInput={supportsQueue}
+              commands={commands}
               // Runtimes without a model catalog (codex/claude/qoder) must not disable input over a missing model.
-              disabled={(runtimeId === 'pi' && !task.model) || task.status === 'error'}
+              disabled={
+                (runtimeId === 'pi' && !task.model) ||
+                task.status === 'error' ||
+                (task.status === 'running' && !supportsQueue)
+              }
               leading={configChips}
+              {...(supportsThinking
+                ? { effort: { value: thinkingLevel, onChange: onThinking } }
+                : {})}
               onSend={onSend}
               onAbort={onAbort}
             />

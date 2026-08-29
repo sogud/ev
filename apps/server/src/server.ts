@@ -287,9 +287,15 @@ function makeDispatcher(token: string, handlers: unknown) {
     }
     const nsHandlers = handlers as Record<string, Record<string, (...a: unknown[]) => unknown>>;
     try {
-      const result = await nsHandlers[route.namespace][route.method](...args);
+      const fn = nsHandlers[route.namespace]?.[route.method];
+      if (typeof fn !== 'function') {
+        console.error(`[EV] missing handler ${route.namespace}:${route.method}`);
+        return { status: 404, json: { error: 'missing handler' } };
+      }
+      const result = await fn(...args);
       return { status: 200, json: result ?? null };
     } catch (error) {
+      console.error(`[EV] ${route.namespace}:${route.method} failed`, error);
       return {
         status: 500,
         json: { error: error instanceof Error ? error.message : String(error) },
@@ -432,8 +438,22 @@ async function main(resources: ServerStartupResources): Promise<void> {
         return;
       }
       let body = '';
-      req.on('data', chunk => (body += chunk));
+      let bodyBytes = 0;
+      let bodyTooLarge = false;
+      req.on('data', chunk => {
+        bodyBytes += Buffer.byteLength(chunk);
+        if (bodyBytes > 30 * 1024 * 1024) {
+          bodyTooLarge = true;
+          return;
+        }
+        body += chunk;
+      });
       req.on('end', () => {
+        if (bodyTooLarge) {
+          res.writeHead(413, { 'content-type': 'application/json', ...corsHeaders(req) });
+          res.end(JSON.stringify({ error: 'request body is too large' }));
+          return;
+        }
         void dispatch(
           req.method ?? 'GET',
           url.pathname,
@@ -447,7 +467,13 @@ async function main(resources: ServerStartupResources): Promise<void> {
             return;
           }
           res.writeHead(result.status, { 'content-type': 'application/json', ...corsHeaders(req) });
-          res.end(JSON.stringify(result.json ?? { error: result.text ?? '' }));
+          // Void handlers resolve json:null — only fall back to the error shape
+          // when the dispatch result carries neither json nor text.
+          const body =
+            'json' in result && result.json !== undefined
+              ? JSON.stringify(result.json)
+              : JSON.stringify({ error: result.text ?? '' });
+          res.end(body);
         });
       });
     });

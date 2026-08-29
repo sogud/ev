@@ -1,5 +1,5 @@
-import { chmodSync, mkdirSync, mkdtempSync, renameSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HerdrClient } from '../herdr/herdr-client';
@@ -178,12 +178,10 @@ function fakePath(mode: string): string {
 
 beforeAll(() => {
   fakeDir = mkdtempSync(join(tmpdir(), 'ev-fake-herdr-'));
-  mkdirSync(join(homedir(), '.Trash'), { recursive: true });
 });
 
 afterAll(() => {
-  // Repo red line: never rm — move the temp dir into the Trash.
-  renameSync(fakeDir, join(homedir(), '.Trash', `ev-fake-herdr-${Date.now()}`));
+  rmSync(fakeDir, { recursive: true, force: true });
 });
 
 describe('HerdrClient: available (fake herdr ok)', () => {

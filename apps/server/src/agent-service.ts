@@ -3,6 +3,8 @@ import { stat } from 'node:fs/promises';
 import { getAgentDir, ModelRuntime, SettingsManager } from '@earendil-works/pi-coding-agent';
 import type { RuntimeId } from '@ev/contracts';
 import type {
+  CommandInfo,
+  PromptImage,
   TaskDetail,
   TaskInspection,
   TaskSummary,
@@ -304,8 +306,21 @@ export class AgentService {
     this.persistTasks();
   }
 
-  async prompt(id: string, prompt: string): Promise<void> {
-    await this.sessionFor(this.requireTask(id)).prompt(prompt);
+  async prompt(
+    id: string,
+    prompt: string,
+    images?: PromptImage[],
+    queue?: 'steer' | 'followUp'
+  ): Promise<void> {
+    await this.sessionFor(this.requireTask(id)).prompt(
+      prompt,
+      images === undefined ? [] : images,
+      queue === undefined ? 'steer' : queue
+    );
+  }
+
+  async commands(id: string): Promise<CommandInfo[]> {
+    return await this.sessionFor(this.requireTask(id)).commands();
   }
 
   async abort(id: string): Promise<void> {

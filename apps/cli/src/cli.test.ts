@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, mkdtemp, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import net from 'node:net';
 import os from 'node:os';
@@ -86,14 +86,8 @@ afterEach(async () => {
   await Promise.all(
     servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))
   );
-  const trash = path.join(os.homedir(), '.Trash');
-  await mkdir(trash, { recursive: true });
   await Promise.all(
-    directories
-      .splice(0)
-      .map(directory =>
-        rename(directory, path.join(trash, `${path.basename(directory)}-${randomUUID()}`))
-      )
+    directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))
   );
 });
 

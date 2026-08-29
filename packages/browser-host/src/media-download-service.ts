@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import https from 'node:https';
+import { isIP } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -24,6 +25,7 @@ import { SafeMediaProxy } from './safe-media-proxy';
 const MAX_JOBS = 100;
 const MAX_CAPTURED_PATH_CHARS = 4_096;
 const MAX_SUBTITLE_PROCESS_OUTPUT_CHARS = 16_384;
+const MAX_BILIBILI_JSON_BYTES = 5 * 1024 * 1024;
 const SUBTITLE_TIMEOUT_MS = 120_000;
 const LOCAL_ASR_TIMEOUT_MS = 30 * 60_000;
 
@@ -311,9 +313,14 @@ export class MediaDownloadService {
     // logged-in users and are not exposed by yt-dlp's extractor. Use the
     // site's own API when the caller explicitly opts in to reading browser
     // cookies.
+    let bilibiliFailure: string | null = null;
     if (request.cookiesFromBrowser && this.isBilibiliUrl(pageUrl)) {
-      const bilibili = await this.extractBilibiliSubtitles(request, pageUrl, keepFile);
-      if (bilibili) return bilibili;
+      try {
+        const bilibili = await this.extractBilibiliSubtitles(request, pageUrl, keepFile);
+        if (bilibili) return bilibili;
+      } catch (error) {
+        bilibiliFailure = error instanceof Error ? error.message : String(error);
+      }
     }
 
     const executable = await this.resolveExecutable();
@@ -362,8 +369,9 @@ export class MediaDownloadService {
       const selected = files.sort()[0];
       if (!selected) {
         const detail = processOutput.trim().split(/\r?\n/).filter(Boolean).at(-1);
+        const failures = [bilibiliFailure, detail].filter(Boolean).join('; ');
         throw new Error(
-          detail ? `No matching subtitles: ${detail}` : 'No matching subtitles found'
+          failures ? `No matching subtitles: ${failures}` : 'No matching subtitles found'
         );
       }
       const temporaryFilename = path.join(temporaryDirectory, selected);
@@ -495,7 +503,13 @@ export class MediaDownloadService {
       const viewData = (view as Record<string, unknown> | null)?.data as
         | Record<string, unknown>
         | undefined;
-      const cid = viewData?.cid;
+      const requestedPage = Number.parseInt(new URL(pageUrl).searchParams.get('p') ?? '1', 10);
+      const pages = Array.isArray(viewData?.pages) ? viewData.pages : [];
+      const selectedPage = pages.find(candidate => {
+        if (!candidate || typeof candidate !== 'object') return false;
+        return (candidate as Record<string, unknown>).page === requestedPage;
+      }) as Record<string, unknown> | undefined;
+      const cid = selectedPage?.cid ?? viewData?.cid;
       if (typeof cid !== 'number') return null;
 
       const player = await this.fetchBilibiliJson(
@@ -511,21 +525,49 @@ export class MediaDownloadService {
       const subtitleUrl = selected.subtitle_url.startsWith('//')
         ? `https:${selected.subtitle_url}`
         : selected.subtitle_url;
-      const subtitleJson = await this.fetchBilibiliSubtitleJson(subtitleUrl, cookieHeader);
-      const body = Array.isArray((subtitleJson as Record<string, unknown>)?.body)
-        ? ((subtitleJson as Record<string, unknown>).body as BilibiliSubtitleItem[])
+      if (!subtitleUrl.startsWith('https://')) {
+        throw new Error('Bilibili subtitle URL must use HTTPS');
+      }
+      const subtitleJson = await this.fetchBilibiliSubtitleJson(subtitleUrl);
+      const rawBody: unknown[] = Array.isArray((subtitleJson as Record<string, unknown>)?.body)
+        ? ((subtitleJson as Record<string, unknown>).body as unknown[])
         : [];
+      const body = rawBody.flatMap((item): BilibiliSubtitleItem[] => {
+        if (!item || typeof item !== 'object') return [];
+        const candidate = item as Record<string, unknown>;
+        if (
+          typeof candidate.from !== 'number' ||
+          !Number.isFinite(candidate.from) ||
+          typeof candidate.to !== 'number' ||
+          !Number.isFinite(candidate.to) ||
+          typeof candidate.content !== 'string'
+        ) {
+          return [];
+        }
+        return [{ from: candidate.from, to: candidate.to, content: candidate.content }];
+      });
       if (!body.length) return null;
 
       const content = this.convertBilibiliSubtitle(body, request.format);
       const language = selected.lan;
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(language)) {
+        throw new Error('Bilibili returned an invalid subtitle language');
+      }
       if (!keepFile) return { content, filename: '', language };
 
       await mkdir(this.options.downloadDirectory, { recursive: true, mode: 0o700 });
-      const filename = path.join(
+      const destination = path.join(
         this.options.downloadDirectory,
         `${bvid}.${language}.${request.format}`
       );
+      const filename = await access(destination)
+        .then(() =>
+          path.join(
+            this.options.downloadDirectory,
+            `${bvid}.${language}-${randomUUID().slice(0, 8)}.${request.format}`
+          )
+        )
+        .catch(() => destination);
       await writeFile(filename, content, { mode: 0o600 });
       return { content, filename, language };
     } finally {
@@ -542,7 +584,15 @@ export class MediaDownloadService {
     const executableDirectory = path.isAbsolute(executable) ? path.dirname(executable) : null;
     const child = this.launch(
       executable,
-      ['--cookies-from-browser', browser, '--cookies', cookieFile, '--skip-download', pageUrl],
+      [
+        '--cookies-from-browser',
+        browser,
+        '--cookies',
+        cookieFile,
+        '--skip-download',
+        '--batch-file',
+        '-',
+      ],
       {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
@@ -553,7 +603,7 @@ export class MediaDownloadService {
         },
       }
     );
-    await this.waitForProcess(child, undefined, SUBTITLE_TIMEOUT_MS, 'Browser cookie export');
+    await this.waitForProcess(child, pageUrl, SUBTITLE_TIMEOUT_MS, 'Browser cookie export');
   }
 
   private async netscapeCookiesForHostname(
@@ -564,7 +614,7 @@ export class MediaDownloadService {
     const cookies: string[] = [];
     for (const rawLine of content.split(/\r?\n/)) {
       const line = rawLine.trim();
-      if (!line || line.startsWith('#')) continue;
+      if (!line || (line.startsWith('#') && !line.startsWith('#HttpOnly_'))) continue;
       const fields = line.split('\t');
       if (fields.length < 7) continue;
       const [rawDomain, , , , , name, value] = fields;
@@ -583,9 +633,10 @@ export class MediaDownloadService {
     return false;
   }
 
-  private bilibiliHeaders(cookieHeader: string): Record<string, string> {
+  private bilibiliHeaders(url: URL, cookieHeader?: string): Record<string, string> {
+    const sendsCookies = url.hostname === 'bilibili.com' || url.hostname.endsWith('.bilibili.com');
     return {
-      Cookie: cookieHeader,
+      ...(cookieHeader && sendsCookies ? { Cookie: cookieHeader } : {}),
       Referer: 'https://www.bilibili.com/',
       'User-Agent':
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
@@ -601,18 +652,26 @@ export class MediaDownloadService {
     });
   }
 
-  private fetchBilibiliSubtitleJson(
-    url: string,
-    cookieHeader: string
-  ): Promise<Record<string, unknown>> {
-    return this.bilibiliRequest(url, cookieHeader);
+  private fetchBilibiliSubtitleJson(url: string): Promise<Record<string, unknown>> {
+    return this.bilibiliRequest(url);
   }
 
-  private bilibiliRequest(url: string, cookieHeader: string): Promise<Record<string, unknown>> {
+  private async bilibiliRequest(
+    url: string,
+    cookieHeader?: string
+  ): Promise<Record<string, unknown>> {
+    const target = new URL(url);
+    const [address] = await resolvePublicAddresses(target.hostname, this.resolveAddresses);
+    const family = isIP(address);
+    if (family === 0) throw new Error('Bilibili request resolved to an invalid address');
+
     return new Promise((resolve, reject) => {
       const request = https.get(
-        url,
-        { headers: this.bilibiliHeaders(cookieHeader) },
+        target,
+        {
+          headers: this.bilibiliHeaders(target, cookieHeader),
+          lookup: (_hostname, _options, callback) => callback(null, address, family),
+        },
         response => {
           if (response.statusCode && (response.statusCode < 200 || response.statusCode >= 300)) {
             response.resume();
@@ -620,8 +679,14 @@ export class MediaDownloadService {
             return;
           }
           let body = '';
+          let bodyBytes = 0;
           response.setEncoding('utf8');
           response.on('data', chunk => {
+            bodyBytes += Buffer.byteLength(chunk);
+            if (bodyBytes > MAX_BILIBILI_JSON_BYTES) {
+              response.destroy(new Error('Bilibili response is too large'));
+              return;
+            }
             body += chunk;
           });
           response.on('end', () => {
@@ -646,7 +711,26 @@ export class MediaDownloadService {
     const data = (playerResponse as Record<string, unknown> | null)?.data;
     const subtitle = (data as Record<string, unknown> | null)?.subtitle;
     const list = (subtitle as Record<string, unknown> | null)?.subtitles;
-    return Array.isArray(list) ? (list as BilibiliSubtitleInfo[]) : [];
+    if (!Array.isArray(list)) return [];
+    return list.flatMap((item): BilibiliSubtitleInfo[] => {
+      if (!item || typeof item !== 'object') return [];
+      const candidate = item as Record<string, unknown>;
+      if (
+        typeof candidate.id !== 'number' ||
+        typeof candidate.lan !== 'string' ||
+        typeof candidate.subtitle_url !== 'string'
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: candidate.id,
+          lan: candidate.lan,
+          lan_doc: typeof candidate.lan_doc === 'string' ? candidate.lan_doc : '',
+          subtitle_url: candidate.subtitle_url,
+        },
+      ];
+    });
   }
 
   private selectBilibiliSubtitle(

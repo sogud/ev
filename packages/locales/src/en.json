@@ -48,7 +48,9 @@
     "collapseHistory": "Collapse history",
     "showMore": "Show more ({{count}})",
     "empty": "No tasks yet",
-    "noWorkspace": "No directory selected"
+    "noWorkspace": "No directory selected",
+    "deleteConfirm": "Click again to delete {{title}}",
+    "deleteAgain": "Again?"
   },
   "devices": {
     "title": "Devices",
@@ -98,13 +100,23 @@
     "placeholder": "Give EV something to do…",
     "inputAria": "Message input",
     "hint": "Enter to send · Shift+Enter for newline",
-    "stopAria": "Stop"
+    "stopAria": "Stop",
+    "queueSendAria": "Queue message",
+    "queueSendTitle": "Queue while running (Enter = steer, ⌥Enter = follow-up)",
+    "hintRunning": "Enter queues (steer) · ⌥ Enter follow-up · ■ stops",
+    "slashMenuAria": "Commands",
+    "attachImage": "Attach image",
+    "removeImage": "Remove image",
+    "imageAlt": "Attached image",
+    "imagePrompt": "Describe the attached image(s)."
   },
   "transcript": {
     "running": "running",
     "processing": "Working",
     "thinkingActive": "Thinking",
-    "thinkingDone": "Ran {{count}} tools"
+    "thinkingDone": "Ran {{count}} tools",
+    "copyTurn": "Copy reply",
+    "jumpToLatest": "Jump to latest"
   },
   "app": {
     "loadError": "Couldn't read EV settings",
@@ -218,15 +230,25 @@
   },
   "thinking": {
     "off": "Off",
+    "desc.off": "No reasoning — fastest replies",
     "minimal": "Minimal",
+    "desc.minimal": "A brief think before answering",
     "low": "Low",
+    "desc.low": "Quick reasoning for simple edits",
     "medium": "Medium",
+    "desc.medium": "Balanced speed and depth",
     "high": "High",
-    "xhigh": "Very high",
+    "desc.high": "Deeper reasoning for complex tasks",
+    "xhigh": "XHigh",
+    "desc.xhigh": "Very deep reasoning; slower and pricier",
     "max": "Max",
+    "desc.max": "Maximum effort; hardest tasks only",
     "aria": "Thinking effort",
-    "valueText": "{{label}}, item {{index}} of {{count}}",
-    "trigger": "Thinking: {{label}}"
+    "trigger": "{{label}}",
+    "endpointFast": "Faster",
+    "endpointDeep": "Smarter",
+    "costWarning": "Uses noticeably more time and quota at this level.",
+    "valueText": "{{label}}, item {{index}} of {{count}}"
   },
   "model": {
     "unavailableNow": "{{name}} is currently unavailable",

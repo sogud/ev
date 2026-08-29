@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Check, CircleAlert, GitCompare, LoaderCircle, RefreshCw, X } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { TaskInspection, TraceEvent } from '../shared/types';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { splitDiffByFile } from '../diff-split';
 import {
   buildTrajectory,
@@ -26,6 +27,7 @@ export function InspectorPanel({
   const [inspection, setInspection] = useState<TaskInspection | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useEscapeToClose(onClose);
 
   const refresh = async (): Promise<void> => {
     setLoading(true);

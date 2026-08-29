@@ -1,6 +1,6 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { Cable, ChevronRight, Cpu, FolderOpen, MonitorSmartphone, Settings, X } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { i18n } from '../i18n';
 import type { RuntimeDescriptor } from '../shared/types';
@@ -11,6 +11,8 @@ import { GeneralSettings } from './settings/GeneralSettings';
 import { ResourceSettings } from './settings/ResourceSettings';
 
 type Tab = 'browser' | 'devices' | 'general' | 'runtimes';
+
+const TAB_ORDER: Tab[] = ['general', 'runtimes', 'browser', 'devices'];
 
 /*
  * Runtimes page = compact row list + drawer detail:
@@ -199,11 +201,22 @@ function RuntimesPage(): React.JSX.Element {
 export function SettingsModal({ onClose }: { onClose(): void }): React.JSX.Element {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('general');
+  const navRef = useRef<HTMLElement>(null);
+
+  // Codex-style settings nav: ArrowUp/ArrowDown moves the selection (and focus)
+  // through the section list; Base UI Dialog owns Esc/scrim/focus-return.
+  const moveTabSelection = (delta: number): void => {
+    const nextIndex = (TAB_ORDER.indexOf(tab) + delta + TAB_ORDER.length) % TAB_ORDER.length;
+    setTab(TAB_ORDER[nextIndex]);
+    const buttons = navRef.current?.querySelectorAll<HTMLButtonElement>('button');
+    buttons?.[nextIndex]?.focus();
+  };
 
   const navButton = (value: Tab, icon: React.ReactNode, label: string): React.JSX.Element => (
     <button
       className={tab === value ? 'active' : ''}
       type='button'
+      tabIndex={tab === value ? 0 : -1}
       aria-current={tab === value ? 'page' : undefined}
       onClick={() => setTab(value)}>
       {icon}
@@ -217,7 +230,18 @@ export function SettingsModal({ onClose }: { onClose(): void }): React.JSX.Eleme
         <Dialog.Backdrop className='modal-backdrop' />
         <Dialog.Popup className='settings-modal'>
           <Dialog.Description className='sr-only'>{t('runtimes.dialogDesc')}</Dialog.Description>
-          <aside className='settings-nav'>
+          <aside
+            className='settings-nav'
+            ref={navRef}
+            onKeyDown={event => {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                moveTabSelection(1);
+              } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveTabSelection(-1);
+              }
+            }}>
             <Dialog.Title className='settings-nav-title'>{t('settings.title')}</Dialog.Title>
             {navButton('general', <Settings size={16} />, t('settings.general'))}
             {navButton('runtimes', <Cpu size={16} />, 'Runtime')}

@@ -1,5 +1,5 @@
 import { FolderOpen, LayoutGrid, Plus, Settings, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { i18n } from '../i18n';
 import type { RuntimeDescriptor, TaskSummary } from '../shared/types';
@@ -95,6 +95,14 @@ export function Sidebar({
 }: SidebarProps): React.JSX.Element {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  // Two-step delete confirm (Codex-style): first click arms the row, second
+  // within the window deletes; arming resets after 2.5s of inactivity.
+  const [armedId, setArmedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (armedId === null) return;
+    const timer = window.setTimeout(() => setArmedId(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [armedId]);
 
   const sorted = [...tasks].sort((a, b) => b.updatedAt - a.updatedAt);
   const recentWindow = 7 * 24 * 3600 * 1000;
@@ -134,11 +142,22 @@ export function Sidebar({
               <span className='task-time'>{timeAgo(task.updatedAt)}</span>
             </button>
             <button
-              className='task-remove'
+              className={armedId === task.id ? 'task-remove armed' : 'task-remove'}
               type='button'
-              aria-label={t('sidebar.deleteTask', { title: task.title })}
-              onClick={() => onRemove(task.id)}>
-              <Trash2 size={14} />
+              aria-label={
+                armedId === task.id
+                  ? t('sidebar.deleteConfirm', { title: task.title })
+                  : t('sidebar.deleteTask', { title: task.title })
+              }
+              onClick={() => {
+                if (armedId === task.id) {
+                  setArmedId(null);
+                  onRemove(task.id);
+                } else {
+                  setArmedId(task.id);
+                }
+              }}>
+              {armedId === task.id ? t('sidebar.deleteAgain') : <Trash2 size={14} />}
             </button>
           </div>
         ))}

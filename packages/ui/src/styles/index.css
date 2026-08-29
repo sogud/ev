@@ -244,6 +244,19 @@ summary:focus-visible,
   color: var(--ev-color-status-danger);
   background: var(--ev-color-status-danger-surface);
 }
+/* Armed two-step delete confirm: red, widened to fit the inline label */
+.task-remove.armed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 27px;
+  padding: 0 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--ev-color-status-danger);
+  color: #ffffff;
+}
 .branch-bar {
   display: flex;
   align-items: center;
@@ -437,6 +450,50 @@ textarea {
 }
 .turn {
   margin-bottom: 6px;
+  position: relative;
+}
+/* Hover copy affordance on completed assistant turns (Codex-style) */
+.turn-copy {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--ev-color-border-subtle);
+  border-radius: var(--ev-radius-m);
+  background: var(--ev-color-bg-raised);
+  color: var(--ev-color-text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--ev-duration-fast) var(--ev-ease-standard);
+}
+.turn:hover .turn-copy,
+.turn-copy:focus-visible {
+  opacity: 1;
+}
+/* Floating jump-to-latest button, shown when auto-follow is paused */
+.jump-bottom {
+  position: sticky;
+  bottom: 12px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ev-radius-full);
+  border: 1px solid var(--ev-color-border-default);
+  background: var(--ev-color-bg-raised);
+  color: var(--ev-color-text-primary);
+  box-shadow: var(--ev-shadow-raised);
+  cursor: pointer;
+  z-index: 2;
+}
+.jump-bottom:not(.show) {
+  display: none;
 }
 .user-q {
   margin: 0 0 12px;
@@ -503,6 +560,39 @@ textarea {
 .doc-strong {
   font-weight: 600;
 }
+.doc-table-wrap {
+  max-width: 100%;
+  margin: 2px 0 12px;
+  overflow-x: auto;
+  border: 1px solid var(--ev-color-border-subtle);
+  border-radius: var(--ev-radius-m);
+}
+.doc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.doc-table th,
+.doc-table td {
+  padding: 7px 10px;
+  border-right: 1px solid var(--ev-color-border-subtle);
+  border-bottom: 1px solid var(--ev-color-border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+.doc-table th {
+  background: var(--ev-color-bg-raised);
+  color: var(--ev-color-text-primary);
+  font-weight: 600;
+}
+.doc-table tr:last-child td {
+  border-bottom: 0;
+}
+.doc-table th:last-child,
+.doc-table td:last-child {
+  border-right: 0;
+}
 .cf-card {
   border: 1px solid var(--ev-color-border-subtle);
   border-radius: var(--ev-radius-l);
@@ -514,6 +604,19 @@ textarea {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px 6px;
+}
+/* Chevron + title act as one full-row collapse toggle (Codex-style header) */
+.cf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
 }
 .cf-title {
   font-size: 11px;
@@ -576,6 +679,7 @@ textarea {
 }
 
 .composer-wrap {
+  position: relative;
   flex: none;
   padding: 0 max(18px, calc((100% - 740px) / 2)) 14px;
   background: linear-gradient(transparent, var(--ev-color-bg-canvas) 22%);
@@ -586,13 +690,42 @@ textarea {
   border-radius: 14px;
   background: var(--ev-color-bg-surface);
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
-  transition: border-color 150ms;
 }
-.composer:focus-within {
-  border-color: var(--ev-color-border-strong);
-  box-shadow:
-    0 8px 24px rgb(0 0 0 / 0.28),
-    0 0 0 1px var(--ev-white-a04);
+.composer-images {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 0;
+  overflow-x: auto;
+}
+.composer-image {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--ev-color-border-default);
+  border-radius: 9px;
+  background: var(--ev-color-bg-raised);
+}
+.composer-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.composer-image button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.72);
+  color: white;
+  cursor: pointer;
 }
 .composer textarea {
   width: 100%;
@@ -605,6 +738,74 @@ textarea {
   background: transparent;
   font-size: 13px;
   line-height: 18px;
+}
+.composer-file-input {
+  display: none;
+}
+.slash-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--ev-color-border-default);
+  border-radius: 12px;
+  background: var(--ev-color-bg-surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+}
+.slash-item {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ev-color-text-primary);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.slash-item.active {
+  background: var(--ev-color-bg-hover);
+}
+.slash-name {
+  flex: none;
+  font-family: var(--ev-font-mono, ui-monospace, monospace);
+  font-weight: 600;
+}
+.slash-desc {
+  overflow: hidden;
+  color: var(--ev-color-text-tertiary);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-attach {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ev-color-text-tertiary);
+  cursor: pointer;
+}
+.composer-attach:hover:not(:disabled) {
+  background: var(--ev-color-bg-hover);
+  color: var(--ev-color-text-primary);
+}
+.composer-attach:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .composer-actions {
   min-height: 40px;
@@ -644,67 +845,6 @@ textarea {
 }
 
 /* config row under the composer: runtime / thinking / model; locked state and non-model runtimes use static chips */
-/* thinking effort: dedicated popup + discrete stepped slider (settled: slider, not menu) */
-.thinking-picker-popover {
-  width: 240px;
-  padding: 12px 14px;
-}
-.effort-slider {
-  position: relative;
-  height: 30px;
-  outline: 0;
-}
-.effort-slider:focus-visible {
-  box-shadow: var(--ev-focus-ring);
-  border-radius: 999px;
-}
-.effort-slider .track {
-  position: absolute;
-  inset: 12px 0;
-  border-radius: 999px;
-  background: var(--ev-color-action-secondary-bg);
-}
-.effort-slider .fill {
-  position: absolute;
-  top: 12px;
-  bottom: 12px;
-  left: 0;
-  border-radius: 999px;
-  background: var(--ev-color-text-primary);
-}
-.effort-slider .stop {
-  position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  transform: translate(-50%, -50%);
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  padding: 0;
-}
-.effort-slider .stop::after {
-  content: '';
-  position: absolute;
-  inset: 5px;
-  border-radius: 50%;
-  background: var(--ev-color-text-quaternary);
-}
-.effort-slider .stop.on::after {
-  background: rgb(255 255 255 / 0.6);
-}
-.effort-slider .thumb {
-  position: absolute;
-  top: 50%;
-  width: 24px;
-  height: 24px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: var(--ev-color-bg-canvas);
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
-  pointer-events: none;
-}
 .config-chip-static {
   display: inline-flex;
   align-items: center;
@@ -3190,4 +3330,310 @@ button:not(:disabled):active,
   [role='button'] {
     transition: none;
   }
+}
+
+/* ============================================================
+   macOS-native refresh: system accent, source-list sidebar,
+   unified toolbar, quiet hairlines. Overrides earlier blocks.
+   ============================================================ */
+
+::selection {
+  background: var(--ev-color-accent-soft);
+}
+
+/* --- Sidebar: translucent source list --- */
+.sidebar {
+  border-right-color: var(--ev-color-border-subtle);
+  backdrop-filter: blur(24px);
+}
+.new-task-button {
+  height: 34px;
+  justify-content: center;
+  gap: var(--ev-space-2);
+  color: var(--ev-color-text-secondary);
+  font-weight: var(--ev-font-weight-medium);
+}
+.task-select {
+  padding-right: var(--ev-space-6);
+}
+.task-row.active {
+  background: var(--ev-color-action-primary-bg);
+}
+.task-row.active .task-title {
+  color: #ffffff;
+  font-weight: var(--ev-font-weight-medium);
+}
+.task-row.active .task-meta,
+.task-row.active .task-time {
+  color: rgb(255 255 255 / 0.9);
+}
+.task-row.active .task-status.idle {
+  border-color: rgb(255 255 255 / 0.6);
+}
+.task-row.active:hover {
+  background: var(--ev-color-action-primary-bg-hover);
+}
+.task-show-more {
+  font-size: var(--ev-font-size-xs);
+}
+
+/* --- Chat header: unified toolbar, centered title --- */
+.chat-header {
+  position: relative;
+  height: 52px;
+  align-items: center;
+  padding-inline: var(--ev-space-4);
+}
+.header-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+  text-align: center;
+}
+.header-title strong {
+  max-width: 380px;
+  font-size: var(--ev-font-size-base);
+  letter-spacing: -0.01em;
+}
+.runtime-badge {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ev-color-text-tertiary);
+}
+
+/* --- Transcript: user turn as a soft bubble --- */
+.user-q {
+  max-width: 92%;
+  margin-left: auto;
+  margin-bottom: var(--ev-space-4);
+  padding: var(--ev-space-3) var(--ev-space-4);
+  border: 1px solid var(--ev-color-border-subtle);
+  border-left: 1px solid var(--ev-color-border-subtle);
+  border-radius: var(--ev-radius-xl);
+  background: var(--ev-color-bg-surface);
+  box-shadow: var(--ev-shadow-raised);
+}
+.empty-icon {
+  border-color: transparent;
+  background: var(--ev-color-accent-soft);
+  color: var(--ev-color-accent);
+}
+
+/* --- Composer: accent send control, calmer focus --- */
+.composer:focus-within {
+  border-color: var(--ev-color-accent);
+  box-shadow: var(--ev-shadow-raised), var(--ev-focus-ring);
+}
+.composer textarea {
+  font-size: var(--ev-font-size-base);
+}
+.send-button {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--ev-radius-full);
+}
+.send-button.stop {
+  background: var(--ev-color-status-danger);
+  color: #ffffff;
+}
+
+/* Thinking effort slider (Codex-app power-slider pattern): draggable thumb,
+   snapping ticks, endpoint labels, current-level description. */
+.thinking-picker-popover {
+  width: 264px;
+  padding: var(--ev-space-4);
+}
+.effort-slider-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ev-space-2);
+}
+.effort-slider {
+  position: relative;
+  height: 28px;
+  touch-action: none;
+  cursor: grab;
+  outline: 0;
+}
+.effort-slider[data-dragging] {
+  cursor: grabbing;
+}
+.effort-slider[data-dragging] .thumb {
+  transition: none;
+}
+.effort-slider:focus-visible {
+  box-shadow: var(--ev-focus-ring);
+  border-radius: var(--ev-radius-md);
+}
+/* Thick pill track, like the Codex power slider */
+.effort-slider .track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ev-color-text-primary) 10%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--ev-color-border-default);
+}
+.effort-slider .fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 12px 0 0 12px;
+  background: var(--ev-color-accent);
+  pointer-events: none;
+}
+/* Max tier: blue→purple gradient fill with a shimmer-reveal mask, mirroring
+   the Codex power slider's _Mask/_Reveal pair. The custom property is
+   registered so the keyframe can animate the mask position. */
+@property --ev-effort-reveal {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 100%;
+}
+@keyframes effort-reveal {
+  from {
+    --ev-effort-reveal: 100%;
+  }
+  to {
+    --ev-effort-reveal: 0%;
+  }
+}
+.effort-slider[data-max] .fill {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ev-color-accent) 60%, #bf7af0),
+    #bf7af0 55%,
+    color-mix(in srgb, #bf7af0 72%, var(--ev-color-accent))
+  );
+}
+.effort-slider[data-max] .fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  --ev-effort-reveal: 0%;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent calc(var(--ev-effort-reveal) - 120px),
+    #000 var(--ev-effort-reveal),
+    #000 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    transparent calc(var(--ev-effort-reveal) - 120px),
+    #000 var(--ev-effort-reveal),
+    #000 100%
+  );
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  pointer-events: none;
+}
+.effort-slider[data-max] .fill::after {
+  animation: effort-reveal 2s both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .effort-slider[data-max] .fill::after {
+    animation: none;
+    --ev-effort-reveal: 0%;
+  }
+}
+.effort-slider .stop {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border: 0;
+  border-radius: var(--ev-radius-full);
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.effort-slider .stop::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border-radius: var(--ev-radius-full);
+  background: color-mix(in srgb, var(--ev-color-text-tertiary) 55%, transparent);
+  transition:
+    background-color var(--ev-duration-normal) var(--ev-ease-standard),
+    transform var(--ev-duration-fast) var(--ev-ease-standard);
+}
+.effort-slider .stop:hover::after {
+  filter: brightness(0.85);
+  transform: scale(1.6);
+}
+.effort-slider .stop[data-selected]::after {
+  background: rgb(255 255 255 / 0.32);
+}
+/* Big white knob riding inside the pill track */
+.effort-slider .thumb {
+  position: absolute;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--ev-radius-full);
+  border: 0.5px solid var(--ev-color-border-strong);
+  background: #ffffff;
+  box-shadow: 0 0 2px rgb(0 0 0 / 0.1);
+  pointer-events: none;
+  transition: left var(--ev-duration-normal) var(--ev-ease-standard);
+}
+.effort-endpoints {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ev-color-text-quaternary);
+  font-size: var(--ev-font-size-xs);
+}
+.effort-desc {
+  margin: 0;
+  color: var(--ev-color-text-secondary);
+  font-size: var(--ev-font-size-sm);
+  line-height: var(--ev-line-height-snug);
+}
+/* Amber warning dot on the trigger while xhigh/max is selected */
+.thinking-picker-trigger[data-high]::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--ev-radius-full);
+  background: var(--ev-color-status-warning);
+  flex-shrink: 0;
+}
+.effort-cost-warning {
+  margin: 0;
+  padding-top: var(--ev-space-1);
+  border-top: 1px solid var(--ev-color-border-subtle);
+  color: var(--ev-color-status-warning);
+  font-size: var(--ev-font-size-xs);
+}
+
+/* Codex interaction parity (2026-08): unified dialog/nav semantics.
+   Esc/scrim close and focus trapping come from Base UI Dialog; buttons keep
+   the accent-solid primary / ghost secondary / status-danger destructive
+   trio, and every interactive surface shares --ev-focus-ring. */
+.settings-nav button:focus-visible {
+  outline: 1px solid var(--ev-color-border-focus);
+  outline-offset: 1px;
+  box-shadow: var(--ev-focus-ring);
+}
+.danger-button {
+  border: 1px solid transparent;
+  border-radius: var(--ev-radius-md);
+  background: var(--ev-color-status-danger);
+  color: #ffffff;
+  cursor: pointer;
+}
+.danger-button:hover {
+  background: color-mix(in srgb, var(--ev-color-status-danger) 88%, #000000);
 }

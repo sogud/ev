@@ -1,6 +1,7 @@
 import type { FleetPane } from '@ev/contracts';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 /**
  * Lazy-load state for one pane's output. Owned by the FleetPanel container,
@@ -8,7 +9,9 @@ import { useTranslation } from 'react-i18next';
  * pure render so every state is reachable from tests/static markup.
  */
 export type FleetPaneLoad =
-  { status: 'loading' } | { status: 'ready'; output: string } | { status: 'error'; error: string };
+  | { status: 'loading' }
+  | { status: 'ready'; output: string }
+  | { status: 'error'; error: string };
 
 export interface FleetDrawerProps {
   pane: FleetPane;
@@ -24,6 +27,7 @@ export interface FleetDrawerProps {
  */
 export function FleetDrawer({ pane, load, onClose }: FleetDrawerProps): React.JSX.Element {
   const { t } = useTranslation();
+  useEscapeToClose(onClose);
   const title = pane.title?.trim() || pane.paneId;
   const agent = pane.agent
     ? pane.agent.kind && pane.agent.kind !== pane.agent.name

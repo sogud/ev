@@ -179,13 +179,17 @@ interface CachedMediaItem {
   item: BrowserMediaItem;
 }
 
-function assertWebUrl(value: string): void {
+function isWebUrl(value: string | undefined): value is string {
+  if (!value) return false;
   try {
-    const url = new URL(value);
-    if (['http:', 'https:'].includes(url.protocol)) return;
+    return ['http:', 'https:'].includes(new URL(value).protocol);
   } catch {
-    // Fall through to the stable boundary error below.
+    return false;
   }
+}
+
+function assertWebUrl(value: string): void {
+  if (isWebUrl(value)) return;
   throw new Error('Only HTTP(S) pages can be controlled');
 }
 
@@ -197,10 +201,20 @@ async function activeTabId(): Promise<number> {
 
 async function resolveTab(tabId?: number): Promise<chrome.tabs.Tab> {
   const id = tabId ?? (await activeTabId());
-  const tab = await chrome.tabs.get(id);
-  if (!tab.url) throw new Error(`Tab ${id} has no URL`);
-  assertWebUrl(tab.url);
-  return tab;
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    const tab = await chrome.tabs.get(id);
+    if (isWebUrl(tab.url)) return tab;
+
+    // Chrome can return a freshly-created tab before navigation assigns its
+    // final URL. A valid pending URL means the tab is still on the way there;
+    // explicit non-web URLs remain unsupported and fail immediately.
+    if (tab.pendingUrl) assertWebUrl(tab.pendingUrl);
+    else if (tab.url && tab.url !== 'about:blank') assertWebUrl(tab.url);
+
+    if (Date.now() >= deadline) throw new Error(`Tab ${id} did not reach an HTTP(S) URL`);
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
 }
 
 function stringValue(value: AxValue | undefined): string {

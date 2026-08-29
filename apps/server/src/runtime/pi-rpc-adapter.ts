@@ -55,6 +55,8 @@ export class PiRpcAdapter implements AgentRuntimeAdapter {
         resumeSession: true,
         structuredEvents: true,
         permissionModes: false,
+        imageInput: true,
+        promptQueue: true,
       },
     });
   }

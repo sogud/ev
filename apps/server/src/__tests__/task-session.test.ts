@@ -221,6 +221,24 @@ afterEach(async () => {
   await Promise.allSettled(runtimeContexts.splice(0).map(context => context.fiber.dispose()));
 });
 
+describe('TaskSession prompt validation', () => {
+  it('rejects invalid queue modes and image payloads before starting a runtime', async () => {
+    const { session, pi } = makeSession();
+    sessions.push(session);
+
+    await expect(session.prompt('hello', [], 'abort')).rejects.toThrow(
+      'Prompt queue mode must be steer or followUp'
+    );
+    await expect(
+      session.prompt('inspect', [
+        { type: 'image', data: 'cG5n', mimeType: 'image/png', fileName: 'fake.png' },
+      ])
+    ).rejects.toThrow('Image data does not match image/png');
+    await expect(session.prompt('inspect', null)).rejects.toThrow('Prompt images must be an array');
+    expect(pi.createCalls).toHaveLength(0);
+  });
+});
+
 describe('TaskSession unavailable Runtime sessions', () => {
   it('keeps a cold DSH task identifiable and rejects resume explicitly', async () => {
     const pi = new FakeAdapter('pi');

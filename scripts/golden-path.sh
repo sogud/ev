@@ -12,8 +12,10 @@ RUN_START_MS=$(python3 -c "import time;print(int(time.time()*1000))")
 cleanup() {
 	SRV_PID=$(python3 -c "import json;print(json.load(open('$EV_HOME/server.json'))['pid'])" 2>/dev/null || true)
 	[ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null
-	# 铁律：不 rm -rf，丢垃圾桶
-	mv "$EV_HOME" "$HOME/.Trash/ev-golden-home.$(date +%s)" 2>/dev/null
+	# 只清理本脚本通过 mktemp 创建的隔离目录，不保留合成 session/transcript。
+	case "$EV_HOME" in
+	/tmp/ev-golden-home.*) node -e "require('node:fs').rmSync(process.argv[1], { recursive: true, force: true })" "$EV_HOME" ;;
+	esac
 	true
 }
 trap cleanup EXIT

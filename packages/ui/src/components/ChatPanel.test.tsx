@@ -21,6 +21,8 @@ const runtimes: RuntimeDescriptor[] = [
       resumeSession: true,
       structuredEvents: true,
       permissionModes: false,
+      imageInput: true,
+      promptQueue: true,
     },
   },
   {
@@ -61,7 +63,9 @@ describe('ChatPanel model controls', () => {
 
     expect(html).toContain('aria-label="选择模型"');
     expect(html).toContain('aria-label="选择 Runtime"');
-    expect(html).toContain('思考：');
+    // trigger 只显示当前档英文原词（Codex 对齐）
+    expect(html).toContain('data-testid="picker-thinking"');
+    expect(html).toContain('<span>Medium</span>');
     // ticket 0007：pi 无可用模型时首跑提示去设置登录
     expect(html).toContain('当前 Runtime 需要先在设置里登录模型 / Provider。');
     expect(html).not.toContain('<select');
@@ -119,5 +123,46 @@ describe('ChatPanel model controls', () => {
 
     expect(html).not.toContain('aria-label="选择 Runtime"');
     expect(html).toContain('config-chip-static');
+  });
+
+  it('does not offer queued input when a running runtime lacks queue support', () => {
+    const task = {
+      id: 't1',
+      title: 'Running task',
+      cwd: process.cwd(),
+      status: 'running' as const,
+      createdAt: 1,
+      updatedAt: 1,
+      thinkingLevel: 'medium' as const,
+      messages: [{ id: 'u1', kind: 'user' as const, content: 'hello', timestamp: 1 }],
+      trace: [],
+      runtime: { runtimeId: 'codex' as const, nativeId: 'n1' },
+    };
+    const html = renderMarkup(<ChatPanel {...baseProps} runtimeId='codex' task={task} />);
+
+    expect(html).toContain('aria-label="停止"');
+    expect(html).not.toContain('aria-label="排队发送"');
+    expect(html).toContain('<textarea');
+    expect(html).toContain('disabled=""');
+  });
+
+  it('shows image attachment input when the runtime supports it', () => {
+    const task = {
+      id: 't1',
+      title: 'New task',
+      cwd: process.cwd(),
+      status: 'idle' as const,
+      createdAt: 1,
+      updatedAt: 1,
+      thinkingLevel: 'medium' as const,
+      messages: [],
+      trace: [],
+      runtime: { runtimeId: 'pi' as const, nativeId: 'n1' },
+      model: { provider: 'openai', id: 'gpt', name: 'GPT' },
+    };
+    const html = renderMarkup(<ChatPanel {...baseProps} runtimeId='pi' task={task} />);
+
+    expect(html).toContain('aria-label="添加图片"');
+    expect(html).toContain('accept="image/png,image/jpeg,image/gif,image/webp"');
   });
 });

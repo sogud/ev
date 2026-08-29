@@ -2,9 +2,8 @@
   color-scheme: light dark;
 
   /* Typography */
-  --ev-font-sans:
-    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI',
-    sans-serif;
+  --ev-font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+    'Segoe UI', sans-serif;
   --ev-font-mono: 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, monospace;
   --ev-font-size-2xs: 9px;
   --ev-font-size-xs: 10px;
@@ -80,9 +79,16 @@
   --ev-black-a64: rgb(0 0 0 / 0.64);
   --ev-black-a76: rgb(0 0 0 / 0.76);
 
+  /* Accent: Apple systemBlue. */
+  --ev-color-accent: light-dark(#007aff, #0a84ff);
+  --ev-color-accent-hover: light-dark(#0a84ff, #2492ff);
+  --ev-color-accent-strong: light-dark(#0068d6, #0070d9);
+  --ev-color-accent-strong-hover: light-dark(#005fbd, #0064c5);
+  --ev-color-accent-soft: light-dark(rgb(0 122 255 / 0.1), rgb(10 132 255 / 0.22));
+
   /* Semantic colors: light-dark(light, dark). */
   --ev-color-bg-canvas: light-dark(#f7f7f8, #181818);
-  --ev-color-bg-sidebar: light-dark(#ececef, #201f21);
+  --ev-color-bg-sidebar: light-dark(rgb(240 240 242 / 0.82), rgb(28 28 30 / 0.72));
   --ev-color-bg-sunken: light-dark(#e5e5e7, #141414);
   --ev-color-bg-surface: light-dark(#ffffff, #1d1d1f);
   --ev-color-bg-raised: light-dark(#f2f2f4, #242426);
@@ -97,7 +103,7 @@
   --ev-color-text-tertiary: light-dark(rgb(0 0 0 / 0.55), rgb(255 255 255 / 0.58));
   --ev-color-text-quaternary: light-dark(rgb(0 0 0 / 0.46), rgb(255 255 255 / 0.46));
   --ev-color-text-inverse: light-dark(#ffffff, #181818);
-  --ev-color-text-link: light-dark(#1769cf, #8eb7ff);
+  --ev-color-text-link: light-dark(#005fbd, #64afff);
   --ev-color-icon-primary: light-dark(rgb(0 0 0 / 0.78), rgb(255 255 255 / 0.82));
   --ev-color-icon-secondary: light-dark(rgb(0 0 0 / 0.56), rgb(255 255 255 / 0.58));
   --ev-color-icon-tertiary: light-dark(rgb(0 0 0 / 0.4), rgb(255 255 255 / 0.4));
@@ -105,15 +111,15 @@
   --ev-color-border-subtle: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.07));
   --ev-color-border-default: light-dark(rgb(0 0 0 / 0.11), rgb(255 255 255 / 0.11));
   --ev-color-border-strong: light-dark(rgb(0 0 0 / 0.2), rgb(255 255 255 / 0.18));
-  --ev-color-border-focus: light-dark(#1769cf, var(--ev-blue-400));
-  --ev-focus-ring: 0 0 0 2px light-dark(rgb(23 105 207 / 0.2), rgb(61 155 255 / 0.28));
-  --ev-color-action-primary-bg: light-dark(#262628, var(--ev-gray-100));
-  --ev-color-action-primary-bg-hover: light-dark(#111113, var(--ev-gray-0));
-  --ev-color-action-primary-text: light-dark(#ffffff, #181818);
+  --ev-color-border-focus: var(--ev-color-accent);
+  --ev-focus-ring: 0 0 0 3px var(--ev-color-accent-soft);
+  --ev-color-action-primary-bg: var(--ev-color-accent-strong);
+  --ev-color-action-primary-bg-hover: var(--ev-color-accent-strong-hover);
+  --ev-color-action-primary-text: #ffffff;
   --ev-color-action-secondary-bg: light-dark(var(--ev-black-a04), var(--ev-white-a06));
   --ev-color-action-secondary-bg-hover: light-dark(var(--ev-black-a08), var(--ev-white-a08));
   --ev-color-action-ghost-bg-hover: light-dark(var(--ev-black-a06), var(--ev-white-a06));
-  --ev-color-status-info: light-dark(#1769cf, var(--ev-blue-300));
+  --ev-color-status-info: var(--ev-color-accent);
   --ev-color-status-success: light-dark(#28793e, var(--ev-green-400));
   --ev-color-status-warning: light-dark(#9a5a00, var(--ev-amber-400));
   --ev-color-status-danger: light-dark(#b4232d, var(--ev-red-300));

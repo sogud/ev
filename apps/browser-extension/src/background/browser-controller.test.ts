@@ -597,6 +597,46 @@ describe('CDP browser controller', () => {
     expect(chrome.tabs.update).toHaveBeenCalledWith(7, { url: 'https://example.com/next' });
   });
 
+  test('waits for a newly created tab to receive its HTTP URL', async () => {
+    const tab = {
+      id: 7,
+      active: true,
+      windowId: 1,
+      index: 0,
+      pinned: false,
+      highlighted: true,
+      incognito: false,
+      selected: true,
+      discarded: false,
+      autoDiscardable: true,
+      groupId: -1,
+      title: 'Example',
+    } satisfies chrome.tabs.Tab;
+    vi.mocked(chrome.tabs.get)
+      .mockResolvedValueOnce({ ...tab, pendingUrl: 'https://example.com' })
+      .mockResolvedValueOnce({ ...tab, url: 'https://example.com' });
+    const executeScript = vi.fn(async () => [
+      {
+        frameId: 0,
+        result: {
+          url: 'https://example.com',
+          title: 'Example',
+          text: 'Ready',
+          capturedAt: '2026-08-29T00:00:00.000Z',
+        },
+      },
+    ]);
+    (
+      globalThis.chrome as unknown as { scripting: { executeScript: typeof executeScript } }
+    ).scripting = { executeScript };
+    resetBrowserControllerForTests();
+
+    await expect(
+      executeBrowserCommand({ action: 'page.context', tabId: 7 })
+    ).resolves.toMatchObject({ text: 'Ready' });
+    expect(chrome.tabs.get).toHaveBeenCalledTimes(2);
+  });
+
   test('opens an unfocused window and tabs inside a specified window', async () => {
     await expect(
       executeBrowserCommand({

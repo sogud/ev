@@ -6,7 +6,9 @@
 import type {
   AppSettings,
   BrowserBridgeSnapshot,
+  CommandInfo,
   ProviderSummary,
+  PromptImage,
   ResourceSettingsInput,
   ResourceSnapshot,
   TaskDetail,
@@ -64,7 +66,11 @@ export const ipcRegistry = {
       'operator'
     ),
     remove: call<[string], void>('tasks:remove', 'operator'),
-    prompt: call<[string, string], void>('tasks:prompt', 'operator'),
+    prompt: call<[string, string, PromptImage[]?, ('steer' | 'followUp')?], void>(
+      'tasks:prompt',
+      'operator'
+    ),
+    commands: call<[string], CommandInfo[]>('tasks:commands', 'observer'),
     abort: call<[string], void>('tasks:abort', 'operator'),
     setRuntime: call<[string, RuntimeId], void>('tasks:setRuntime', 'operator'),
     setModel: call<[string, string, string], void>('tasks:setModel', 'operator'),
@@ -165,7 +171,8 @@ type HandlerLeaf<T> =
 /** Server-side handler object shape: mirrors the registry; a missing or extra handler is a compile error. */
 export type HandlersOf<Node> = {
   readonly [K in keyof Node as Node[K] extends EventToken<unknown> ? never : K]: Node[K] extends
-    CallToken<unknown[], unknown> | EventToken<unknown>
+    | CallToken<unknown[], unknown>
+    | EventToken<unknown>
     ? HandlerLeaf<Node[K]>
     : HandlersOf<Node[K]>;
 };

@@ -16,6 +16,20 @@ export interface ModelRef {
   name: string;
 }
 
+export interface PromptImage {
+  type: 'image';
+  data: string;
+  mimeType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+  fileName?: string;
+}
+
+/** A slash command / skill invocable via prompt ("/name"); from the runtime's native command list. */
+export interface CommandInfo {
+  name: string;
+  description?: string;
+  source?: 'extension' | 'prompt' | 'skill';
+}
+
 export interface TaskSummary {
   id: string;
   title: string;

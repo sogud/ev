@@ -17,6 +17,10 @@ export const RuntimeCapabilitiesSchema = z.object({
   resumeSession: z.boolean(),
   structuredEvents: z.boolean(),
   permissionModes: z.boolean(),
+  /** Whether the runtime accepts image attachments with prompts. */
+  imageInput: z.boolean().optional(),
+  /** Whether the runtime can queue steer/follow-up input while a turn is running. */
+  promptQueue: z.boolean().optional(),
 });
 
 export const RuntimeDescriptorSchema = z.object({

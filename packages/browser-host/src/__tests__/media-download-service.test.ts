@@ -77,6 +77,155 @@ describe('MediaDownloadService', () => {
     expect(input).toBe('https://example.com/watch?signature=secret\n');
   });
 
+  it('reads Bilibili AI subtitles for the requested multi-part page without exposing the URL in process arguments', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const child = fakeProcess();
+    let input = '';
+    const stdin = child.stdin as PassThrough;
+    stdin.setEncoding('utf8');
+    stdin.on('data', chunk => {
+      input += String(chunk);
+    });
+    const launch = vi.fn((_executable: string, args: string[]) => {
+      const cookieFile = args[args.indexOf('--cookies') + 1];
+      queueMicrotask(async () => {
+        child.emit('spawn');
+        await writeFile(
+          cookieFile,
+          '#HttpOnly_.bilibili.com\tTRUE\t/\tFALSE\t0\tSESSDATA\tsecret-cookie\n'
+        );
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      launch,
+      resolveAddresses: async () => ['93.184.216.34'],
+    });
+    const requestJson = vi.spyOn(
+      service as unknown as {
+        bilibiliRequest(url: string, cookieHeader: string): Promise<Record<string, unknown>>;
+      },
+      'bilibiliRequest'
+    );
+    requestJson.mockImplementation(async url => {
+      if (url.includes('/x/web-interface/view')) {
+        return {
+          code: 0,
+          data: {
+            cid: 101,
+            pages: [
+              { page: 1, cid: 101 },
+              { page: 2, cid: 202 },
+            ],
+          },
+        };
+      }
+      if (url.includes('/x/player/v2')) {
+        return {
+          code: 0,
+          data: {
+            subtitle: {
+              subtitles: [
+                {
+                  id: 1,
+                  lan: 'ai-zh',
+                  lan_doc: '中文（自动生成）',
+                  subtitle_url: '//subtitle.example.com/ai-zh.json',
+                },
+              ],
+            },
+          },
+        };
+      }
+      return {
+        body: [
+          { from: 0, to: 1.25, content: '第二集' },
+          { from: 1.25, to: 2.5, content: 'AI 字幕' },
+        ],
+      };
+    });
+
+    await expect(
+      service.readSubtitles({
+        pageUrl: 'https://www.bilibili.com/video/BV1234567890/?p=2&secret=query',
+        language: 'ai-zh',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'none',
+        cookiesFromBrowser: 'chrome',
+      })
+    ).resolves.toMatchObject({
+      source: 'subtitle',
+      language: 'ai-zh',
+      text: '第二集\nAI 字幕',
+    });
+
+    const [, args] = launch.mock.calls[0];
+    expect(args).toContain('--batch-file');
+    expect(args.join(' ')).not.toContain('secret=query');
+    expect(input).toBe('https://www.bilibili.com/video/BV1234567890/?p=2&secret=query\n');
+    expect(requestJson.mock.calls.some(([url]) => url.includes('cid=202'))).toBe(true);
+    expect(
+      requestJson.mock.calls.find(([url]) => url.includes('subtitle.example.com'))?.[1]
+    ).toBeUndefined();
+  });
+
+  it('falls back to yt-dlp when the Bilibili API path fails', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
+    directories.push(root);
+    const processes = [fakeProcess(), fakeProcess()];
+    const launch = vi.fn((_executable: string, args: string[]) => {
+      const index = launch.mock.calls.length - 1;
+      const child = processes[index];
+      queueMicrotask(async () => {
+        child.emit('spawn');
+        if (index === 0) {
+          const cookieFile = args[args.indexOf('--cookies') + 1];
+          await writeFile(
+            cookieFile,
+            '#HttpOnly_.bilibili.com\tTRUE\t/\tFALSE\t0\tSESSDATA\tsecret-cookie\n'
+          );
+        } else {
+          const temporaryDirectory = args[args.indexOf('--paths') + 1];
+          await writeFile(
+            path.join(temporaryDirectory, 'Fallback [abc].ai-zh.vtt'),
+            'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nFallback subtitle\n'
+          );
+        }
+        child.emit('close', 0);
+      });
+      return child;
+    });
+    const service = new MediaDownloadService({
+      downloadDirectory: path.join(root, 'Downloads', 'EV'),
+      launch,
+      resolveAddresses: async () => ['93.184.216.34'],
+    });
+    vi.spyOn(
+      service as unknown as {
+        bilibiliRequest(url: string, cookieHeader: string): Promise<Record<string, unknown>>;
+      },
+      'bilibiliRequest'
+    ).mockRejectedValue(new Error('temporary Bilibili failure'));
+
+    await expect(
+      service.readSubtitles({
+        pageUrl: 'https://www.bilibili.com/video/BV1234567890/',
+        language: 'ai-zh',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'none',
+        cookiesFromBrowser: 'chrome',
+      })
+    ).resolves.toMatchObject({ source: 'subtitle', text: 'Fallback subtitle' });
+    expect(launch).toHaveBeenCalledTimes(2);
+  });
+
   it('requires an explicit local whisper model before running ASR fallback', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'ev-media-download-'));
     directories.push(root);

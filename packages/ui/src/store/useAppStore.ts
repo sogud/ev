@@ -3,6 +3,7 @@ import { i18n, langOverride } from '../i18n';
 import { resolveLanguage } from '@ev/locales';
 import type {
   AppSettings,
+  PromptImage,
   ProviderSummary,
   RuntimeDescriptor,
   RuntimeId,
@@ -26,7 +27,7 @@ interface AppState {
   selectTask(id: string): Promise<void>;
   createTask(cwd?: string): Promise<void>;
   removeTask(id: string): Promise<void>;
-  sendPrompt(prompt: string): Promise<void>;
+  sendPrompt(prompt: string, images?: PromptImage[], queue?: 'steer' | 'followUp'): Promise<void>;
   abort(): Promise<void>;
   setModel(provider: string, model: string): Promise<void>;
   setThinkingLevel(level: ThinkingLevel): Promise<void>;
@@ -162,11 +163,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  sendPrompt: async prompt => {
+  sendPrompt: async (prompt, images, queue) => {
     const id = get().selectedId;
     if (!id) return;
     try {
-      await window.agentDesktop.tasks.prompt(id, prompt);
+      await window.agentDesktop.tasks.prompt(id, prompt, images, queue);
     } catch (error) {
       set({ error: messageOf(error) });
     }

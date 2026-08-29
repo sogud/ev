@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { BrowserSessionCommand, BrowserSessionScopedCommand } from '@ev/contracts';
@@ -42,14 +41,8 @@ function sessionRunner(executeSession: (command: BrowserSessionCommand) => Promi
 }
 
 afterEach(async () => {
-  const trash = path.join(os.homedir(), '.Trash');
-  await mkdir(trash, { recursive: true });
   await Promise.all(
-    directories
-      .splice(0)
-      .map(directory =>
-        rename(directory, path.join(trash, `${path.basename(directory)}-${randomUUID()}`))
-      )
+    directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))
   );
 });
 

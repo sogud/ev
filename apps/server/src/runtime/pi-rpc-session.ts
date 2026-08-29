@@ -1,6 +1,12 @@
 import type { RuntimeEvent, RuntimeSessionRef } from '@ev/contracts';
 import { RuntimeEventSchema } from '@ev/contracts';
-import type { ModelRef, ThinkingLevel, TranscriptItem } from '@ev/contracts/domain';
+import type {
+  CommandInfo,
+  ModelRef,
+  PromptImage,
+  ThinkingLevel,
+  TranscriptItem,
+} from '@ev/contracts/domain';
 import { normalizeMessage, normalizeToolEvent } from '../transcript';
 import { tokenCounts, traceText } from './trace-payload';
 import type { JsonlProcessOptions } from './jsonl-process';
@@ -8,6 +14,9 @@ import { JsonlRpcTransport, type RpcResponseMatch } from './jsonl-rpc-transport'
 import type { RuntimeSession, RuntimeSessionInput, RuntimeSessionState } from './runtime-adapter';
 
 type UnknownRecord = Record<string, unknown>;
+
+const MAX_STREAM_CONTENT_BLOCKS = 128;
+const MAX_STREAM_BLOCK_CHARS = 1_000_000;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null;
@@ -49,6 +58,11 @@ export class PiRpcSession implements RuntimeSession {
   /** Per-run TTFT tracking: run start and first streamed content. */
   private runStartedAt: number | null = null;
   private firstTokenAt: number | null = null;
+  /** Pi 0.83 streams deltas only; keep one cumulative message for the EV transcript. */
+  private streamedMessage: UnknownRecord | null = null;
+  private streamOriginalTs: number | null = null;
+  /** Transcript items key on role+timestamp; force uniqueness across messages. */
+  private readonly seenTimestamps = new Set<number>();
   private modelTraceSeq = 0;
   private unsubscribeRecord = (): void => {};
   private unsubscribeExit = (): void => {};
@@ -104,11 +118,50 @@ export class PiRpcSession implements RuntimeSession {
     return [...this.events.values()];
   }
 
-  async prompt(text: string): Promise<void> {
-    await this.request('prompt', { message: text });
+  async prompt(text: string, images: PromptImage[] = []): Promise<void> {
+    await this.request('prompt', {
+      message: text,
+      ...(images.length > 0
+        ? { images: images.map(({ type, data, mimeType }) => ({ type, data, mimeType })) }
+        : {}),
+    });
   }
 
-  async promptAndWait(text: string): Promise<void> {
+  /** Pi rejects bare prompts mid-stream; queue via steer / follow_up instead. */
+  async queueMessage(
+    text: string,
+    queue: 'steer' | 'followUp',
+    images: PromptImage[] = []
+  ): Promise<void> {
+    // Pi's wire name for follow-up is "follow_up" (underscore), unlike the EV enum.
+    const command = queue === 'followUp' ? 'follow_up' : queue;
+    await this.request(command, {
+      message: text,
+      ...(images.length > 0
+        ? { images: images.map(({ type, data, mimeType }) => ({ type, data, mimeType })) }
+        : {}),
+    });
+  }
+
+  async listCommands(): Promise<CommandInfo[]> {
+    const value = await this.request('get_commands');
+    if (!isRecord(value) || !Array.isArray(value.commands)) return [];
+    return value.commands.flatMap(item => {
+      if (!isRecord(item) || typeof item.name !== 'string') return [];
+      const source = ['extension', 'prompt', 'skill'].includes(String(item.source))
+        ? (item.source as CommandInfo['source'])
+        : undefined;
+      return [
+        {
+          name: item.name,
+          ...(typeof item.description === 'string' ? { description: item.description } : {}),
+          ...(source ? { source } : {}),
+        },
+      ];
+    });
+  }
+
+  async promptAndWait(text: string, images: PromptImage[] = []): Promise<void> {
     let unsubscribe = (): void => {};
     const settled = new Promise<void>((resolve, reject) => {
       unsubscribe = this.subscribe(event => {
@@ -119,7 +172,7 @@ export class PiRpcSession implements RuntimeSession {
       });
     });
     try {
-      await this.prompt(text);
+      await this.prompt(text, images);
       await settled;
     } catch (error) {
       unsubscribe();
@@ -211,10 +264,30 @@ export class PiRpcSession implements RuntimeSession {
     if (type === 'auto_retry_end' && value.success === false) {
       this.emitStatus('error', String(value.finalError ?? 'Pi retry failed'));
     }
-    if (type === 'message_start' || type === 'message_update' || type === 'message_end') {
-      if (type !== 'message_end') this.recordFirstToken();
-      for (const item of normalizeMessage(value.message)) this.record(runtimeMessage(item));
-      if (type === 'message_end' && isRecord(value.message)) this.recordModelUsage(value.message);
+    if (type === 'message_start' && isRecord(value.message)) {
+      const ts = this.uniqueTs(value.message.timestamp);
+      this.streamOriginalTs =
+        typeof value.message.timestamp === 'number' ? value.message.timestamp : null;
+      this.streamedMessage = {
+        ...value.message,
+        timestamp: ts,
+        content: Array.isArray(value.message.content) ? [...value.message.content] : [],
+      };
+      for (const item of normalizeMessage(this.streamedMessage)) this.record(runtimeMessage(item));
+    }
+    if (type === 'message_update') this.recordMessageDelta(value.assistantMessageEvent);
+    if (type === 'message_end' && isRecord(value.message)) {
+      // Same timestamp as the streamed message = same message; otherwise force
+      // a fresh key so burst-delivered queue turns cannot overwrite each other.
+      const sameAsStream =
+        this.streamOriginalTs !== null && value.message.timestamp === this.streamOriginalTs;
+      const message = sameAsStream
+        ? { ...value.message, timestamp: this.streamedMessage?.timestamp }
+        : { ...value.message, timestamp: this.uniqueTs(value.message.timestamp) };
+      for (const item of normalizeMessage(message)) this.record(runtimeMessage(item));
+      this.recordModelUsage(message);
+      this.streamedMessage = null;
+      this.streamOriginalTs = null;
     }
     if (
       type === 'tool_execution_start' ||
@@ -225,6 +298,57 @@ export class PiRpcSession implements RuntimeSession {
       if (item) this.record(runtimeMessage(item));
       this.recordToolTrace(type, value);
     }
+  }
+
+  /** Bump a message timestamp until unused so role+ts transcript keys stay unique. */
+  private uniqueTs(raw: unknown): number {
+    let ts = typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : Date.now();
+    while (this.seenTimestamps.has(ts)) ts += 1;
+    this.seenTimestamps.add(ts);
+    return ts;
+  }
+
+  private recordMessageDelta(rawEvent: unknown): void {
+    if (!this.streamedMessage || !isRecord(rawEvent)) return;
+    const eventType = typeof rawEvent.type === 'string' ? rawEvent.type : '';
+    const contentIndex =
+      typeof rawEvent.contentIndex === 'number' && Number.isInteger(rawEvent.contentIndex)
+        ? rawEvent.contentIndex
+        : -1;
+    if (contentIndex < 0 || contentIndex >= MAX_STREAM_CONTENT_BLOCKS) return;
+
+    const content = Array.isArray(this.streamedMessage.content)
+      ? [...this.streamedMessage.content]
+      : [];
+    if (eventType === 'text_start') content[contentIndex] = { type: 'text', text: '' };
+    if (eventType === 'thinking_start') {
+      content[contentIndex] = { type: 'thinking', thinking: '' };
+    }
+    if (eventType === 'text_delta' && typeof rawEvent.delta === 'string') {
+      const previous = isRecord(content[contentIndex]) ? content[contentIndex] : {};
+      content[contentIndex] = {
+        type: 'text',
+        text: `${typeof previous.text === 'string' ? previous.text : ''}${rawEvent.delta}`.slice(
+          0,
+          MAX_STREAM_BLOCK_CHARS
+        ),
+      };
+      this.recordFirstToken();
+    }
+    if (eventType === 'thinking_delta' && typeof rawEvent.delta === 'string') {
+      const previous = isRecord(content[contentIndex]) ? content[contentIndex] : {};
+      content[contentIndex] = {
+        type: 'thinking',
+        thinking:
+          `${typeof previous.thinking === 'string' ? previous.thinking : ''}${rawEvent.delta}`.slice(
+            0,
+            MAX_STREAM_BLOCK_CHARS
+          ),
+      };
+      this.recordFirstToken();
+    }
+    this.streamedMessage = { ...this.streamedMessage, content };
+    for (const item of normalizeMessage(this.streamedMessage)) this.record(runtimeMessage(item));
   }
 
   /** First streamed content of a run -> TTFT trace event (merged into the run row). */

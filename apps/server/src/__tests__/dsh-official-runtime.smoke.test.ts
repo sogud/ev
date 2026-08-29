@@ -1,5 +1,4 @@
-import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,14 +11,8 @@ const sourceRoot = process.env.EV_DSH_SOURCE_ROOT?.trim();
 const directories: string[] = [];
 
 afterEach(async () => {
-  const trash = path.join(os.homedir(), '.Trash');
-  await mkdir(trash, { recursive: true });
   await Promise.all(
-    directories
-      .splice(0)
-      .map(directory =>
-        rename(directory, path.join(trash, `${path.basename(directory)}-${randomUUID()}`))
-      )
+    directories.splice(0).map(directory => rm(directory, { recursive: true, force: true }))
   );
 });
 

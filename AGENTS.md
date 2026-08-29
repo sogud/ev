@@ -87,6 +87,8 @@ builds for every affected workspace.
 
 - UI 验证禁止启动 Electron：renderer 是纯 Web 客户端，一律用浏览器自动化工具
   测 server 服务的 Web 形态（`/?port&token`）。
-- 任何自动化测试必须 `EV_HOME` 临时目录隔离，结束（含失败）把临时目录移入
-  `~/.Trash`，永不读写用户真实 `~/.ev`。
-- 铁律：不 `rm -rf` 任何目录/文件；删除一律移入垃圾桶（`~/.Trash`）。
+- 任何自动化测试必须使用系统临时目录中的独立 `EV_HOME`，永不读写用户真实 `~/.ev`。
+  测试结束（含失败）立即永久删除测试自己通过 `mkdtemp` 创建并跟踪的目录，不保留 session、
+  transcript 或其它合成数据。
+- 用户和项目文件不使用 `rm -rf`，删除一律移入垃圾桶（`~/.Trash`）。唯一例外是上面的隔离测试
+  临时目录；测试只能通过 `node:fs` 删除自己记录的 `os.tmpdir()` 子目录。

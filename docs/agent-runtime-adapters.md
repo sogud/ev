@@ -151,7 +151,7 @@ Runtime 之间不自动映射 Skills。Runtime 子进程继承 EV CLI 的 PATH�
 - Codex CLI `0.145.0`：app-server initialize、thread catalog、resume、real turn
 - DeepSeek Harness source `47f943859bef60e4160492346772ded9b24f765a` / SDK server `0.0.1`：两个独立 Runtime 进程、local mock model、stream、stop、shutdown、Zstandard session persistence
 
-Fake protocol fixtures覆盖 LF chunk、Unicode 行分隔符、损坏/结构化事件边界、DSH response 前成功/失败、receipt-before-idle、必需/可忽略事件和进程退出。Server SIGTERM smoke 覆盖 active prompt 与 in-flight initialize，均等待 DSH shutdown 和子进程退出。真实 DSH smoke 的 EV/DSH/HOME/session/workspace 均使用临时目录并已移入 `~/.Trash`。
+Fake protocol fixtures覆盖 LF chunk、Unicode 行分隔符、损坏/结构化事件边界、DSH response 前成功/失败、receipt-before-idle、必需/可忽略事件和进程退出。Server SIGTERM smoke 覆盖 active prompt 与 in-flight initialize，均等待 DSH shutdown 和子进程退出。真实 DSH smoke 的 EV/DSH/HOME/session/workspace 均使用测试独占的系统临时目录，并在测试结束后立即删除，不保留合成 session 或 transcript。
 
 ## 下一步
 

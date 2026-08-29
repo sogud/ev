@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { Check, ChevronDown, ChevronRight, Copy } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TranscriptItem } from '../shared/types';
 import { buildTranscriptView, type ChangedFileView, type TurnView } from '../transcript-view-model';
@@ -41,12 +42,17 @@ function ChangedFilesCard({
 
   return (
     <div className='cf-card'>
+      {/* Codex-style header: chevron + title on one full-width toggle row; View diff stays. */}
       <div className='cf-head'>
-        <span className='cf-title'>CHANGED FILES ({files.length})</span>
+        <button
+          type='button'
+          className='cf-toggle'
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed(value => !value)}>
+          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          <span className='cf-title'>CHANGED FILES ({files.length})</span>
+        </button>
         <span className='cf-actions'>
-          <button type='button' onClick={() => setCollapsed(value => !value)}>
-            {collapsed ? 'Expand all' : 'Collapse all'}
-          </button>
           <button type='button' onClick={onViewDiff}>
             View diff
           </button>
@@ -68,6 +74,39 @@ function ChangedFilesCard({
     </div>
   );
 }
+
+/** Raw markdown of a finished assistant turn, for the hover copy button. */
+function turnMarkdown(turn: TurnView): string {
+  return turn.doc.map(block => block.text).join('\n\n');
+}
+
+/** Hover copy affordance on completed turns; copies the raw markdown source. */
+function CopyTurnButton({ turn }: { turn: TurnView }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  if (turn.running || turn.doc.length === 0) return null;
+  const text = turnMarkdown(turn);
+  return (
+    <button
+      type='button'
+      className='turn-copy'
+      aria-label={t('transcript.copyTurn')}
+      title={t('transcript.copyTurn')}
+      onClick={() => {
+        void navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          })
+          .catch(() => setCopied(false));
+      }}>
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  );
+}
+
+const SCROLL_FOLLOW_THRESHOLD_PX = 80;
 
 function renderInline(text: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
@@ -94,6 +133,16 @@ function renderInline(text: string): React.ReactNode[] {
   }
   if (last < text.length) nodes.push(text.slice(last));
   return nodes;
+}
+
+function tableCells(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return trimmed.split('|').map(cell => cell.trim());
+}
+
+function isTableSeparator(line: string): boolean {
+  const cells = tableCells(line);
+  return line.includes('|') && cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell));
 }
 
 function MarkdownText({
@@ -123,6 +172,39 @@ function MarkdownText({
     }
     if (fence) {
       fence.push(line);
+      continue;
+    }
+    if (line.includes('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+      const headers = tableCells(line);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && lines[index].includes('|') && lines[index].trim() !== '') {
+        rows.push(tableCells(lines[index]));
+        index += 1;
+      }
+      index -= 1;
+      nodes.push(
+        <div className='doc-table-wrap' key={`table-${index}`}>
+          <table className='doc-table'>
+            <thead>
+              <tr>
+                {headers.map((cell, cellIndex) => (
+                  <th key={cellIndex}>{renderInline(cell)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {headers.map((_, cellIndex) => (
+                    <td key={cellIndex}>{renderInline(row[cellIndex] ?? '')}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
       continue;
     }
     const heading = /^(#{1,4})\s+(.*)$/.exec(line);
@@ -182,15 +264,27 @@ export function Transcript({
   const { t } = useTranslation();
   const view = useMemo(() => buildTranscriptView(items, running), [items, running]);
   const endRef = useRef<HTMLDivElement>(null);
+  // Smart follow: stick to bottom only while the user is already near it;
+  // scrolling up pauses follow and reveals a jump-to-latest button.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [follow, setFollow] = useState(true);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [view]);
+    if (follow) endRef.current?.scrollIntoView({ behavior: running ? 'auto' : 'smooth' });
+  }, [view, follow, running]);
+  const atBottom = follow ? '' : ' show';
 
   return (
-    <div className='transcript-c'>
+    <div
+      className='transcript-c'
+      ref={scrollRef}
+      onScroll={event => {
+        const el = event.currentTarget;
+        setFollow(el.scrollHeight - el.scrollTop - el.clientHeight <= SCROLL_FOLLOW_THRESHOLD_PX);
+      }}>
       <div className='doc-column'>
         {view.turns.map(turn => (
           <section className='turn' key={turn.id}>
+            <CopyTurnButton turn={turn} />
             {turn.userText !== null && <blockquote className='user-q'>{turn.userText}</blockquote>}
             {turn.doc.map((block, index) =>
               block.tone === 'error' ? (
@@ -233,6 +327,17 @@ export function Transcript({
           />
         )}
         <div ref={endRef} />
+        <button
+          type='button'
+          className={`jump-bottom${atBottom}`}
+          aria-label={t('transcript.jumpToLatest')}
+          hidden={follow}
+          onClick={() => {
+            setFollow(true);
+            endRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }}>
+          <ChevronDown size={15} />
+        </button>
       </div>
     </div>
   );

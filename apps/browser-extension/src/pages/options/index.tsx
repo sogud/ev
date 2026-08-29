@@ -147,8 +147,7 @@ export const OptionsPage = () => {
   const saveBridgeEndpoint = async () => {
     const trimmed = bridgeEndpoint.trim();
     const isLocalWs =
-      trimmed === '' ||
-      /^(ws:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?(\/\S*)?$/.test(trimmed);
+      trimmed === '' || /^(ws:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?(\/\S*)?$/.test(trimmed);
     if (!isLocalWs) {
       setStatus(t('browser.options.bridgeEndpointInvalid'));
       return;
