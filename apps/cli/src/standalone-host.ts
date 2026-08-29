@@ -18,37 +18,6 @@ import {
 } from '@ev/browser-host';
 
 const HOST_START_TIMEOUT_MS = 5_000;
-const DEFAULT_TRUSTED_EXTENSION_ORIGINS = [
-  // unpacked path id after the projects/ flattening (legacy repos/ ids stay compatible)
-  'chrome-extension://cpjhgkmenplohfcnkpdlefojomngblon',
-  'chrome-extension://klbmgfllmjipajbdcnmakapfchkhkdih',
-];
-
-function trustedExtensionOrigins(): string[] {
-  const configured = (process.env.EV_BROWSER_EXTENSION_ORIGINS ?? '')
-    .split(',')
-    .map(value => value.trim())
-    .filter(Boolean);
-  const origins = [...DEFAULT_TRUSTED_EXTENSION_ORIGINS, ...configured];
-  for (const origin of origins) {
-    let url: URL;
-    try {
-      url = new URL(origin);
-    } catch {
-      throw new Error(`Invalid trusted EV Browser extension origin: ${origin}`);
-    }
-    if (
-      (url.protocol !== 'chrome-extension:' && url.protocol !== 'moz-extension:') ||
-      !url.hostname ||
-      (url.pathname !== '' && url.pathname !== '/') ||
-      url.username ||
-      url.password
-    ) {
-      throw new Error(`Invalid trusted EV Browser extension origin: ${origin}`);
-    }
-  }
-  return [...new Set(origins)];
-}
 
 export function evHomeDirectory(): string {
   return process.env.EV_HOME?.trim() || path.join(os.homedir(), '.ev');
@@ -291,11 +260,17 @@ export async function runStandaloneHost(profile: string = DEFAULT_BROWSER_PROFIL
     console.error(`[EV] profile "${name}" port was busy; moved to ${port}`);
   }
 
+  // Pairing is per-browser and needs one explicit approval: any local
+  // chrome-extension origin may *request* pairing, but nothing is trusted
+  // until `ev browser pairing approve <browser-id>` accepts it. The extension
+  // stores the issued pairing token, so reloads, rebuilds and Host restarts
+  // reconnect without another prompt. Pinning extension ids would break every
+  // build loaded from a new machine or directory — exactly what the old
+  // hardcoded allowlist did.
   const bridge = new BrowserBridgeService({
     port,
     store: new FileBrowserBridgeStore(profilePairingPath(name)),
-    pairingMode: 'automatic',
-    automaticPairingOrigins: trustedExtensionOrigins(),
+    pairingMode: 'approval',
   });
   const downloads = new MediaDownloadService({
     downloadDirectory:
@@ -306,11 +281,19 @@ export async function runStandaloneHost(profile: string = DEFAULT_BROWSER_PROFIL
   const shutdownRequested = new Promise<void>(resolve => {
     requestShutdown = resolve;
   });
-  const control = new BrowserControlServer(commands, {
-    runtimeDirectory: profileRuntimeDirectory(name),
-    hostKind: 'standalone',
-    onShutdown: requestShutdown,
-  });
+  const control = new BrowserControlServer(
+    {
+      sendCommand: commands.sendCommand.bind(commands),
+      getSnapshot: bridge.getSnapshot.bind(bridge),
+      approvePendingPairing: bridge.approvePendingPairing.bind(bridge),
+      rejectPendingPairing: bridge.rejectPendingPairing.bind(bridge),
+    },
+    {
+      runtimeDirectory: profileRuntimeDirectory(name),
+      hostKind: 'standalone',
+      onShutdown: requestShutdown,
+    }
+  );
 
   try {
     await bridge.start();

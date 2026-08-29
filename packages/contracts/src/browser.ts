@@ -337,6 +337,13 @@ const BrowserCommandUnionSchema = z.discriminatedUnion('action', [
     maxChars: z.number().int().min(1_000).max(200_000).default(100_000),
     fallback: z.enum(['none', 'local-asr']).default('none'),
     confirm: z.literal('RUN_LOCAL_ASR').optional(),
+    /**
+     * Read cookies from a browser profile and pass them to the subtitle
+     * extractor. Required for some sites (e.g. Bilibili AI subtitles) where
+     * subtitle tracks are only returned to logged-in users. Anonymous by
+     * default to keep the Host from touching browser storage unexpectedly.
+     */
+    cookiesFromBrowser: z.enum(['chrome', 'edge', 'firefox', 'safari']).optional(),
   }),
   z.object({
     action: z.literal('page.media'),
@@ -1346,7 +1353,12 @@ export type BrowserDownloadStatus = z.infer<typeof BrowserDownloadStatusSchema>;
 export const BrowserHostControlCommandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('host.status') }),
   z.object({ action: z.literal('host.shutdown') }),
+  z.object({ action: z.literal('pairing.list') }),
+  z.object({ action: z.literal('pairing.approve'), browserId: BrowserIdSchema }),
+  z.object({ action: z.literal('pairing.reject'), browserId: BrowserIdSchema }),
 ]);
+
+export type BrowserHostControlCommand = z.infer<typeof BrowserHostControlCommandSchema>;
 
 export const BrowserControlRequestSchema = z.object({
   protocolVersion: z.literal(EV_PROTOCOL_VERSION),

@@ -176,6 +176,7 @@ export class BrowserCommandExecutor {
         format: command.format,
         maxChars: command.maxChars,
         fallback: command.fallback,
+        cookiesFromBrowser: command.cookiesFromBrowser,
       };
       return command.operation === 'download'
         ? this.downloads.downloadSubtitles(request)

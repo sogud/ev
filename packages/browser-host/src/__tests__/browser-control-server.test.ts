@@ -131,4 +131,99 @@ describe('BrowserControlServer', () => {
     });
     expect(bridge.sendCommand).not.toHaveBeenCalled();
   });
+
+  it('lists, approves, and rejects pairing requests without forwarding a command', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'ev-browser-control-'));
+    directories.push(directory);
+    const token = 't'.repeat(43);
+    const browserId = randomUUID();
+    const snapshot = { pendingPairings: [{ browserId }], pairedBrowsers: [] };
+    const bridge = {
+      sendCommand: vi.fn(),
+      getSnapshot: vi.fn(() => snapshot),
+      approvePendingPairing: vi.fn(() => snapshot),
+      rejectPendingPairing: vi.fn(() => snapshot),
+    };
+    const server = new BrowserControlServer(bridge, { runtimeDirectory: directory, token });
+    servers.push(server);
+    const { socketPath } = await server.start();
+
+    for (const command of [
+      { action: 'pairing.list' },
+      { action: 'pairing.approve', browserId },
+      { action: 'pairing.reject', browserId },
+    ]) {
+      const response = BrowserControlResponseSchema.parse(
+        await request(socketPath, {
+          protocolVersion: EV_PROTOCOL_VERSION,
+          requestId: randomUUID(),
+          token,
+          command,
+        })
+      );
+      expect(response).toMatchObject({ success: true, data: snapshot });
+    }
+
+    expect(bridge.approvePendingPairing).toHaveBeenCalledWith(browserId);
+    expect(bridge.rejectPendingPairing).toHaveBeenCalledWith(browserId);
+    expect(bridge.sendCommand).not.toHaveBeenCalled();
+  });
+
+  it('turns a failed approval into PAIRING_FAILED instead of dropping the request', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'ev-browser-control-'));
+    directories.push(directory);
+    const token = 't'.repeat(43);
+    const bridge = {
+      sendCommand: vi.fn(),
+      getSnapshot: vi.fn(() => ({ pendingPairings: [], pairedBrowsers: [] })),
+      approvePendingPairing: vi.fn(() => {
+        throw new Error('No EV Browser pairing request is pending for ghost');
+      }),
+      rejectPendingPairing: vi.fn(),
+    };
+    const server = new BrowserControlServer(bridge, { runtimeDirectory: directory, token });
+    servers.push(server);
+    const { socketPath } = await server.start();
+
+    const response = BrowserControlResponseSchema.parse(
+      await request(socketPath, {
+        protocolVersion: EV_PROTOCOL_VERSION,
+        requestId: randomUUID(),
+        token,
+        command: { action: 'pairing.approve', browserId: randomUUID() },
+      })
+    );
+
+    expect(response).toMatchObject({
+      success: false,
+      error: {
+        code: 'PAIRING_FAILED',
+        message: 'No EV Browser pairing request is pending for ghost',
+      },
+    });
+  });
+
+  it('refuses pairing control on a host that does not expose it', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'ev-browser-control-'));
+    directories.push(directory);
+    const token = 't'.repeat(43);
+    const bridge = { sendCommand: vi.fn() };
+    const server = new BrowserControlServer(bridge, { runtimeDirectory: directory, token });
+    servers.push(server);
+    const { socketPath } = await server.start();
+
+    const response = BrowserControlResponseSchema.parse(
+      await request(socketPath, {
+        protocolVersion: EV_PROTOCOL_VERSION,
+        requestId: randomUUID(),
+        token,
+        command: { action: 'pairing.approve', browserId: randomUUID() },
+      })
+    );
+
+    expect(response).toMatchObject({
+      success: false,
+      error: { code: 'UNSUPPORTED_COMMAND' },
+    });
+  });
 });

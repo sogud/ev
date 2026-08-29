@@ -15,6 +15,12 @@ interface BrowserCommandSender {
   sendCommand(command: BrowserCommand): Promise<unknown>;
 }
 
+interface BrowserPairingControl {
+  getSnapshot(): unknown;
+  approvePendingPairing(browserId: string): unknown;
+  rejectPendingPairing(browserId: string): unknown;
+}
+
 interface BrowserControlServerOptions {
   runtimeDirectory: string;
   token?: string;
@@ -54,7 +60,7 @@ export class BrowserControlServer {
   private snapshot: BrowserControlServerSnapshot | null = null;
 
   constructor(
-    private readonly bridge: BrowserCommandSender,
+    private readonly bridge: BrowserCommandSender & Partial<BrowserPairingControl>,
     private readonly options: BrowserControlServerOptions
   ) {
     this.token = options.token ?? randomBytes(32).toString('base64url');
@@ -209,6 +215,40 @@ export class BrowserControlServer {
         success: true,
         data: { stopping: true },
       };
+    }
+
+    if (command.action === 'pairing.list') {
+      if (!this.bridge.getSnapshot) {
+        return this.failure(
+          parsed.data.requestId,
+          'UNSUPPORTED_COMMAND',
+          'Pairing control is unavailable on this Browser Host'
+        );
+      }
+      return { requestId: parsed.data.requestId, success: true, data: this.bridge.getSnapshot() };
+    }
+    if (command.action === 'pairing.approve' || command.action === 'pairing.reject') {
+      const method =
+        command.action === 'pairing.approve'
+          ? this.bridge.approvePendingPairing
+          : this.bridge.rejectPendingPairing;
+      if (!method) {
+        return this.failure(
+          parsed.data.requestId,
+          'UNSUPPORTED_COMMAND',
+          'Pairing control is unavailable on this Browser Host'
+        );
+      }
+      try {
+        const data = method.call(this.bridge, command.browserId);
+        return { requestId: parsed.data.requestId, success: true, data };
+      } catch (error) {
+        return this.failure(
+          parsed.data.requestId,
+          'PAIRING_FAILED',
+          error instanceof Error ? error.message : String(error)
+        );
+      }
     }
 
     try {

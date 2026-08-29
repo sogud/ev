@@ -41,8 +41,12 @@ export interface BrowserBridgeStore {
 interface BrowserBridgeOptions {
   port?: number;
   store: BrowserBridgeStore;
+  /**
+   * `approval`: every new browser needs one explicit accept, then its pairing
+   * token is reused. `automatic`: trust-on-first-use, the first extension to
+   * ask is paired immediately (used by hosts that have no approval surface).
+   */
   pairingMode?: 'approval' | 'automatic';
-  automaticPairingOrigins?: readonly string[];
 }
 
 interface PendingCommand {
@@ -96,7 +100,6 @@ export class BrowserBridgeService {
   private readonly port: number;
   private readonly store: BrowserBridgeStore;
   private readonly pairingMode: 'approval' | 'automatic';
-  private readonly automaticPairingOrigins: ReadonlySet<string>;
   private readonly listeners = new Set<(snapshot: BrowserBridgeSnapshot) => void>();
   private readonly pendingCommands = new Map<string, PendingCommand>();
   /** Live extension connections, one per paired browser profile. */
@@ -113,7 +116,6 @@ export class BrowserBridgeService {
     this.port = options.port ?? DEFAULT_PORT;
     this.store = options.store;
     this.pairingMode = options.pairingMode ?? 'approval';
-    this.automaticPairingOrigins = new Set(options.automaticPairingOrigins ?? []);
     this.endpoint = `ws://127.0.0.1:${this.port}${BRIDGE_PATH}`;
   }
 
@@ -425,19 +427,12 @@ export class BrowserBridgeService {
 
       if (!authenticated) {
         if (message.type === 'bridge.pair.request') {
-          if (this.pairingMode === 'automatic') {
-            // Trust-on-first-use: with no explicit allowlist, any genuine
-            // extension origin may pair (each profile's persisted identity
-            // pins its own later pairings). Web/null origins can never
-            // auto-pair, so a page cannot hijack the bridge over loopback.
-            const trusted =
-              isExtensionOrigin(origin) &&
-              (this.automaticPairingOrigins.size === 0 || this.automaticPairingOrigins.has(origin));
-            if (!trusted) {
-              socket.close(1008, 'Extension origin is not trusted for automatic pairing');
-              return;
-            }
-          }
+          // Web and null origins are already rejected at the HTTP upgrade, so
+          // only a real local extension can get this far. Approval mode holds
+          // the request until a user accepts it; automatic mode (hosts with no
+          // approval surface) accepts the first one. Extension ids are never
+          // allowlisted — an unpacked build gets a fresh id per machine and
+          // per directory, so pinning them breaks legitimate rebuilds.
           clearTimeout(handshakeTimer);
           browserId = message.browserId;
           // A newer request from the same profile replaces its older one;

@@ -6,7 +6,19 @@
 ev CLI → Desktop 或 standalone Browser Host → EV Browser → Chrome CDP
 ```
 
-CLI 优先复用正在运行的 EV Desktop Browser Host；如果 Desktop 不存在，会自动启动用户级 standalone Browser Host。CLI 不读取或显示 Bridge pairing token，也不直接 attach Chrome。Standalone Host 只会自动接受内置 allowlist 中的 EV Browser extension origin；自定义开发构建可通过 `EV_BROWSER_EXTENSION_ORIGINS` 显式追加 origin。Desktop 仍保留首次显式批准。
+CLI 优先复用正在运行的 EV Desktop Browser Host；如果 Desktop 不存在，会自动启动用户级 standalone Browser Host。CLI 不读取或显示 Bridge pairing token，也不直接 attach Chrome。
+
+Standalone Host 采用**首次批准、之后自动重连**的配对模型：任何本机 `chrome-extension:` origin 都可以发起配对请求，但只有被显式批准后才受信任，批准时下发 pairing token，扩展保存该 token，后续重连（换目录重新加载、Host 重启、重建扩展）都不再需要人工介入。Host 不内置任何扩展 ID 白名单——解压加载的扩展在换机器或换目录时会被 Chrome 分配新的 ID，按 ID 放行会让正常的本地开发构建无法连接。
+
+新浏览器首次连接时：
+
+```bash
+ev browser pairing list                 # 查看等待批准的请求，输出里带 approve 命令
+ev browser pairing approve <browser-id>
+ev browser pairing reject  <browser-id>
+```
+
+扩展未批准时执行任何浏览器命令会失败，并在报错里直接给出待批准请求和对应的 approve 命令行；`pairing` 命令支持 `--profile <name>`。
 
 ## 安装
 

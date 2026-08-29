@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { constants } from 'node:fs';
-import { access, mkdir, mkdtemp, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -37,7 +38,21 @@ type SubtitleRequest = {
   fallback: 'none' | 'local-asr';
   mediaUrl?: string;
   userAgent?: string;
+  cookiesFromBrowser?: 'chrome' | 'edge' | 'firefox' | 'safari';
 };
+
+interface BilibiliSubtitleInfo {
+  id: number;
+  lan: string;
+  lan_doc: string;
+  subtitle_url: string;
+}
+
+interface BilibiliSubtitleItem {
+  from: number;
+  to: number;
+  content: string;
+}
 type ProcessLauncher = (
   executable: string,
   args: string[],
@@ -291,6 +306,16 @@ export class MediaDownloadService {
   ): Promise<{ content: string; filename: string; language: string }> {
     const pageUrl = this.parseWebUrl(request.pageUrl);
     await this.assertPublicMediaUrl(pageUrl);
+
+    // Bilibili AI subtitles (ai-zh / ai-en / ai-ja) are only returned to
+    // logged-in users and are not exposed by yt-dlp's extractor. Use the
+    // site's own API when the caller explicitly opts in to reading browser
+    // cookies.
+    if (request.cookiesFromBrowser && this.isBilibiliUrl(pageUrl)) {
+      const bilibili = await this.extractBilibiliSubtitles(request, pageUrl, keepFile);
+      if (bilibili) return bilibili;
+    }
+
     const executable = await this.resolveExecutable();
     const executableDirectory = path.isAbsolute(executable) ? path.dirname(executable) : null;
     const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'ev-subtitles-'));
@@ -309,6 +334,9 @@ export class MediaDownloadService {
         '--sub-format',
         request.format,
         ...(request.language ? ['--sub-langs', request.language] : []),
+        ...(request.cookiesFromBrowser
+          ? ['--cookies-from-browser', request.cookiesFromBrowser]
+          : []),
         '--paths',
         temporaryDirectory,
         '--output',
@@ -430,6 +458,251 @@ export class MediaDownloadService {
       if (clean && clean !== plain.at(-1)) plain.push(clean);
     }
     return plain.join('\n');
+  }
+
+  // --- Bilibili-specific subtitle extraction ---------------------------------
+  // yt-dlp's Bilibili extractor does not expose AI subtitles (ai-zh/ai-en/...)
+  // even with cookies, but the site's own player/v2 API returns them when the
+  // user is logged in. We export cookies via yt-dlp and call the API directly.
+
+  private isBilibiliUrl(url: string): boolean {
+    try {
+      return new URL(url).hostname.endsWith('.bilibili.com');
+    } catch {
+      return false;
+    }
+  }
+
+  private async extractBilibiliSubtitles(
+    request: SubtitleRequest,
+    pageUrl: string,
+    keepFile: boolean
+  ): Promise<{ content: string; filename: string; language: string } | null> {
+    const bvid = new URL(pageUrl).pathname.match(/\/video\/(BV[0-9A-Za-z]+)/)?.[1];
+    if (!bvid) return null;
+
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'ev-bili-subs-'));
+    try {
+      const cookieFile = path.join(temporaryDirectory, 'cookies.txt');
+      await this.exportBrowserCookies(request.cookiesFromBrowser!, pageUrl, cookieFile);
+      const cookieHeader = await this.netscapeCookiesForHostname(cookieFile, 'bilibili.com');
+      if (!cookieHeader) return null;
+
+      const view = await this.fetchBilibiliJson(
+        `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`,
+        cookieHeader
+      );
+      const viewData = (view as Record<string, unknown> | null)?.data as
+        | Record<string, unknown>
+        | undefined;
+      const cid = viewData?.cid;
+      if (typeof cid !== 'number') return null;
+
+      const player = await this.fetchBilibiliJson(
+        `https://api.bilibili.com/x/player/v2?cid=${cid}&bvid=${bvid}`,
+        cookieHeader
+      );
+      const subtitles = this.bilibiliSubtitleList(player);
+      if (!subtitles.length) return null;
+
+      const selected = this.selectBilibiliSubtitle(subtitles, request.language);
+      if (!selected) return null;
+
+      const subtitleUrl = selected.subtitle_url.startsWith('//')
+        ? `https:${selected.subtitle_url}`
+        : selected.subtitle_url;
+      const subtitleJson = await this.fetchBilibiliSubtitleJson(subtitleUrl, cookieHeader);
+      const body = Array.isArray((subtitleJson as Record<string, unknown>)?.body)
+        ? ((subtitleJson as Record<string, unknown>).body as BilibiliSubtitleItem[])
+        : [];
+      if (!body.length) return null;
+
+      const content = this.convertBilibiliSubtitle(body, request.format);
+      const language = selected.lan;
+      if (!keepFile) return { content, filename: '', language };
+
+      await mkdir(this.options.downloadDirectory, { recursive: true, mode: 0o700 });
+      const filename = path.join(
+        this.options.downloadDirectory,
+        `${bvid}.${language}.${request.format}`
+      );
+      await writeFile(filename, content, { mode: 0o600 });
+      return { content, filename, language };
+    } finally {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+    }
+  }
+
+  private async exportBrowserCookies(
+    browser: NonNullable<SubtitleRequest['cookiesFromBrowser']>,
+    pageUrl: string,
+    cookieFile: string
+  ): Promise<void> {
+    const executable = await this.resolveExecutable();
+    const executableDirectory = path.isAbsolute(executable) ? path.dirname(executable) : null;
+    const child = this.launch(
+      executable,
+      ['--cookies-from-browser', browser, '--cookies', cookieFile, '--skip-download', pageUrl],
+      {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          NO_PROXY: '',
+          no_proxy: '',
+          PATH: [executableDirectory, process.env.PATH].filter(Boolean).join(path.delimiter),
+        },
+      }
+    );
+    await this.waitForProcess(child, undefined, SUBTITLE_TIMEOUT_MS, 'Browser cookie export');
+  }
+
+  private async netscapeCookiesForHostname(
+    cookieFile: string,
+    hostname: string
+  ): Promise<string | null> {
+    const content = await readFile(cookieFile, 'utf8').catch(() => '');
+    const cookies: string[] = [];
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const fields = line.split('\t');
+      if (fields.length < 7) continue;
+      const [rawDomain, , , , , name, value] = fields;
+      const domain = rawDomain.replace(/^#HttpOnly_/, '');
+      if (this.cookieDomainMatches(domain, hostname)) {
+        cookies.push(`${name}=${value}`);
+      }
+    }
+    return cookies.length > 0 ? cookies.join('; ') : null;
+  }
+
+  private cookieDomainMatches(cookieDomain: string, hostname: string): boolean {
+    if (cookieDomain === hostname) return true;
+    if (cookieDomain.startsWith('.') && hostname.endsWith(cookieDomain.slice(1))) return true;
+    if (cookieDomain.startsWith('.') && hostname === cookieDomain.slice(1)) return true;
+    return false;
+  }
+
+  private bilibiliHeaders(cookieHeader: string): Record<string, string> {
+    return {
+      Cookie: cookieHeader,
+      Referer: 'https://www.bilibili.com/',
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    };
+  }
+
+  private fetchBilibiliJson(url: string, cookieHeader: string): Promise<unknown> {
+    return this.bilibiliRequest(url, cookieHeader).then(data => {
+      if ((data.code as number | undefined) !== 0) {
+        throw new Error(`Bilibili API returned code ${String(data.code)}: ${String(data.message)}`);
+      }
+      return data;
+    });
+  }
+
+  private fetchBilibiliSubtitleJson(
+    url: string,
+    cookieHeader: string
+  ): Promise<Record<string, unknown>> {
+    return this.bilibiliRequest(url, cookieHeader);
+  }
+
+  private bilibiliRequest(url: string, cookieHeader: string): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      const request = https.get(
+        url,
+        { headers: this.bilibiliHeaders(cookieHeader) },
+        response => {
+          if (response.statusCode && (response.statusCode < 200 || response.statusCode >= 300)) {
+            response.resume();
+            reject(new Error(`Bilibili request failed: ${response.statusCode}`));
+            return;
+          }
+          let body = '';
+          response.setEncoding('utf8');
+          response.on('data', chunk => {
+            body += chunk;
+          });
+          response.on('end', () => {
+            try {
+              resolve(JSON.parse(body) as Record<string, unknown>);
+            } catch (error) {
+              reject(new Error('Bilibili response is not valid JSON'));
+            }
+          });
+          response.on('error', reject);
+        }
+      );
+      request.on('error', reject);
+      request.setTimeout(30_000, () => {
+        request.destroy();
+        reject(new Error('Bilibili request timed out'));
+      });
+    });
+  }
+
+  private bilibiliSubtitleList(playerResponse: unknown): BilibiliSubtitleInfo[] {
+    const data = (playerResponse as Record<string, unknown> | null)?.data;
+    const subtitle = (data as Record<string, unknown> | null)?.subtitle;
+    const list = (subtitle as Record<string, unknown> | null)?.subtitles;
+    return Array.isArray(list) ? (list as BilibiliSubtitleInfo[]) : [];
+  }
+
+  private selectBilibiliSubtitle(
+    subtitles: BilibiliSubtitleInfo[],
+    language?: string
+  ): BilibiliSubtitleInfo | null {
+    if (!language) return subtitles[0] ?? null;
+    const exact = subtitles.find(sub => sub.lan === language);
+    if (exact) return exact;
+    const normalized = language.toLowerCase().replace(/_/g, '-');
+    return (
+      subtitles.find(sub => sub.lan.toLowerCase() === normalized) ??
+      subtitles.find(sub => sub.lan.toLowerCase().startsWith(normalized)) ??
+      null
+    );
+  }
+
+  private convertBilibiliSubtitle(body: BilibiliSubtitleItem[], format: 'vtt' | 'srt'): string {
+    if (format === 'srt') return this.bilibiliSubtitleToSrt(body);
+    return this.bilibiliSubtitleToVtt(body);
+  }
+
+  private bilibiliSubtitleToVtt(body: BilibiliSubtitleItem[]): string {
+    const lines = ['WEBVTT', ''];
+    for (const item of body) {
+      lines.push(`${this.formatTimestamp(item.from)} --> ${this.formatTimestamp(item.to)}`);
+      lines.push(item.content);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  private bilibiliSubtitleToSrt(body: BilibiliSubtitleItem[]): string {
+    const lines: string[] = [];
+    for (let index = 0; index < body.length; index += 1) {
+      const item = body[index];
+      lines.push(String(index + 1));
+      lines.push(
+        `${this.formatTimestamp(item.from, ',')} --> ${this.formatTimestamp(item.to, ',')}`
+      );
+      lines.push(item.content);
+      lines.push('');
+    }
+    return lines.join('\n');
+  }
+
+  private formatTimestamp(seconds: number, decimalSeparator: '.' | ',' = '.'): string {
+    const totalSeconds = Math.max(0, seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    const wholeSeconds = Math.floor(secs);
+    const milliseconds = Math.round((secs - wholeSeconds) * 1000);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(
+      wholeSeconds
+    ).padStart(2, '0')}${decimalSeparator}${String(milliseconds).padStart(3, '0')}`;
   }
 
   private async startReserved(request: ExternalDownload): Promise<BrowserDownloadStatus> {

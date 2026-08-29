@@ -54,6 +54,34 @@ async function runCli(
   return { exitCode, stdout, stderr };
 }
 
+/** Minimal Browser Host control socket: every CLI call opens its own connection. */
+async function startFakeHost(
+  directory: string,
+  respond: (request: { requestId: string; command: { action: string } }) => unknown
+): Promise<string> {
+  const socketPath = path.join(directory, 'browser.sock');
+  const tokenPath = path.join(directory, 'browser.token');
+  const discoveryPath = path.join(directory, 'browser-control.json');
+  await writeFile(tokenPath, `${'t'.repeat(43)}\n`, { mode: 0o600 });
+  await chmod(tokenPath, 0o600);
+  const server = net.createServer(socket => {
+    socket.setEncoding('utf8');
+    let input = '';
+    socket.on('data', chunk => {
+      input += chunk;
+      if (!input.includes('\n')) return;
+      socket.end(`${JSON.stringify(respond(parseJson(input.slice(0, input.indexOf('\n')))))}\n`);
+    });
+  });
+  servers.push(server);
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, resolve);
+  });
+  await writeFile(discoveryPath, JSON.stringify({ protocolVersion: 1, socketPath, tokenPath }));
+  return discoveryPath;
+}
+
 afterEach(async () => {
   await Promise.all(
     servers.splice(0).map(server => new Promise<void>(resolve => server.close(() => resolve())))
@@ -534,5 +562,80 @@ describe('ev browser CLI', () => {
     const direct = await runCli(['browser', 'page.snapshot'], environment);
     expect(direct.exitCode).toBe(2);
     expect(direct.stderr).toContain('workspace actions require session.command or oneShot');
+  });
+
+  it('lists a pending pairing request with a ready-to-run approve command', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'ev-cli-'));
+    directories.push(directory);
+    const browserId = randomUUID();
+    const origin = 'chrome-extension://rebuiltfromanotherdirectory1234';
+    const discoveryPath = await startFakeHost(directory, request => ({
+      requestId: request.requestId,
+      success: true,
+      data: {
+        pairedBrowsers: [],
+        pendingPairings: [
+          {
+            browserId,
+            browserName: 'Chrome',
+            extensionVersion: '1.0.0',
+            origin,
+            requestedAt: Date.now(),
+          },
+        ],
+      },
+    }));
+
+    const { exitCode, stdout, stderr } = await runCli(['browser', 'pairing', 'list'], {
+      ...process.env,
+      EV_BROWSER_CONTROL_FILE: discoveryPath,
+    });
+
+    expect(stderr).toBe('');
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain('Waiting for approval (1)');
+    expect(stdout).toContain(origin);
+    expect(stdout).toContain(`ev browser pairing approve ${browserId}`);
+  });
+
+  it('explains how to approve a pending pairing when nothing is connected', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'ev-cli-'));
+    directories.push(directory);
+    const browserId = randomUUID();
+    const discoveryPath = await startFakeHost(directory, request => {
+      if (request.command.action === 'pairing.list') {
+        return {
+          requestId: request.requestId,
+          success: true,
+          data: {
+            pairedBrowsers: [],
+            pendingPairings: [
+              {
+                browserId,
+                browserName: 'Chrome',
+                extensionVersion: '1.0.0',
+                origin: 'chrome-extension://rebuiltfromanotherdirectory1234',
+                requestedAt: Date.now(),
+              },
+            ],
+          },
+        };
+      }
+      return {
+        requestId: request.requestId,
+        success: false,
+        error: { code: 'BROWSER_DISCONNECTED', message: 'EV Browser is not connected' },
+      };
+    });
+
+    const { exitCode, stderr } = await runCli(['browser', 'check'], {
+      ...process.env,
+      EV_BROWSER_CONTROL_FILE: discoveryPath,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('EV Browser is not connected');
+    expect(stderr).toContain('waiting for approval');
+    expect(stderr).toContain(`ev browser pairing approve ${browserId}`);
   });
 });

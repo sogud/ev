@@ -102,7 +102,7 @@ describe('BrowserBridgeService', () => {
     expect(identities[0].allowedOrigin).toBeNull();
   });
 
-  test('holds an automatic pairing request until Desktop approves it', async () => {
+  test('holds a pairing request until it is approved', async () => {
     const browserId = randomUUID();
     const socket = await connect(service.getSnapshot().endpoint);
     const pendingMessage = nextMessage(socket);
@@ -136,31 +136,7 @@ describe('BrowserBridgeService', () => {
     });
   });
 
-  test('can automatically approve the first extension for a standalone host', async () => {
-    await service.stop();
-    service = new BrowserBridgeService({
-      port: 0,
-      store: handle.store,
-      pairingMode: 'automatic',
-      automaticPairingOrigins: [EXTENSION_ORIGIN],
-    });
-    await service.start();
-    const socket = await connect(service.getSnapshot().endpoint);
-    const approvedMessage = nextMessage(socket);
-    socket.send(JSON.stringify(pairingRequest()));
-
-    expect(await approvedMessage).toMatchObject({
-      type: 'bridge.pair.approved',
-      protocolVersion: EV_PROTOCOL_VERSION,
-    });
-    expect(service.getSnapshot()).toMatchObject({
-      status: 'connected',
-      pairedBrowsers: [{ origin: EXTENSION_ORIGIN, online: true }],
-      pendingPairings: [],
-    });
-  });
-
-  test('automatic mode without an allowlist trusts genuine extension origins', async () => {
+  test('automatic mode pairs any extension origin without an approval click', async () => {
     await service.stop();
     service = new BrowserBridgeService({ port: 0, store: handle.store, pairingMode: 'automatic' });
     await service.start();
@@ -170,32 +146,68 @@ describe('BrowserBridgeService', () => {
       connect(service.getSnapshot().endpoint, 'https://evil.example')
     ).rejects.toBeDefined();
 
-    // the genuine extension pairs without any approval click
-    const socket = await connect(service.getSnapshot().endpoint);
+    // the genuine extension pairs without any approval click, whatever id the
+    // browser happened to assign it
+    const socket = await connect(service.getSnapshot().endpoint, SECOND_EXTENSION_ORIGIN);
     const approvedMessage = nextMessage(socket);
     socket.send(JSON.stringify(pairingRequest()));
     expect(await approvedMessage).toMatchObject({ type: 'bridge.pair.approved' });
     expect(service.getSnapshot()).toMatchObject({
       status: 'connected',
-      pairedBrowsers: [{ origin: EXTENSION_ORIGIN, online: true }],
+      pairedBrowsers: [{ origin: SECOND_EXTENSION_ORIGIN, online: true }],
     });
   });
 
-  test('rejects an untrusted extension origin in automatic mode', async () => {
-    await service.stop();
-    service = new BrowserBridgeService({
-      port: 0,
-      store: handle.store,
-      pairingMode: 'automatic',
-      automaticPairingOrigins: [EXTENSION_ORIGIN],
-    });
-    await service.start();
-    const socket = await connect(service.getSnapshot().endpoint, 'chrome-extension://untrusted');
-    const closed = nextClose(socket);
-    socket.send(JSON.stringify(pairingRequest()));
+  test('approval mode holds an unknown extension id until a user accepts it', async () => {
+    // Loading the unpacked extension from a different directory gives it a
+    // fresh id, so the Host must never gate on an id it has not been told to
+    // trust — it parks the request for a human instead.
+    const browserId = randomUUID();
+    const socket = await connect(service.getSnapshot().endpoint, SECOND_EXTENSION_ORIGIN);
+    const pendingMessage = nextMessage(socket);
+    socket.send(JSON.stringify(pairingRequest(browserId)));
 
-    expect(await closed).toBe(1008);
-    expect(service.getSnapshot()).toMatchObject({ status: 'listening', pairedBrowsers: [] });
+    expect(await pendingMessage).toEqual({ type: 'bridge.pair.pending' });
+    expect(service.getSnapshot()).toMatchObject({
+      status: 'listening',
+      pairedBrowsers: [],
+      pendingPairings: [{ browserId, origin: SECOND_EXTENSION_ORIGIN }],
+    });
+
+    const approvedMessage = nextMessage(socket);
+    service.approvePendingPairing(browserId);
+
+    expect(await approvedMessage).toMatchObject({ type: 'bridge.pair.approved' });
+    expect(service.getSnapshot()).toMatchObject({
+      status: 'connected',
+      pairedBrowsers: [{ browserId, origin: SECOND_EXTENSION_ORIGIN, online: true }],
+      pendingPairings: [],
+    });
+  });
+
+  test('an approved browser reconnects without asking again', async () => {
+    const browserId = randomUUID();
+    const first = await connect(service.getSnapshot().endpoint);
+    const pendingMessage = nextMessage(first);
+    first.send(JSON.stringify(pairingRequest(browserId)));
+    await pendingMessage;
+    const approvedMessage = nextMessage(first);
+    service.approvePendingPairing(browserId);
+    const approved = (await approvedMessage) as { pairingToken: string };
+    first.close();
+
+    // The extension stores its token and sends bridge.hello on every later
+    // connection, so a reload, a rebuild or a new machine never prompts again.
+    const second = await connect(service.getSnapshot().endpoint);
+    const acknowledgement = nextMessage(second);
+    second.send(JSON.stringify(hello(approved.pairingToken, browserId)));
+
+    expect(await acknowledgement).toMatchObject({ type: 'bridge.hello.ack' });
+    expect(service.getSnapshot()).toMatchObject({
+      status: 'connected',
+      pairedBrowsers: [{ browserId, online: true }],
+      pendingPairings: [],
+    });
   });
 
   test('can reject a pending pairing request', async () => {
@@ -318,7 +330,6 @@ describe('BrowserBridgeService', () => {
         port: 0,
         store: handle.store,
         pairingMode: 'automatic',
-        automaticPairingOrigins: [EXTENSION_ORIGIN, SECOND_EXTENSION_ORIGIN],
       });
       await service.start();
     });

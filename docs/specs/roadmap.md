@@ -69,6 +69,7 @@
 - [x] Cordis Runtime tracer：`apps/server` 精确锁定 upstream Cordis，RuntimeRegistry 成为 Service，五个 Runtime 由静态 plugins 挂载；单 Fiber unload 与 packaged Server DSH smoke 通过（spec: server-plugin-architecture-v1，ADR-0001）
 - [x] Experimental DSH Runtime：官方 stdio JSON-RPC、每 Task 独立进程、流式 assistant/thinking/tool/subagent 投影、明确禁用 cold resume，并通过官方源码 + 本地 mock model smoke
 - [x] EV Browser 设置修复：English / 简体中文切换、可关闭书签 New Tab、背景图应用与实时同步
+- [x] EV Browser 配对改为「首次批准 + token 复用」：standalone Host 删除硬编码扩展 ID 白名单（解压加载换机器/换目录会被 Chrome 分配新 ID，按 ID 放行会让正常本地构建连不上），任何本机 `chrome-extension:` origin 可发起请求但需 `ev browser pairing approve <browser-id>` 批准一次；批准时下发 pairing token，扩展保存后重连静默；未批准时任何浏览器命令的报错直接列出待批准请求与可复制的 approve 命令行；server 内嵌桥仍保留 TOFU
 - [x] EV Browser 多 profile 同时在线：单 Host 桥支持多个扩展连接并存（每 Chrome profile 独立配对身份），Session 固定到创建它的浏览器，`browserId` 显式路由（多连接缺目标时报错并列出可选 id），设置页展示配对浏览器列表与逐个撤销；原 `--profile` 独立 Host 保留为隔离选项
 - [x] WebMCP 桥 + 操作可视化：页面通过 `navigator.modelContext.registerTool` 注册工具，`page.webmcp.listTools/callTool` 经 session/oneShot 调用（JSON 错误封装、超时）；元素操作前独立 overlay 高亮，设置开关默认开启（spec: webmcp-and-action-visualization）
 - [x] Browser Control P0/P1：普通 DOM 操作无 CDP、高级能力按需 attach 且同 tab 并发合并；完整 typed 页面交互、iframe、BrowserRun，以及 window/tab/group/download/history/session/zoom 工作区操作（spec: browser-control-p0-p1）
@@ -76,7 +77,7 @@
 - [x] SiteRecipe P2：review-token 审批、精确域名/路径、typed adapter、本地 0600 存储、`x.mute-words` 与 `x.read-grok-conversation`（spec: site-recipe-p2）
 - [x] BrowserSession P1：每个 Session 新建非聚焦 Chrome window 和单一 EV tab group，只允许 owned tabs，禁止 adopt/borrowed tab，安全 release 与 Host 内存 ownership（spec: browser-session-p1）
 - [x] BrowserRun P0：Host 本地顺序/循环/重试、语义目标重新定位、最终汇总输出；不开放 eval（spec: browser-run-p0）
-- [x] CLI-first EV Browser：Desktop 可选、extension TOFU 配对、全局 `ev-browser` Skill、typed 书签查询/整理、写操作前自动 JSON 备份、非破坏式恢复
+- [x] CLI-first EV Browser：Desktop 可选、extension 首次批准配对（standalone Host）/ TOFU（server 内嵌桥）、全局 `ev-browser` Skill、typed 书签查询/整理、写操作前自动 JSON 备份、非破坏式恢复
 - [x] P3 远程接入+移动端（2026-08-09）：R1 localhost+私网多绑（禁 0.0.0.0）+ token 强制、R2 ev token 分级（observer 只读）、R3 /m 独立移动端（React，选任务/对话/切模型）、R4 双 URL+手机实测步骤
 
 - [x] 架构深化：Task 生命周期深模块 / IPC registry / RuntimeLaunch / Codex 状态机分离

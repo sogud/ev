@@ -19,6 +19,7 @@ import {
   BrowserCommandSchema,
   BrowserControlResponseSchema,
   EV_PROTOCOL_VERSION,
+  type BrowserHostControlCommand,
   type BrowserCommand,
 } from '@ev/contracts';
 import { CliError, isServerCliCommand, runServerCli } from './server-cli';
@@ -58,6 +59,8 @@ function usage(): string {
     '                    [--timeout <seconds>] [--output <path>] [--compact]',
     '                    [--profile <name>]   per-browser Host profile (default: default)',
     '  ev browser profile list         show Host profiles and their paired browsers',
+    '  ev browser pairing list         show pairing requests waiting for approval',
+    '  ev browser pairing approve|reject <browser-id> [--profile <name>]',
     '  ev browser check',
     '  ev browser oneShot --payload \'{"url":"https://example.com","command":{"action":"page.snapshot"}}\'',
     '  ev browser session.create --payload \'{"url":"https://example.com"}\'',
@@ -69,6 +72,7 @@ function usage(): string {
     '',
     'examples:',
     '  ev browser host [serve|stop] / ev browser profile list',
+    '  ev browser pairing list / ev browser pairing approve <browser-id>',
     '  ev browser oneShot --payload \'{"url":"https://example.com","command":{"action":"page.snapshot","mode":"interactive"}}\'',
     '  ev browser session.create --payload \'{"url":"https://example.com"}\' --profile edge',
     '  ev browser session.command --payload \'{"sessionId":"UUID","command":{"action":"page.snapshot"}}\'',
@@ -265,7 +269,7 @@ async function readDiscovery(
 }
 
 async function invoke(
-  command: BrowserCommand,
+  command: BrowserCommand | BrowserHostControlCommand,
   timeoutMs: number,
   profile: string = DEFAULT_BROWSER_PROFILE
 ): Promise<unknown> {
@@ -318,6 +322,120 @@ async function invoke(
     throw error;
   }
   return parsed.data;
+}
+
+// --- Pairing ---------------------------------------------------------------
+// A standalone Host never trusts an extension id: an unpacked build gets a
+// fresh id on every machine and directory, so the first connection from a
+// browser lands as a pending request and needs one explicit approval. The
+// approval issues a pairing token the extension stores, so reconnects are
+// silent. Without surfacing pending requests, a rejected-but-invisible
+// handshake looks identical to "the extension is broken".
+
+interface PairingRequest {
+  browserId: string;
+  browserName: string;
+  extensionVersion: string;
+  origin: string;
+}
+
+interface PairedBrowser {
+  browserId: string;
+  browserName: string;
+  origin: string;
+  online: boolean;
+}
+
+interface PairingSnapshot {
+  pendingPairings: PairingRequest[];
+  pairedBrowsers: PairedBrowser[];
+}
+
+const PAIRING_HINT_TIMEOUT_MS = 3_000;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function asText(value: unknown, key: string): string {
+  const field = asRecord(value)[key];
+  return typeof field === 'string' ? field : '';
+}
+
+function pairingSnapshot(data: unknown): PairingSnapshot {
+  const value = asRecord(data);
+  const pending: unknown[] = Array.isArray(value.pendingPairings) ? value.pendingPairings : [];
+  const paired: unknown[] = Array.isArray(value.pairedBrowsers) ? value.pairedBrowsers : [];
+  return {
+    pendingPairings: pending
+      .map(entry => ({
+        browserId: asText(entry, 'browserId'),
+        browserName: asText(entry, 'browserName'),
+        extensionVersion: asText(entry, 'extensionVersion'),
+        origin: asText(entry, 'origin'),
+      }))
+      .filter(entry => entry.browserId !== ''),
+    pairedBrowsers: paired
+      .map(entry => ({
+        browserId: asText(entry, 'browserId'),
+        browserName: asText(entry, 'browserName'),
+        origin: asText(entry, 'origin'),
+        online: asRecord(entry).online === true,
+      }))
+      .filter(entry => entry.browserId !== ''),
+  };
+}
+
+function approveCommand(profile: string, browserId: string): string {
+  const suffix = profile === DEFAULT_BROWSER_PROFILE ? '' : ` --profile ${profile}`;
+  return `ev browser pairing approve ${browserId}${suffix}`;
+}
+
+function formatPairingList(snapshot: PairingSnapshot, profile: string): string {
+  const lines: string[] = [];
+  if (snapshot.pendingPairings.length === 0) {
+    lines.push('No EV Browser pairing request is waiting for approval.');
+  } else {
+    lines.push(`Waiting for approval (${snapshot.pendingPairings.length}):`);
+    for (const pending of snapshot.pendingPairings) {
+      lines.push(`  ${pending.browserName || 'EV Browser'} ${pending.extensionVersion}`);
+      lines.push(`    origin:    ${pending.origin}`);
+      lines.push(`    browserId: ${pending.browserId}`);
+      lines.push(`    approve:   ${approveCommand(profile, pending.browserId)}`);
+    }
+  }
+  if (snapshot.pairedBrowsers.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push(`Paired browsers (${snapshot.pairedBrowsers.length}):`);
+    for (const browser of snapshot.pairedBrowsers) {
+      const state = browser.online ? 'online ' : 'offline';
+      lines.push(`  ${state}  ${browser.browserName || 'EV Browser'}  ${browser.origin}`);
+      lines.push(`    browserId: ${browser.browserId}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Explain a "not connected" failure: the Host is usually fine and a browser is
+ * simply waiting to be approved. Best effort — a Host that cannot answer
+ * pairing.list yields no hint rather than a new error.
+ */
+async function pendingPairingHint(profile: string): Promise<string> {
+  try {
+    const snapshot = pairingSnapshot(
+      await invoke({ action: 'pairing.list' }, PAIRING_HINT_TIMEOUT_MS, profile)
+    );
+    if (snapshot.pendingPairings.length === 0) return '';
+    return [
+      '',
+      `${snapshot.pendingPairings.length} EV Browser pairing request(s) are waiting for approval:`,
+      ...snapshot.pendingPairings.map(pending => `  ${approveCommand(profile, pending.browserId)}`),
+      'Approve once per browser; the extension then reuses its pairing token on every reconnect.',
+    ].join('\n');
+  } catch {
+    return '';
+  }
 }
 
 function bookmarkBackup(data: unknown): { exportedAt?: string; tree: unknown[] } {
@@ -426,6 +544,36 @@ export async function run(argv: string[]): Promise<number> {
       process.stdout.write(`${JSON.stringify({ profiles: infos }, null, 2)}\n`);
       return 0;
     }
+    if (argv[0] === 'browser' && argv[1] === 'pairing') {
+      const operation = argv[2];
+      if (!operation || !['list', 'approve', 'reject'].includes(operation)) {
+        throw new UsageError(
+          'usage: ev browser pairing list|approve <browser-id>|reject <browser-id> [--profile <name>]'
+        );
+      }
+      const profile = extractHostProfile(argv);
+      if (!process.env.EV_BROWSER_CONTROL_FILE?.trim()) await ensureStandaloneHost(profile);
+      if (operation === 'list') {
+        const snapshot = pairingSnapshot(
+          await invoke({ action: 'pairing.list' }, DEFAULT_TIMEOUT_MS, profile)
+        );
+        process.stdout.write(`${formatPairingList(snapshot, profile)}\n`);
+        return 0;
+      }
+      const browserId = argv.slice(3).find(value => !value.startsWith('--'));
+      if (!browserId) {
+        throw new UsageError(`usage: ev browser pairing ${operation} <browser-id>`);
+      }
+      const command: BrowserHostControlCommand =
+        operation === 'approve'
+          ? { action: 'pairing.approve', browserId }
+          : { action: 'pairing.reject', browserId };
+      await invoke(command, DEFAULT_TIMEOUT_MS, profile);
+      process.stdout.write(
+        `${operation === 'approve' ? 'Approved' : 'Rejected'} EV Browser ${browserId} (profile: ${profile})\n`
+      );
+      return 0;
+    }
     const parsed = await parseArguments(argv);
     const commandResult = BrowserCommandSchema.safeParse({
       action: parsed.action,
@@ -460,8 +608,14 @@ export async function run(argv: string[]): Promise<number> {
     try {
       data = await invoke(commandResult.data, parsed.timeoutMs, parsed.profile);
     } catch (error) {
-      if (backupPath && error instanceof Error) {
-        error.message = `${error.message} (bookmark backup: ${backupPath})`;
+      if (error instanceof Error) {
+        // A pending approval is the usual reason nothing is connected; name
+        // the exact approval command instead of leaving the user guessing.
+        const hint = error.message.includes('not connected')
+          ? await pendingPairingHint(parsed.profile)
+          : '';
+        if (backupPath) error.message = `${error.message} (bookmark backup: ${backupPath})`;
+        if (hint) error.message = `${error.message}${hint}`;
       }
       throw error;
     }
