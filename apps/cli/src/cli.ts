@@ -23,6 +23,7 @@ import {
   type BrowserCommand,
 } from '@ev/contracts';
 import { CliError, isServerCliCommand, runServerCli } from './server-cli';
+import { WorkspaceError, workspaceCommand, workspaceUsage } from './workspace-cli';
 
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -55,6 +56,8 @@ class UsageError extends Error {}
 function usage(): string {
   return [
     'usage:',
+    '  ev workspace context [name] [--target <name>] [--config <file>]',
+    '  ev workspace skills copy <id> --workspace <name> [--config <file>] [--dry-run]',
     '  ev browser <action> [--payload <json> | --payload-file <path>]',
     '                    [--timeout <seconds>] [--output <path>] [--compact]',
     '                    [--profile <name>]   per-browser Host profile (default: default)',
@@ -521,6 +524,23 @@ export async function run(argv: string[]): Promise<number> {
       return 0;
     }
     if (argv.length === 0) throw new UsageError(usage());
+    if (argv[0] === 'knowledge')
+      throw new WorkspaceError(
+        'Use QMD for search and your file tools for reading; EV no longer wraps knowledge commands.'
+      );
+    if (argv[0] === 'workspace') {
+      if (argv.length === 1 || argv.includes('--help') || argv.includes('-h')) {
+        process.stdout.write(`${workspaceUsage}\n`);
+        return 0;
+      }
+      const result = await workspaceCommand(argv);
+      process.stdout.write(`${JSON.stringify(result.data, null, 2)}\n`);
+      return result.exitCode;
+    }
+    if (argv[0] === '--help' || argv[0] === '-h') {
+      process.stdout.write(`${usage()}\n`);
+      return 0;
+    }
     if (isServerCliCommand(argv)) return await runServerCli(argv);
     if (argv[0] === 'browser' && argv[1] === 'host') {
       const hostProfile = extractHostProfile(argv);
@@ -631,7 +651,11 @@ export async function run(argv: string[]): Promise<number> {
     );
     return 0;
   } catch (error) {
-    if (error instanceof UsageError || error instanceof CliError) {
+    if (
+      error instanceof UsageError ||
+      error instanceof CliError ||
+      error instanceof WorkspaceError
+    ) {
       process.stderr.write(`${error.message}\n`);
       return 2;
     }

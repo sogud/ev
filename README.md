@@ -84,6 +84,8 @@ use it on networks you trust; use Tailscale elsewhere. Revoke with
 
 ## Architecture
 
+[Workspace CLI v1](apps/cli/README.md) resolves configurable workspace and task entry paths and safely copies skills. It reuses existing manifests without wrapping Git, QMD, project checks, or Agent runtime configuration.
+
 ```text
 apps/desktop        Electron shell + renderer (thin client)
 apps/server         headless local server; built-in capabilities compose as static Cordis plugins

@@ -66,6 +66,7 @@
 
 ## 已完成（2026-08 盘点退役，细节见 Git 与 spec）
 
+- [x] Workspace CLI v1：配置工作区和知识路径、按目录/任务返回上下文、完整复制技能；直接复用 manifest/project 清单，不封装 Git/QMD/通用检查，不改 Agent 配置（[spec](workspace-cli-v1.md)）
 - [x] Cordis Runtime tracer：`apps/server` 精确锁定 upstream Cordis，RuntimeRegistry 成为 Service，五个 Runtime 由静态 plugins 挂载；单 Fiber unload 与 packaged Server DSH smoke 通过（spec: server-plugin-architecture-v1，ADR-0001）
 - [x] Experimental DSH Runtime：官方 stdio JSON-RPC、每 Task 独立进程、流式 assistant/thinking/tool/subagent 投影、明确禁用 cold resume，并通过官方源码 + 本地 mock model smoke
 - [x] EV Browser 设置修复：English / 简体中文切换、可关闭书签 New Tab、背景图应用与实时同步

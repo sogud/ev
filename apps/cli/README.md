@@ -34,6 +34,66 @@ npm install --global @sogud/ev
 
 ## 使用
 
+### Workspace（不依赖任何 Agent）
+
+只做三件事：配置路径、返回任务入口、复制技能。不启动 Server、Browser Host 或 MCP，
+不修改 Agent 全局配置，不封装 Git、QMD 或项目检查。
+
+```bash
+ev workspace context
+ev workspace context creator
+ev workspace context development --target ev
+ev workspace context creator --config /path/to/manifest.json
+ev workspace skills copy writing --workspace creator --config ./workspaces.json --dry-run
+ev workspace skills copy writing --workspace creator --config ./workspaces.json
+```
+
+输出默认 JSON。`context` 未指定名称时按 cwd 选择最深匹配的工作区；指定名称可选任务路由或工作区。
+`--config` > `EV_WORKSPACE_CONFIG` > 从 cwd 向上查找最近的工作区 `manifest.json`。
+不修改任何全局“当前工作区”。从不属于工作区的目录调用时显式传配置和名称。
+
+独立使用的最小配置如下，文件名、工作区和知识库位置均可自定：
+
+```json
+{
+  "workspaces": {
+    "creator": {
+      "root": "./creator",
+      "knowledgeRoot": "./knowledge",
+      "entries": ["./creator/AGENTS.md"],
+      "onDemand": ["./knowledge/Create/index.md"],
+      "skillsDir": "./creator/.agents/skills",
+      "skills": { "writing": "./library/writing" },
+      "mcpFiles": ["./creator/.mcp.json"]
+    }
+  }
+}
+```
+
+所有配置路径相对配置文件解析，也支持绝对路径，不支持 `~` 或变量插值。
+`root` 必填；`skillsDir` 可自定义但必须在工作区内；知识库可在外部或共享。
+`entries` 是必读入口，`onDemand` 只在请求相关时读；结果仅返回路径，不读 MCP 内容或凭据。
+缺失入口、技能或目录显示告警并返回 1，不静默创建内容。
+
+已有 AgentSpace 格式的 `manifestVersion: 1` 清单无需再写一份 `workspaces`：
+
+- `repos[].path` 定位代码仓；`workspace.projectRoots` 指定非代码项目或项目父目录，只找本层及下一层的 `project.json`。
+- `workspace.entries` 和 `workspace.routes` 继续作为入口和任务路由真源，支持 `base/target/entries/onDemand/knowledgeScope/skills/freshness`。
+- `workspace.knowledgeRoot/skillsDir/skillRoots` 配置共享知识、复制目的地及技能来源目录。来源查找限直系技能及一个分类层，按数组顺序优先。
+- 项目技能来自该项目 `project.json` 的 `skills.installed/shared`；知识路径来自 `paths.knowledge`，相对项目目录解析。
+- 项目本地技能优先于共享来源。缺失声明仍返回候选路径和告警，不把它当已安装。项目路由显式 `skills` 覆盖默认项目候选。
+- `context` 只返回所选候选及可选名称，不查询 Git、不输出完整技能和知识目录。`--target` 只用于 context，在保留任务入口的同时选择实际代码仓。
+
+技能复制包含正文、脚本和引用文件，保留来源。同内容重复操作返回 `unchanged`，
+目标不同或为软链则报冲突；不自动覆盖。技能内部仅允许仍指向技能内部的相对软链。
+失败保留来源和已复制的部分文件，明确报告路径。复制文件不保证运行中 Agent 立即重新加载。
+
+`list/inspect` 合并为 `context`，不提供 `skills move` 或 `ev knowledge`。
+搜索与索引直接用 QMD；读取直接用文件工具；仓库操作直接用 Git；验证使用项目测试。
+原先的技能来源、笔记、凭据和平台配置不会因命令精简而被修改。
+
+### Browser
+
 ```bash
 ev browser check
 
