@@ -32,7 +32,7 @@ EV Browser 是 EV 的浏览器应用，基于 WXT、Vite、React、TypeScript �
 - 页面、window、tab、tab group 和 zoom 操作只接受 Host 内 BrowserSession 所有权；书签、历史和下载保持显式 profile 全局 action，文件默认保存到 `Downloads/EV`
 - 不开放任意 `page.eval`，也不支持或绕过 DRM 媒体
 
-Desktop 负责 Pi runtime、任务和应用权限；扩展不保存模型密钥，也不直接执行任意本地命令。扩展不要求用户或 Agent 手填地址和 Pairing token：standalone Browser Host 首次连接会自动批准本机可信扩展；连接 Desktop 时由用户在“设置 → EV Browser”首次批准。Extension Options、Popup 和 Desktop 设置页均可刷新状态或请求重连。
+Desktop 负责 Pi runtime、任务和应用权限；扩展不保存模型密钥，也不直接执行任意本地命令。扩展不要求用户或 Agent 手填地址和 Pairing token：standalone Browser Host 首次连接会自动批准本机可信扩展；连接 Desktop 时由用户在“设置 → EV Browser”首次批准。连接与重连由扩展后台自动完成；Popup 只显示状态，Extension Options 只刷新状态，不提供手动连接开关。Desktop 设置页可请求 Host 断开后自动重连。
 
 ## 开发
 

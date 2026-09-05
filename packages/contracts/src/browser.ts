@@ -1292,6 +1292,13 @@ export const BrowserSubtitleDispatchSchema = z.object({
     'Media URL is too long'
   ).optional(),
   userAgent: z.string().trim().min(1).max(512).optional(),
+  inlineSubtitle: z
+    .object({
+      language: z.string().trim().min(1).max(64),
+      text: z.string().max(200_000),
+      truncated: z.boolean(),
+    })
+    .optional(),
 });
 
 export type BrowserSubtitleDispatch = z.infer<typeof BrowserSubtitleDispatchSchema>;

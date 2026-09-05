@@ -513,7 +513,7 @@ export class MediaDownloadService {
       if (typeof cid !== 'number') return null;
 
       const player = await this.fetchBilibiliJson(
-        `https://api.bilibili.com/x/player/v2?cid=${cid}&bvid=${bvid}`,
+        `https://api.bilibili.com/x/player/wbi/v2?cid=${cid}&bvid=${bvid}`,
         cookieHeader
       );
       const subtitles = this.bilibiliSubtitleList(player);

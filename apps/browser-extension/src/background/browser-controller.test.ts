@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { resetActionHighlightForTests } from './action-highlight';
 import { executeBrowserCommand, resetBrowserControllerForTests } from './browser-controller';
 
@@ -15,6 +15,10 @@ describe('CDP browser controller', () => {
   const downloadCreatedListeners = new Set<(item: chrome.downloads.DownloadItem) => void>();
   const permissionContains = vi.fn(async () => true);
   const pageBridge = vi.fn();
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   beforeEach(() => {
     calls.length = 0;
@@ -1106,6 +1110,95 @@ describe('CDP browser controller', () => {
       pageUrl: 'https://example.com',
       title: 'Example',
     });
+  });
+
+  test('reads Bilibili subtitles inside the owned logged-in tab', async () => {
+    vi.mocked(chrome.tabs.get).mockResolvedValue({
+      id: 7,
+      windowId: 1,
+      title: 'Bilibili Example',
+      url: 'https://www.bilibili.com/video/BV1sx3T6ZEqy/',
+    } as chrome.tabs.Tab);
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: { cid: 40272530365, pages: [{ page: 1, cid: 40272530365 }] },
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              subtitle: {
+                subtitles: [
+                  {
+                    lan: 'ai-zh',
+                    ai_type: 1,
+                    subtitle_url: '//aisubtitle.hdslb.com/example.json',
+                  },
+                ],
+              },
+            },
+          })
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            body: [
+              { from: 0, to: 1, content: '第一句' },
+              { from: 1, to: 2, content: '第二句' },
+            ],
+          })
+        )
+      );
+    const executeScript = vi.fn(
+      async (details: {
+        func: (...args: [string, string | undefined, boolean, number]) => Promise<unknown>;
+        args: [string, string | undefined, boolean, number];
+      }) => [{ frameId: 0, result: await details.func(...details.args) }]
+    );
+    (
+      globalThis.chrome as unknown as { scripting: { executeScript: typeof executeScript } }
+    ).scripting = { executeScript };
+    resetBrowserControllerForTests();
+
+    await expect(
+      executeBrowserCommand({
+        action: 'page.subtitles',
+        tabId: 7,
+        operation: 'read',
+        language: 'ai-zh',
+        includeAutomatic: true,
+        format: 'vtt',
+        maxChars: 100_000,
+        fallback: 'none',
+      })
+    ).resolves.toEqual({
+      pageUrl: 'https://www.bilibili.com/video/BV1sx3T6ZEqy/',
+      title: 'Bilibili Example',
+      inlineSubtitle: {
+        language: 'ai-zh',
+        text: '第一句\n第二句',
+        truncated: false,
+      },
+    });
+    expect(executeScript).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      'https://api.bilibili.com/x/web-interface/view?bvid=BV1sx3T6ZEqy',
+      expect.objectContaining({ credentials: 'include' })
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      'https://aisubtitle.hdslb.com/example.json',
+      expect.objectContaining({ credentials: 'omit' })
+    );
   });
 
   test('includes a browser-observed audio URL only for approved local ASR', async () => {

@@ -123,7 +123,7 @@ describe('MediaDownloadService', () => {
           },
         };
       }
-      if (url.includes('/x/player/v2')) {
+      if (url.includes('/x/player/wbi/v2')) {
         return {
           code: 0,
           data: {

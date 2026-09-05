@@ -96,7 +96,9 @@ Do not use `oneShot` when a later command needs refs, page state, media discover
 
 ## BrowserSession workflow
 
-Create a session from the target URL:
+Before creating a session, run `ev browser session.list --compact`. Reuse the live session already created for the same task instead of opening another window. Keep one `sessionId` for the whole task, including retries. A failed command is not permission to create a replacement: first inspect `session.list`, `session.get`, and `browser check`. If a Host restart has erased session ownership, do not blindly open another window—the old EV window may still be visible but is no longer safely targetable. Report the ownership loss and ask before creating a replacement.
+
+Only when no reusable session exists, create one from the target URL:
 
 ```bash
 ev browser session.create --payload '{"url":"https://example.com"}' --compact
@@ -252,6 +254,8 @@ ev browser session.command --payload '{"sessionId":"UUID","command":{"action":"p
 
 The language is optional; without it yt-dlp selects its default preferred subtitle. `includeAutomatic` defaults to true. Reading returns de-duplicated text with cue timing removed and is capped at 200,000 characters. Results identify `source` as `subtitle` or `local-asr`.
 
+Bilibili often returns `need_login_subtitle` for AI/generated tracks. Do not silently read a browser profile. After the user explicitly approves using their logged-in browser session, add `"cookiesFromBrowser":"chrome"` (or the matching browser family) to the same `page.subtitles` command. EV exports cookies only to a temporary file, sends Bilibili cookies only to Bilibili API hosts, fetches the signed subtitle resource without cookies, and deletes the temporary file. Never print, persist, or return cookie values.
+
 When a page has no subtitle tracks and the user explicitly approves local transcription, retry with the opt-in fallback:
 
 ```bash
@@ -262,7 +266,7 @@ For YouTube local ASR, Browser Host uses yt-dlp's anonymous `web_embedded` clien
 
 Local ASR requires `whisper-cli` from whisper.cpp on `PATH`. The model defaults to `~/.ev/models/whisper/ggml-small.bin`; `EV_WHISPER_MODEL` can override it. It downloads only temporary WAV audio, returns timestamped segments plus plain text, and removes the temporary directory afterward. On non-YouTube sites, EV may reuse a fresh audio URL already observed by the isolated BrowserSession; only the page origin and browser User-Agent are forwarded, never Cookie or Authorization headers. Never add the confirmation unless the user requested this compute/download operation.
 
-The helper receives the page URL over stdin, routes all network traffic through loopback SSRF filtering, and never receives Chrome cookies. Login-only, region-locked, DRM, and unsupported sites fail explicitly; do not bypass those limits.
+The helper receives the page URL over stdin and routes all network traffic through loopback SSRF filtering. It is anonymous by default. It may read the selected browser profile only when the command explicitly includes `cookiesFromBrowser`; otherwise login-only, region-locked, DRM, and unsupported sites fail explicitly. Do not bypass those limits.
 
 ## Media downloads
 
@@ -354,4 +358,4 @@ ev browser session.command --payload '{"sessionId":"<id>","command":{"action":"p
 ev browser session.command --payload '{"sessionId":"<id>","command":{"action":"page.snapshot","mode":"interactive"}}'
 ```
 
-**`BROWSER_DISCONNECTED: EV Browser is not connected`** — the extension is not connected to the Host. Check `ev browser check`; if the extension was recently installed or the computer slept, click the EV Browser icon or use its options page "Request reconnect". The extension auto-recovers within a minute via its keepalive alarm.
+**`BROWSER_DISCONNECTED: EV Browser is not connected`** — treat the first result as a transient Host snapshot, not as a request for user action. Extension connection and reconnection are automatic: service-worker startup, browser startup, window focus, tab updates, exponential backoff, and the 30-second keepalive alarm all trigger silent recovery. The popup only shows status, and Options only refreshes status; neither exposes a manual connection switch. Verify that the CLI is using the intended Host/profile, then run `ev browser check` once more after automatic recovery. If it remains offline, inspect `ev browser profile list` and report the Host/profile mismatch or persistent failure. Never tell the user to click the extension icon or change extension state to reconnect.

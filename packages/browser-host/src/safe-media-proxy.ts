@@ -31,6 +31,7 @@ export class SafeMediaProxy {
     server.on('connection', socket => {
       this.sockets.add(socket);
       socket.on('close', () => this.sockets.delete(socket));
+      socket.on('error', () => socket.destroy());
     });
     await new Promise<void>((resolve, reject) => {
       server.once('error', error => {
@@ -96,7 +97,10 @@ export class SafeMediaProxy {
         upstream.pipe(client);
         client.pipe(upstream);
       });
-      upstream.once('error', () => client.destroy());
+      upstream.on('error', () => {
+        client.destroy();
+        upstream.destroy();
+      });
     } catch {
       if (!client.destroyed) {
         client.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');

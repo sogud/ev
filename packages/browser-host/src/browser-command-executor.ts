@@ -2,6 +2,7 @@ import {
   BrowserDownloadDispatchSchema,
   BrowserDownloadStatusSchema,
   BrowserSubtitleDispatchSchema,
+  BrowserSubtitleResultSchema,
   type BrowserAtomicCommand,
   type BrowserCommand,
   type BrowserOneShotCommand,
@@ -169,6 +170,17 @@ export class BrowserCommandExecutor {
     }
     if (command.action === 'page.subtitles') {
       const dispatch = BrowserSubtitleDispatchSchema.parse(result);
+      if (command.operation === 'read' && dispatch.inlineSubtitle) {
+        return BrowserSubtitleResultSchema.parse({
+          pageUrl: dispatch.pageUrl,
+          title: dispatch.title,
+          source: 'subtitle',
+          language: dispatch.inlineSubtitle.language,
+          format: 'text',
+          text: dispatch.inlineSubtitle.text,
+          truncated: dispatch.inlineSubtitle.truncated,
+        });
+      }
       const request = {
         ...dispatch,
         language: command.language,

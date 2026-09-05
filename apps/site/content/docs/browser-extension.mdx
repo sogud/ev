@@ -51,8 +51,9 @@ pnpm run package:extension:firefox    # Firefox ZIP
   不需要手填地址或 Pairing token。
 - **连接 EV Desktop**：在桌面端「设置 → EV Browser」首次批准。
 
-配对成功前，Host 拒绝执行任何浏览器命令。Extension Options、Popup 和 Desktop
-设置页都可以刷新状态或请求重连。
+配对成功前，Host 拒绝执行任何浏览器命令。连接与重连由扩展后台自动完成；Popup
+只显示状态，Extension Options 只刷新状态，不提供手动连接开关。Desktop 设置页可请求
+Host 断开后自动重连。
 
 ## 配对之后验证
 

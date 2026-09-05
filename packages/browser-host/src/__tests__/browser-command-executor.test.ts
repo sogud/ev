@@ -368,6 +368,53 @@ describe('BrowserCommandExecutor', () => {
     ).resolves.toMatchObject({ result: { filename: '/tmp/EV/example.en.srt' } });
   });
 
+  it('returns inline subtitles from the owned browser tab without the local helper', async () => {
+    const dispatch = {
+      pageUrl: 'https://www.bilibili.com/video/BV1sx3T6ZEqy/',
+      title: 'Bilibili Example',
+      inlineSubtitle: {
+        language: 'ai-zh',
+        text: '第一句\n第二句',
+        truncated: false,
+      },
+    };
+    const { bridge } = createIsolatedBridge(command => {
+      if (command.action === 'page.subtitles') return dispatch;
+      return { ok: true };
+    });
+    const downloads = {
+      readSubtitles: vi.fn(),
+      downloadSubtitles: vi.fn(),
+    } as unknown as MediaDownloadService;
+    const executor = new BrowserCommandExecutor(bridge, downloads);
+    const sessionId = await createSession(executor);
+
+    await expect(
+      executor.sendCommand({
+        action: 'browser.session.command',
+        sessionId,
+        command: {
+          action: 'page.subtitles',
+          operation: 'read',
+          language: 'ai-zh',
+          includeAutomatic: true,
+          format: 'vtt',
+          maxChars: 100_000,
+          fallback: 'none',
+        },
+      })
+    ).resolves.toMatchObject({
+      result: {
+        source: 'subtitle',
+        language: 'ai-zh',
+        format: 'text',
+        text: '第一句\n第二句',
+        truncated: false,
+      },
+    });
+    expect(downloads.readSubtitles).not.toHaveBeenCalled();
+  });
+
   it('starts a local helper job for streaming media inside a BrowserSession', async () => {
     const dispatch = {
       backend: 'external' as const,

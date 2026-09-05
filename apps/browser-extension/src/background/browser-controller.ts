@@ -179,6 +179,131 @@ interface CachedMediaItem {
   item: BrowserMediaItem;
 }
 
+interface BilibiliInlineSubtitleResult {
+  language: string;
+  text: string;
+  truncated: boolean;
+}
+
+interface BilibiliInlineSubtitleResponse {
+  subtitle?: BilibiliInlineSubtitleResult;
+  error?: string;
+}
+
+async function readBilibiliSubtitleInPage(
+  pageUrl: string,
+  requestedLanguage: string | undefined,
+  includeAutomatic: boolean,
+  maxChars: number
+): Promise<BilibiliInlineSubtitleResponse | null> {
+  try {
+    const page = new URL(pageUrl);
+    const bvid = page.pathname.match(/\/video\/(BV[0-9A-Za-z]+)/)?.[1];
+    if (!bvid || (page.hostname !== 'bilibili.com' && !page.hostname.endsWith('.bilibili.com'))) {
+      return null;
+    }
+
+    const fetchJson = async (url: string, credentials: RequestCredentials): Promise<unknown> => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30_000);
+      try {
+        const response = await fetch(url, { credentials, signal: controller.signal });
+        if (!response.ok) throw new Error(`Bilibili request failed: ${response.status}`);
+        const body = await response.text();
+        if (body.length > 5 * 1024 * 1024) throw new Error('Bilibili response is too large');
+        return JSON.parse(body) as unknown;
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    const view = (await fetchJson(
+      `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
+      'include'
+    )) as Record<string, unknown>;
+    const viewData = view.data as Record<string, unknown> | undefined;
+    const requestedPage = Number.parseInt(page.searchParams.get('p') ?? '1', 10);
+    const pages = Array.isArray(viewData?.pages) ? viewData.pages : [];
+    const selectedPage = pages.find(candidate => {
+      if (!candidate || typeof candidate !== 'object') return false;
+      return (candidate as Record<string, unknown>).page === requestedPage;
+    }) as Record<string, unknown> | undefined;
+    const cid = selectedPage?.cid ?? viewData?.cid;
+    if (typeof cid !== 'number' || !Number.isFinite(cid)) {
+      throw new Error('Bilibili did not return a valid video CID');
+    }
+
+    const player = (await fetchJson(
+      `https://api.bilibili.com/x/player/wbi/v2?cid=${cid}&bvid=${encodeURIComponent(bvid)}`,
+      'include'
+    )) as Record<string, unknown>;
+    const playerData = player.data as Record<string, unknown> | undefined;
+    const subtitle = playerData?.subtitle as Record<string, unknown> | undefined;
+    const rawTracks = Array.isArray(subtitle?.subtitles) ? subtitle.subtitles : [];
+    const tracks = rawTracks.flatMap(item => {
+      if (!item || typeof item !== 'object') return [];
+      const track = item as Record<string, unknown>;
+      if (typeof track.lan !== 'string' || typeof track.subtitle_url !== 'string') return [];
+      if (!track.lan || !track.subtitle_url) return [];
+      const automatic = track.lan.startsWith('ai-') || Number(track.ai_type ?? 0) > 0;
+      if (!includeAutomatic && automatic) return [];
+      return [{ language: track.lan, url: track.subtitle_url, automatic }];
+    });
+    if (!tracks.length) {
+      throw new Error(
+        playerData?.need_login_subtitle === true
+          ? 'Bilibili subtitles require the logged-in page session'
+          : 'No matching Bilibili subtitles found'
+      );
+    }
+
+    const languageRoot = requestedLanguage?.toLowerCase().split(/[-_]/)[0];
+    const selected =
+      tracks.find(track => track.language === requestedLanguage) ??
+      tracks.find(track => languageRoot && track.language.toLowerCase().startsWith(languageRoot)) ??
+      tracks.find(track => track.language === 'ai-zh') ??
+      tracks.find(track => track.language.toLowerCase().startsWith('zh')) ??
+      tracks[0];
+    const subtitleUrl = new URL(
+      selected.url.startsWith('//') ? `https:${selected.url}` : selected.url
+    );
+    if (
+      subtitleUrl.protocol !== 'https:' ||
+      (subtitleUrl.hostname !== 'hdslb.com' &&
+        !subtitleUrl.hostname.endsWith('.hdslb.com') &&
+        subtitleUrl.hostname !== 'bilibili.com' &&
+        !subtitleUrl.hostname.endsWith('.bilibili.com'))
+    ) {
+      throw new Error('Bilibili returned an invalid subtitle URL');
+    }
+
+    const subtitleJson = (await fetchJson(subtitleUrl.toString(), 'omit')) as Record<
+      string,
+      unknown
+    >;
+    const body = Array.isArray(subtitleJson.body) ? subtitleJson.body.slice(0, 20_000) : [];
+    const lines: string[] = [];
+    for (const item of body) {
+      if (!item || typeof item !== 'object') continue;
+      const content = (item as Record<string, unknown>).content;
+      if (typeof content !== 'string' || content.length > 10_000) continue;
+      const text = content.trim();
+      if (text && lines.at(-1) !== text) lines.push(text);
+    }
+    if (!lines.length) throw new Error('Bilibili returned an empty subtitle');
+    const text = lines.join('\n');
+    return {
+      subtitle: {
+        language: selected.language,
+        text: text.slice(0, maxChars),
+        truncated: text.length > maxChars || body.length >= 20_000,
+      },
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unable to read Bilibili subtitles' };
+  }
+}
+
 function isWebUrl(value: string | undefined): value is string {
   if (!value) return false;
   try {
@@ -1498,8 +1623,24 @@ class CdpBrowserController {
     const tabId = command.tabId ?? (await activeTabId());
     const tab = await resolveTab(tabId);
     if (command.action === 'page.subtitles') {
+      let inlineSubtitle: BilibiliInlineSubtitleResult | undefined;
+      const pageUrl = new URL(tab.url!);
+      if (
+        command.operation === 'read' &&
+        (pageUrl.hostname === 'bilibili.com' || pageUrl.hostname.endsWith('.bilibili.com'))
+      ) {
+        const [injection] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: readBilibiliSubtitleInPage,
+          args: [tab.url!, command.language, command.includeAutomatic, command.maxChars],
+        });
+        const response = injection?.result as BilibiliInlineSubtitleResponse | null | undefined;
+        if (response?.error) throw new Error(response.error);
+        inlineSubtitle = response?.subtitle;
+      }
+
       let mediaHint: { mediaUrl?: string; userAgent?: string } = {};
-      if (command.fallback === 'local-asr') {
+      if (!inlineSubtitle && command.fallback === 'local-asr') {
         mediaHint = await this.withAdvancedLease(tabId, async () => {
           await this.ensureAttached(tabId);
           await new Promise(resolve => setTimeout(resolve, 1_500));
@@ -1517,6 +1658,7 @@ class CdpBrowserController {
         pageUrl: tab.url,
         title: tab.title,
         ...mediaHint,
+        ...(inlineSubtitle ? { inlineSubtitle } : {}),
       });
     }
     if (command.action === 'page.webmcp.listTools') return this.webMcpListTools(tabId);
